@@ -10,6 +10,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .plan_store import AnkerEmsPlanStore
+from .scheduler import AnkerEmsScheduler
 
 from .const import (
     NAME,
@@ -86,6 +87,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         hass: HomeAssistant,
         entry: ConfigEntry,
         plan_store: AnkerEmsPlanStore,
+        scheduler: AnkerEmsScheduler,
     ) -> None:
         super().__init__(
             hass,
@@ -96,6 +98,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.entry = entry
         self.plan_store = plan_store
+        self.scheduler = scheduler
 
     @property
     def simulation_mode(self) -> bool:
@@ -252,4 +255,5 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "power_setpoint_w": self._number(CONF_POWER_SETPOINT_ENTITY),
         }
         data.update(self._build_forecast())
+        data.update(self.scheduler.evaluate())
         return data

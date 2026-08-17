@@ -5,7 +5,7 @@ Home Assistant EMS-integratie voor de Anker SOLIX Solarbank Max AC.
 **Status:** experimentele alpha  
 **Domein:** `anker_ems`  
 **Minimale Home Assistant-versie:** 2026.7.0  
-**Huidige release:** `0.0.1-alpha.6`
+**Huidige release:** `0.0.1-alpha.7`
 
 ## Alpha 5 - Forecast Sources
 
@@ -56,3 +56,8 @@ Dummy OS EMS is een onafhankelijk opensource-communityproject en is niet gelieer
 Alpha 6 voegt drie onafhankelijke, persistent opgeslagen planplaatsen toe. Elke planplaats bevat een actie, uitvoeringsmodus, starttijd, vermogen, doel-SOC, maximale looptijd, maximale startvertraging en een afgeleide status. De waarden blijven na een Home Assistant-herstart behouden.
 
 Alpha 6 plant of schakelt nog niets fysiek. De Scheduler, Action Controller en Safety Guard volgen in latere alpha's.
+
+
+## Alpha 7 Scheduler
+
+The Scheduler evaluates persistent plans, start windows and conflicts. It remains simulation-only and performs no physical Anker writes.

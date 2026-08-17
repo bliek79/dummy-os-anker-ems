@@ -34,6 +34,19 @@ def _forecast_attrs(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _scheduler_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "selected_slot": data.get("scheduler_selected_slot"),
+        "selected_action": data.get("scheduler_selected_action"),
+        "selected_execution_mode": data.get("scheduler_selected_execution_mode"),
+        "selected_start_time": data.get("scheduler_selected_start_time"),
+        "next_future_slot": data.get("scheduler_next_future_slot"),
+        "next_future_start": data.get("scheduler_next_future_start"),
+        "slots": data.get("scheduler_slots", {}),
+        "physical_control": data.get("scheduler_physical_control", False),
+    }
+
+
 SENSORS: tuple[AnkerEmsSensorDescription, ...] = (
     AnkerEmsSensorDescription(
         key="status",
@@ -74,6 +87,22 @@ SENSORS: tuple[AnkerEmsSensorDescription, ...] = (
         name="Dummy OS EMS Forecast complete uren",
         native_unit_of_measurement="h",
         value_fn=lambda d: d.get("forecast_complete_hours"),
+    ),
+    AnkerEmsSensorDescription(
+        key="scheduler_status",
+        name="Dummy OS EMS Scheduler status",
+        value_fn=lambda d: d.get("scheduler_status"),
+        attrs_fn=_scheduler_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="scheduler_selected_plan",
+        name="Dummy OS EMS Scheduler geselecteerd plan",
+        value_fn=lambda d: (
+            f"plan_{d.get('scheduler_selected_slot')}"
+            if d.get("scheduler_selected_slot") is not None
+            else "geen"
+        ),
+        attrs_fn=_scheduler_attrs,
     ),
 )
 
@@ -151,11 +180,15 @@ class AnkerEmsPlanStatusSensor(CoordinatorEntity[AnkerEmsCoordinator], SensorEnt
 
     @property
     def native_value(self) -> str:
-        return self.plan_store.plan_status(self.slot)
+        slots = self.coordinator.data.get("scheduler_slots", {})
+        detail = slots.get(self.slot) or slots.get(str(self.slot)) or {}
+        return str(detail.get("status") or self.plan_store.plan_status(self.slot))
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         plan = self.plan_store.get_plan(self.slot)
+        slots = self.coordinator.data.get("scheduler_slots", {})
+        scheduler_detail = slots.get(self.slot) or slots.get(str(self.slot)) or {}
         return {
             "slot": self.slot,
             "action": plan.get("action"),
@@ -166,5 +199,7 @@ class AnkerEmsPlanStatusSensor(CoordinatorEntity[AnkerEmsCoordinator], SensorEnt
             "max_runtime_h": plan.get("max_runtime_h"),
             "max_start_delay_min": plan.get("max_start_delay_min"),
             "persistent": True,
+            "scheduler_selected": scheduler_detail.get("selected", False),
+            "scheduler_start_window_end": scheduler_detail.get("start_window_end"),
             "physical_control": False,
         }

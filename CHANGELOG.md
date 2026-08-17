@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.0.1-alpha.7
+
+- Added simulation-only Scheduler on top of the persistent Plan Store.
+- Scheduler evaluates all three plan slots every coordinator refresh.
+- Scheduled plans become `startklaar` only inside their configured start window.
+- Plans that miss `start_time + max_start_delay` become `verlopen`.
+- Direct plans become immediately eligible for simulated scheduling.
+- Deterministic conflict handling selects only one slot; other ready slots become `geblokkeerd`.
+- Added `Dummy OS EMS Scheduler status`.
+- Added `Dummy OS EMS Scheduler geselecteerd plan`.
+- Added `Dummy OS EMS Scheduler startklaar`.
+- Plan status sensors now expose Scheduler runtime state.
+- Persistent plans are re-evaluated after Home Assistant restart.
+- No Home Assistant service calls and no physical Anker writes are performed.
+
 ## 0.0.1-alpha.6
 
 - Added persistent Plan Store with three independent plan slots.

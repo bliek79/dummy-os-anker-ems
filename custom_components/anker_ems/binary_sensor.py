@@ -22,6 +22,7 @@ async def async_setup_entry(
             AnkerEmsSourcesAvailable(coordinator, entry),
             AnkerEmsControlAvailable(coordinator, entry),
             AnkerEmsForecastSourcesAvailable(coordinator, entry),
+            AnkerEmsSchedulerReady(coordinator, entry),
         ]
     )
 
@@ -98,4 +99,27 @@ class AnkerEmsForecastSourcesAvailable(_AnkerEmsBinarySensorBase):
             "solar_hours": data.get("forecast_solar_hours"),
             "complete_hours": data.get("forecast_complete_hours"),
             "missing_sources": data.get("forecast_missing_sources", []),
+        }
+
+
+class AnkerEmsSchedulerReady(_AnkerEmsBinarySensorBase):
+    _attr_name = "Dummy OS EMS Scheduler startklaar"
+
+    def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{entry.entry_id}_scheduler_ready"
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self.coordinator.data.get("scheduler_ready"))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        data = self.coordinator.data
+        return {
+            "selected_slot": data.get("scheduler_selected_slot"),
+            "selected_action": data.get("scheduler_selected_action"),
+            "selected_execution_mode": data.get("scheduler_selected_execution_mode"),
+            "selected_start_time": data.get("scheduler_selected_start_time"),
+            "physical_control": False,
         }
