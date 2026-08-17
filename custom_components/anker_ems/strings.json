@@ -1,0 +1,26 @@
+{
+  "title": "Dummy OS EMS",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Dummy OS EMS instellen",
+        "description": "Selecteer de bestaande Anker-bron- en bedieningseenheden. De eerste alpha stuurt niets fysiek aan.",
+        "data": {
+          "simulation_mode": "Simulatiemodus",
+          "soc_entity": "SOC sensor",
+          "device_status_entity": "Apparaatstatus sensor",
+          "charge_power_entity": "Laadvermogen sensor",
+          "discharge_power_entity": "Ontlaadvermogen sensor",
+          "grid_import_power_entity": "Netafname vermogen (optioneel)",
+          "grid_export_power_entity": "Netexport vermogen (optioneel)",
+          "operating_mode_entity": "Bedrijfsmodus",
+          "action_direction_entity": "Laad/ontlaadkeuze",
+          "power_setpoint_entity": "Vermogensinstelling"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Dummy OS EMS is al geconfigureerd."
+    }
+  }
+}

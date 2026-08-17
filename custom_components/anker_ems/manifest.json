@@ -1,0 +1,14 @@
+{
+  "domain": "anker_ems",
+  "name": "Dummy OS EMS",
+  "version": "0.0.1-alpha.4",
+  "documentation": "https://github.com/bliek79/dummy-os-anker-ems",
+  "issue_tracker": "https://github.com/bliek79/dummy-os-anker-ems/issues",
+  "config_flow": true,
+  "iot_class": "local_polling",
+  "requirements": [],
+  "integration_type": "service",
+  "codeowners": [
+    "@bliek79"
+  ]
+}
