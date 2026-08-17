@@ -9,6 +9,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
+from .plan_store import AnkerEmsPlanStore
+
 from .const import (
     NAME,
     CONF_SIMULATION_MODE,
@@ -79,7 +81,12 @@ def _hour_key(value: Any) -> datetime | None:
 
 
 class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        plan_store: AnkerEmsPlanStore,
+    ) -> None:
         super().__init__(
             hass,
             _LOGGER,
@@ -88,6 +95,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             config_entry=entry,
         )
         self.entry = entry
+        self.plan_store = plan_store
 
     @property
     def simulation_mode(self) -> bool:

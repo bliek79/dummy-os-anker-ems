@@ -2,7 +2,7 @@ from __future__ import annotations
 
 DOMAIN = "anker_ems"
 NAME = "Dummy OS EMS"
-VERSION = "0.0.1-alpha.5"
+VERSION = "0.0.1-alpha.6"
 
 CONF_SIMULATION_MODE = "simulation_mode"
 
@@ -30,7 +30,9 @@ DEFAULT_SOLAR_TODAY_ENTITY = "sensor.solcast_pv_forecast_voorspelling_vandaag"
 DEFAULT_SOLAR_TOMORROW_ENTITY = "sensor.solcast_pv_forecast_voorspelling_morgen"
 DEFAULT_SOLAR_DAY3_ENTITY = "sensor.solcast_pv_forecast_voorspelling_dag_3"
 
-PLATFORMS = ["sensor", "binary_sensor"]
+PLATFORMS = ["sensor", "binary_sensor", "select", "number", "datetime"]
+
+PLAN_SLOT_COUNT = 3
 
 DEFAULT_BATTERY_CAPACITY_KWH = 7.2
 MIN_SOC_PERCENT = 5

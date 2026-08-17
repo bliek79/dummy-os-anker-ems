@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.0.1-alpha.6
+
+- Added persistent Plan Store with three independent plan slots.
+- Added per-slot action and execution-mode select entities.
+- Added per-slot start datetime.
+- Added per-slot power, target SOC, maximum runtime and maximum start-delay number entities.
+- Added per-slot validation/status sensor.
+- Plan values survive Home Assistant restarts.
+- No scheduler execution and no physical Anker control yet.
+
+
 ## 0.0.1-alpha.5
 
 ### Forecast Sources

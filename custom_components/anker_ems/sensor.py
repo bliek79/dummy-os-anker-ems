@@ -11,7 +11,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, NAME
+from .const import DOMAIN, NAME, PLAN_SLOT_COUNT
 from .coordinator import AnkerEmsCoordinator
 
 
@@ -84,9 +84,14 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: AnkerEmsCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities(
+    entities = [
         AnkerEmsSensor(coordinator, entry, description) for description in SENSORS
+    ]
+    entities.extend(
+        AnkerEmsPlanStatusSensor(coordinator, entry, slot)
+        for slot in range(1, PLAN_SLOT_COUNT + 1)
     )
+    async_add_entities(entities)
 
 
 class AnkerEmsSensor(CoordinatorEntity[AnkerEmsCoordinator], SensorEntity):
@@ -117,3 +122,49 @@ class AnkerEmsSensor(CoordinatorEntity[AnkerEmsCoordinator], SensorEntity):
         if self.entity_description.attrs_fn is None:
             return None
         return self.entity_description.attrs_fn(self.coordinator.data)
+
+
+class AnkerEmsPlanStatusSensor(CoordinatorEntity[AnkerEmsCoordinator], SensorEntity):
+    _attr_has_entity_name = False
+
+    def __init__(
+        self,
+        coordinator: AnkerEmsCoordinator,
+        entry: ConfigEntry,
+        slot: int,
+    ) -> None:
+        super().__init__(coordinator)
+        self.plan_store = coordinator.plan_store
+        self.slot = slot
+        self._attr_name = f"Dummy OS EMS Plan {slot} Status"
+        self._attr_unique_id = f"{entry.entry_id}_plan_{slot}_status"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name=NAME,
+            manufacturer="Dummy OS",
+            model="EMS",
+        )
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(self.plan_store.add_listener(self.async_write_ha_state))
+
+    @property
+    def native_value(self) -> str:
+        return self.plan_store.plan_status(self.slot)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        plan = self.plan_store.get_plan(self.slot)
+        return {
+            "slot": self.slot,
+            "action": plan.get("action"),
+            "execution_mode": plan.get("execution_mode"),
+            "start_time": plan.get("start_time"),
+            "power_w": plan.get("power_w"),
+            "target_soc": plan.get("target_soc"),
+            "max_runtime_h": plan.get("max_runtime_h"),
+            "max_start_delay_min": plan.get("max_start_delay_min"),
+            "persistent": True,
+            "physical_control": False,
+        }
