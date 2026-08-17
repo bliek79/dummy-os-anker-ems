@@ -18,6 +18,20 @@ from .coordinator import AnkerEmsCoordinator
 @dataclass(frozen=True, kw_only=True)
 class AnkerEmsSensorDescription(SensorEntityDescription):
     value_fn: Callable[[dict[str, Any]], Any]
+    attrs_fn: Callable[[dict[str, Any]], dict[str, Any]] | None = None
+
+
+def _forecast_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "horizon_hours": data.get("forecast_horizon_hours"),
+        "price_hours": data.get("forecast_price_hours"),
+        "home_hours": data.get("forecast_home_hours"),
+        "solar_hours": data.get("forecast_solar_hours"),
+        "complete_hours": data.get("forecast_complete_hours"),
+        "missing_sources": data.get("forecast_missing_sources", []),
+        "sources": data.get("forecast_sources", {}),
+        "forecast": data.get("forecast", []),
+    }
 
 
 SENSORS: tuple[AnkerEmsSensorDescription, ...] = (
@@ -48,6 +62,18 @@ SENSORS: tuple[AnkerEmsSensorDescription, ...] = (
         key="operating_mode",
         name="Dummy OS EMS Bedrijfsmodus",
         value_fn=lambda d: d.get("operating_mode"),
+    ),
+    AnkerEmsSensorDescription(
+        key="forecast_status",
+        name="Dummy OS EMS Forecast status",
+        value_fn=lambda d: d.get("forecast_status"),
+        attrs_fn=_forecast_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="forecast_complete_hours",
+        name="Dummy OS EMS Forecast complete uren",
+        native_unit_of_measurement="h",
+        value_fn=lambda d: d.get("forecast_complete_hours"),
     ),
 )
 
@@ -85,3 +111,9 @@ class AnkerEmsSensor(CoordinatorEntity[AnkerEmsCoordinator], SensorEntity):
     @property
     def native_value(self) -> Any:
         return self.entity_description.value_fn(self.coordinator.data)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        if self.entity_description.attrs_fn is None:
+            return None
+        return self.entity_description.attrs_fn(self.coordinator.data)

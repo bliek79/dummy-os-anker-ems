@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.0.1-alpha.5
+
+### Forecast Sources
+- Eerste Python-gebaseerde forecastlaag toegevoegd.
+- Bestaande prijs-, woningverbruiks- en Solcast-bronnen worden ingelezen.
+- 72 uur wordt intern genormaliseerd naar één uurmodel met `time`, `price`, `price_min`, `price_max`, `price_source`, `solar_kwh` en `home_consumption_kwh`.
+- Bekende prijzen krijgen voorrang op prijsprognoses voor hetzelfde uur.
+- Nieuwe sensor `Dummy OS EMS Forecast status` publiceert diagnose-attributen en de genormaliseerde forecast.
+- Nieuwe sensor `Dummy OS EMS Forecast complete uren` toont hoeveel uren alle drie de hoofdbronnen bevatten.
+- Nieuwe binary sensor `Dummy OS EMS Forecast bronnen beschikbaar`.
+- Forecastbronnen zijn via de integratie-opties selecteerbaar; bestaande config-entry blijft behouden.
+- Veilige update-listener toegevoegd zodat gewijzigde opties de integratie herladen.
+- Geen plannerbeslissingen en geen fysieke write-calls toegevoegd.
+
 ## 0.0.1-alpha.4
 
 ### GitHub/HACS basis
@@ -11,7 +25,6 @@
 - Onafhankelijkheids- en aansprakelijkheidsstatement toegevoegd.
 - Alpha 3 runtime als functionele basis behouden.
 - Nog geen fysieke write-calls naar de Anker.
-- Forecast Sources-laag is de eerstvolgende functionele ontwikkelstap.
 
 ## 0.0.1-alpha.3
 - `Bronnen beschikbaar` controleert alleen observatiebronnen.

@@ -4,7 +4,7 @@
     "step": {
       "user": {
         "title": "Dummy OS EMS instellen",
-        "description": "Selecteer de bestaande Anker-bron- en bedieningseenheden. De eerste alpha stuurt niets fysiek aan.",
+        "description": "Selecteer de bestaande Anker-bron- en bedieningseenheden. De integratie stuurt in deze alpha nog niets fysiek aan.",
         "data": {
           "simulation_mode": "Simulatiemodus",
           "soc_entity": "SOC sensor",
@@ -21,6 +21,22 @@
     },
     "abort": {
       "already_configured": "Dummy OS EMS is al geconfigureerd."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Forecast Sources",
+        "description": "Selecteer de bestaande prijs-, woning- en Solcast-bronnen. Alpha 5 leest en normaliseert deze bronnen alleen; er vindt geen automatische batterijsturing plaats.",
+        "data": {
+          "known_price_entity": "Bekende/all-in prijzen",
+          "forecast_price_entity": "Prijsforecast",
+          "home_forecast_entity": "Woningverbruiksforecast",
+          "solar_today_entity": "Solcast vandaag",
+          "solar_tomorrow_entity": "Solcast morgen",
+          "solar_day3_entity": "Solcast dag 3"
+        }
+      }
     }
   }
 }

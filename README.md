@@ -5,82 +5,47 @@ Home Assistant EMS-integratie voor de Anker SOLIX Solarbank Max AC.
 **Status:** experimentele alpha  
 **Domein:** `anker_ems`  
 **Minimale Home Assistant-versie:** 2026.7.0  
-**Huidige release:** `0.0.1-alpha.4`
+**Huidige release:** `0.0.1-alpha.5`
 
-## Huidige functionaliteit
+## Alpha 5 - Forecast Sources
 
-De integratie:
-- wordt via de Home Assistant UI geconfigureerd;
-- laat bestaande Anker- en netsensoren selecteren;
-- leest SOC, apparaatstatus, laadvermogen, ontlaadvermogen en bedrijfsmodus;
-- leest optioneel netafname en netexport;
-- publiceert eigen `Dummy OS EMS` diagnose-entiteiten;
-- onderscheidt `Bronnen beschikbaar` van `Besturing beschikbaar`;
-- blijft standaard in simulatiemodus;
-- bevat nog geen fysieke write-calls.
+Alpha 5 bouwt voort op de stabiele HACS/GitHub-basis en voegt de eerste read-only forecastlaag toe.
+
+De integratie normaliseert maximaal 72 uur naar één intern uurmodel met:
+- `time`;
+- `price`;
+- `price_min`;
+- `price_max`;
+- `price_source`;
+- `solar_kwh`;
+- `home_consumption_kwh`.
+
+Bekende prijzen hebben voor hetzelfde uur voorrang op een prijsprognose.
+
+De standaardbronnen sluiten aan op de bestaande Dummy OS/YAML-architectuur:
+- `sensor.battery_control_energy_prices` -> attribuut `prices`;
+- `sensor.forecast_prices_all_in_data` -> attribuut `forecasts`;
+- `sensor.forecast_home_consumption_data` -> attribuut `forecasts`;
+- Solcast vandaag/morgen/dag 3 -> attribuut `detailedHourly`.
+
+Deze bronnen kunnen na installatie via **Instellingen -> Apparaten & diensten -> Dummy OS EMS -> Configureren** worden aangepast.
+
+## Nieuwe diagnose-entiteiten
+
+- `Dummy OS EMS Forecast status`
+- `Dummy OS EMS Forecast complete uren`
+- `Dummy OS EMS Forecast bronnen beschikbaar`
+
+`Forecast status` bevat als attributen de bronselectie, aantallen uren en het genormaliseerde 72-uursmodel.
 
 ## Veilig ontwikkelmodel
 
-De bestaande YAML-oplossing blijft voorlopig de operationele referentie.
-
-Tijdens ontwikkeling geldt:
-1. eerst uitlezen en valideren;
-2. daarna simulatie;
-3. vervolgens één gecontroleerde fysieke actie;
-4. nooit twee fysieke controllers tegelijk.
-
-## Installeren via HACS custom repository
-
-Zodra deze map als openbare GitHub-repository beschikbaar is:
-
-1. Open HACS.
-2. Voeg de GitHub-repository toe als **Custom repository**.
-3. Kies type **Integration**.
-4. Installeer **Dummy OS EMS**.
-5. Herstart Home Assistant.
-6. Voeg **Dummy OS EMS** toe via *Instellingen -> Apparaten & diensten*.
-
-## Forecast Sources - volgende ontwikkelstap
-
-De eerstvolgende functionele laag wordt een genormaliseerde forecastbron voor:
-- bekende/all-in stroomprijzen;
-- verdere prijsforecast;
-- Solcast vandaag, morgen en dag 3;
-- woningverbruiksforecast.
-
-De planner krijgt daarna per uur één intern gegevensmodel met onder andere:
-- tijd;
-- prijs;
-- prijs minimum/maximum;
-- zonneverwachting;
-- verwacht woningverbruik.
-
-Hierdoor blijft de latere 72-uursplanner onafhankelijk van de precieze bronintegratie.
+Alpha 5 blijft volledig uitlezend. Er zijn geen automatische plannerbeslissingen en geen fysieke write-calls naar de batterij. De bestaande operationele YAML-oplossing blijft tijdens ontwikkeling de referentie.
 
 ## OmniBattery
 
-OmniBattery wordt gebruikt als technische referentie, niet als vervanger.
+OmniBattery blijft een technische referentie, niet een vervanger. De latere planner kan principes gebruiken zoals tekortgestuurd netladen, reserve tot bruikbare zon, benodigde goedkoopste laaduren, scheiding tussen veiligheids- en handelslading, Solar Charge Delay, live veiligheidscontrole en fallback/herstel.
 
-Te onderzoeken principes:
-- tekortgestuurd netladen;
-- gegarandeerde reserve tot bruikbare zon;
-- alleen benodigde goedkoopste laaduren;
-- veiligheidslading en handelslading scheiden;
-- Solar Charge Delay;
-- live veiligheidscontrole;
-- fallback en herstel.
+## Onafhankelijk project
 
-## Belangrijk voor publicatie
-
-Vervang vóór GitHub-publicatie alle voorkomens van:
-
-`bliek79`
-
-door de echte GitHub-gebruikersnaam.
-
-Daarnaast zijn nog open:
-- definitieve opensourcelicentie;
-- definitieve brand/icon asset;
-- naam-/merkcontrole voor Dummy OS / DummyOS / Dummy OS EMS.
-
-Zie `GITHUB_SETUP.md`.
+Dummy OS EMS is een onafhankelijk opensource-communityproject en is niet gelieerd aan of goedgekeurd door Anker Innovations, Home Assistant, Nabu Casa of andere fabrikanten. Product- en merknamen blijven eigendom van hun rechthebbenden.
