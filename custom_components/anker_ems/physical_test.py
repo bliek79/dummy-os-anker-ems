@@ -42,8 +42,9 @@ class AnkerEmsPhysicalTestController:
             hass, _STORAGE_VERSION, f"{DOMAIN}.{entry_id}.physical_test"
         )
         self._coordinator = None
-        self._cancel_timer: Callable[[], None] | None = None
+        self._stop_task: asyncio.Task[None] | None = None
         self._cancel_monitor: Callable[[], None] | None = None
+        self._stop_lock = asyncio.Lock()
         self._state: dict[str, Any] = {
             "active": False,
             "status": "idle",
@@ -197,20 +198,49 @@ class AnkerEmsPhysicalTestController:
             }
         )
         await self._async_save()
-        self._schedule_stop(duration_s)
+        self._schedule_stop(stop_at)
         self._schedule_monitor()
         await self._coordinator.async_refresh()
 
-    def _schedule_stop(self, duration_s: int) -> None:
-        if self._cancel_timer is not None:
-            self._cancel_timer()
-        self._cancel_timer = async_call_later(
-            self.hass,
-            duration_s,
-            lambda _now: self.hass.async_create_task(
-                self.async_stop("test_duration_reached", emergency=False)
-            ),
+    def _schedule_stop(self, stop_at: datetime) -> None:
+        """Schedule a dedicated fail-safe task for the absolute stop time.
+
+        Alpha 10 used ``async_call_later`` for the primary stop callback. During
+        the first physical test the countdown reached zero while that callback
+        did not complete the safe-stop path. A dedicated task is easier to
+        supervise and, importantly, cannot accidentally cancel its own callback
+        while ``async_stop`` is running.
+        """
+        if self._stop_task is not None and not self._stop_task.done():
+            self._stop_task.cancel()
+        self._stop_task = self.hass.async_create_task(
+            self._async_auto_stop_at(stop_at),
+            "Dummy OS EMS physical test auto-stop",
         )
+
+    async def _async_auto_stop_at(self, stop_at: datetime) -> None:
+        try:
+            delay = max(0.0, (stop_at - dt_util.now()).total_seconds())
+            await asyncio.sleep(delay)
+            if self._state.get("active"):
+                _LOGGER.info("Dummy OS EMS physical test duration reached; executing safe stop")
+                await self.async_stop("test_duration_reached", emergency=False)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _LOGGER.exception("Automatic safe stop for physical test failed")
+            # Keep the test marked active so restart recovery/manual stop can
+            # still see that intervention is required.
+            self._state.update(
+                {
+                    "status": "stop_error",
+                    "reason": "Automatische safe-stop kon niet worden uitgevoerd",
+                    "last_result": "stop_error",
+                }
+            )
+            await self._async_save()
+            if self._coordinator is not None:
+                await self._coordinator.async_refresh()
 
     def _schedule_monitor(self) -> None:
         if self._cancel_monitor is not None:
@@ -257,65 +287,95 @@ class AnkerEmsPhysicalTestController:
 
     async def async_stop(self, reason: str, *, emergency: bool = False) -> None:
         """Stop the test and return the battery to self consumption."""
-        if self._cancel_timer is not None:
-            self._cancel_timer()
-            self._cancel_timer = None
-        if self._cancel_monitor is not None:
-            self._cancel_monitor()
-            self._cancel_monitor = None
+        async with self._stop_lock:
+            # A second stop request may arrive while the first one is completing
+            # (for example watchdog + manual stop). Treat it as idempotent.
+            if not self._state.get("active") and self._state.get("status") not in {
+                "starting",
+                "running",
+                "stopping",
+            }:
+                return
 
-        mode_entity = direction_entity = power_entity = None
-        try:
-            mode_entity, direction_entity, power_entity = self._entity_ids()
-        except HomeAssistantError:
-            pass
+            current_task = asyncio.current_task()
+            if (
+                self._stop_task is not None
+                and self._stop_task is not current_task
+                and not self._stop_task.done()
+            ):
+                self._stop_task.cancel()
+            if self._stop_task is not current_task:
+                self._stop_task = None
 
-        errors: list[str] = []
-        if power_entity:
+            if self._cancel_monitor is not None:
+                self._cancel_monitor()
+                self._cancel_monitor = None
+
+            self._state.update(
+                {
+                    "status": "stopping",
+                    "reason": f"Safe-stop actief: {reason}",
+                }
+            )
+            await self._async_save()
+            if self._coordinator is not None:
+                await self._coordinator.async_refresh()
+
+            mode_entity = direction_entity = power_entity = None
             try:
-                await self.hass.services.async_call(
-                    "number",
-                    "set_value",
-                    {"value": 0},
-                    target={"entity_id": power_entity},
-                    blocking=True,
-                )
-            except Exception as err:
-                errors.append(f"power_zero_failed: {err}")
+                mode_entity, direction_entity, power_entity = self._entity_ids()
+            except HomeAssistantError:
+                pass
 
-        # Give the device a brief moment to accept the zero setpoint before
-        # handing control back to its own self-consumption logic.
-        await asyncio.sleep(1)
+            errors: list[str] = []
+            if power_entity:
+                try:
+                    await self.hass.services.async_call(
+                        "number",
+                        "set_value",
+                        {"value": 0},
+                        target={"entity_id": power_entity},
+                        blocking=True,
+                    )
+                except Exception as err:
+                    errors.append(f"power_zero_failed: {err}")
 
-        if mode_entity:
-            try:
-                await self.hass.services.async_call(
-                    "select",
-                    "select_option",
-                    {"option": "self_consumption"},
-                    target={"entity_id": mode_entity},
-                    blocking=True,
-                )
-            except Exception as err:
-                errors.append(f"self_consumption_failed: {err}")
+            # Give the device a brief moment to accept the zero setpoint before
+            # handing control back to its own self-consumption logic.
+            await asyncio.sleep(1)
 
-        result = "emergency_stopped" if emergency else "completed"
-        if errors:
-            result = "stop_error"
-            reason = f"{reason}; {'; '.join(errors)}"
+            if mode_entity:
+                try:
+                    await self.hass.services.async_call(
+                        "select",
+                        "select_option",
+                        {"option": "self_consumption"},
+                        target={"entity_id": mode_entity},
+                        blocking=True,
+                    )
+                except Exception as err:
+                    errors.append(f"self_consumption_failed: {err}")
 
-        self._state.update(
-            {
-                "active": False,
-                "status": result,
-                "reason": reason,
-                "last_result": result,
-                "stop_at": dt_util.now().isoformat(),
-            }
-        )
-        await self._async_save()
-        if self._coordinator is not None:
-            await self._coordinator.async_refresh()
+            result = "emergency_stopped" if emergency else "completed"
+            if errors:
+                result = "stop_error"
+                reason = f"{reason}; {'; '.join(errors)}"
+
+            self._state.update(
+                {
+                    "active": False,
+                    "status": result,
+                    "reason": reason,
+                    "last_result": result,
+                    "stop_at": dt_util.now().isoformat(),
+                }
+            )
+            await self._async_save()
+            if self._coordinator is not None:
+                await self._coordinator.async_refresh()
+
+            if self._stop_task is current_task:
+                self._stop_task = None
 
     async def async_shutdown_stop(self) -> None:
         if self._state.get("active"):

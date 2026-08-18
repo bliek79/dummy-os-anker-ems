@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.0.1-alpha.11
+
+- Fixed the physical test auto-stop path after the first 300 W / 120 s live test showed the countdown could reach 0 while the test remained running.
+- Replaced the primary delayed stop callback with a dedicated fail-safe task tied to the absolute stop time.
+- Added idempotent stop locking to prevent concurrent watchdog/manual stop races.
+- The UI now enters `stopping` before the zero-setpoint and return to `self_consumption` are executed.
+- Manual stop and restart recovery remain available as independent safety paths.
+
+
 ## 0.0.1-alpha.10
 
 - Added non-actuating Action Controller.
