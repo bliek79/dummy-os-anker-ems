@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.0.1-alpha.8
+## 0.0.1-alpha.9
 
 - Added non-actuating Action Controller.
 - Added Safety Guard for selected scheduler plans.

@@ -5,7 +5,7 @@ Home Assistant EMS-integratie voor de Anker SOLIX Solarbank Max AC.
 **Status:** experimentele alpha  
 **Domein:** `anker_ems`  
 **Minimale Home Assistant-versie:** 2026.7.0  
-**Huidige release:** `0.0.1-alpha.8`
+**Huidige release:** `0.0.1-alpha.9`
 
 ## Alpha 5 - Forecast Sources
 
