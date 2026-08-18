@@ -79,6 +79,7 @@ class AnkerEmsScheduler:
             plan = self.plan_store.get_plan(slot)
             action = plan.get("action")
             execution_mode = plan.get("execution_mode")
+            lifecycle_status = str(plan.get("lifecycle_status", "pending"))
             parsed_start = self._parse_start(plan.get("start_time"))
             delay_min = float(plan.get("max_start_delay_min", 0) or 0)
             window_end = (
@@ -97,11 +98,16 @@ class AnkerEmsScheduler:
                 "target_soc": plan.get("target_soc"),
                 "max_runtime_h": plan.get("max_runtime_h"),
                 "max_start_delay_min": plan.get("max_start_delay_min"),
+                "lifecycle_status": lifecycle_status,
+                "lifecycle_reason": plan.get("lifecycle_reason"),
+                "lifecycle_updated_at": plan.get("lifecycle_updated_at"),
                 "selected": False,
                 "physical_control": False,
             }
 
-            if action == "geen":
+            if lifecycle_status in {"actief", "voltooid", "geannuleerd", "fout"}:
+                detail["status"] = lifecycle_status
+            elif action == "geen":
                 detail["status"] = "leeg"
             elif not self._base_valid(plan):
                 detail["status"] = "ongeldig"
@@ -163,6 +169,8 @@ class AnkerEmsScheduler:
 
         if selected is not None:
             scheduler_status = "startklaar"
+        elif any(detail["status"] == "actief" for detail in slot_details.values()):
+            scheduler_status = "actief"
         elif any(detail["status"] == "wachtend" for detail in slot_details.values()):
             scheduler_status = "wachtend"
         elif any(

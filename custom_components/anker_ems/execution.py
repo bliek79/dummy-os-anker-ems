@@ -254,6 +254,12 @@ class AnkerEmsExecutionController:
             }
         )
         await self._async_save()
+        # The plan lifecycle is separate from the execution controller state.
+        # Mark it active only after the physical command has been accepted, so
+        # the scheduler can no longer select it a second time while it runs.
+        await self._coordinator.plan_store.async_mark_lifecycle(
+            int(slot), "actief", "execution_running"
+        )
         self._schedule_stop(stop_at)
         self._schedule_monitor()
         await self._coordinator.async_refresh()
@@ -320,12 +326,32 @@ class AnkerEmsExecutionController:
         # charge action unsafe once the target is already reached.
         soc = data.get("soc")
         target_soc = self._state.get("target_soc")
-        if soc is not None and target_soc is not None and float(soc) >= float(target_soc):
+        if soc is None:
+            await self.async_stop("soc_unavailable", emergency=True)
+            return
+        try:
+            soc_value = float(soc)
+        except (TypeError, ValueError):
+            await self.async_stop("invalid_soc", emergency=True)
+            return
+        if not 0 <= soc_value <= 100:
+            await self.async_stop("invalid_soc", emergency=True)
+            return
+        if data.get("device_status") is None:
+            await self.async_stop("device_status_unavailable", emergency=True)
+            return
+        if data.get("charge_power_w") is None or data.get("discharge_power_w") is None:
+            await self.async_stop("battery_power_source_unavailable", emergency=True)
+            return
+        if target_soc is not None and soc_value >= float(target_soc):
             await self.async_stop("target_soc_reached", emergency=False)
             return
-        if not data.get("safety_safe"):
-            await self.async_stop("safety_guard_became_unsafe", emergency=True)
-            return
+
+        # Do not reuse the pre-start Safety Guard while a plan is active.
+        # The Safety Guard intentionally requires a scheduler-selected
+        # start-ready plan; an active lifecycle plan is deliberately removed
+        # from scheduler selection to prevent duplicate execution. Runtime
+        # safety is therefore enforced here directly against the live sources.
         if self.remaining_seconds == 0:
             await self.async_stop("max_runtime_reached", emergency=False)
             return
@@ -334,6 +360,7 @@ class AnkerEmsExecutionController:
 
     async def async_stop(self, reason: str, *, emergency: bool = False) -> None:
         async with self._stop_lock:
+            slot = self._state.get("slot")
             if not self._state.get("active") and self._state.get("status") not in {
                 "arming_external_mode",
                 "starting",
@@ -408,6 +435,16 @@ class AnkerEmsExecutionController:
                 }
             )
             await self._async_save()
+
+            if self._coordinator is not None and slot is not None:
+                if result == "completed":
+                    lifecycle = "geannuleerd" if reason == "manual_stop" else "voltooid"
+                else:
+                    lifecycle = "fout"
+                await self._coordinator.plan_store.async_mark_lifecycle(
+                    int(slot), lifecycle, reason
+                )
+
             if self._coordinator is not None:
                 await self._coordinator.async_refresh()
             if self._stop_task is current_task:

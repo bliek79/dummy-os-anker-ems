@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.0.1-alpha.14
+
+- Added persistent plan lifecycle states for the three manual plan slots.
+- A physically started plan now becomes `actief` and is no longer selectable by the Scheduler.
+- A normally finished plan becomes `voltooid`.
+- A manually stopped plan becomes `geannuleerd`.
+- An emergency/error stop becomes `fout`.
+- Completed/cancelled/error plans remain terminal across Home Assistant restarts.
+- Editing any plan field resets its lifecycle to `pending`, making that edited plan eligible for scheduling again.
+- Prevents an already executed direct plan from remaining `startklaar` and being selected again.
+
 ## 0.0.1-alpha.13
 
 - Added persistent Source Monitor for Solcast, Stroomvoorspeller, EnergyZero price data and price forecast updates.

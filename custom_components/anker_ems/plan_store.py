@@ -13,6 +13,16 @@ from .const import DOMAIN, PLAN_SLOT_COUNT
 
 STORAGE_VERSION = 1
 
+CONTROL_FIELDS = {
+    "action",
+    "execution_mode",
+    "start_time",
+    "power_w",
+    "target_soc",
+    "max_runtime_h",
+    "max_start_delay_min",
+}
+
 DEFAULT_PLAN: dict[str, Any] = {
     "action": "geen",
     "execution_mode": "direct",
@@ -21,6 +31,9 @@ DEFAULT_PLAN: dict[str, Any] = {
     "target_soc": 80,
     "max_runtime_h": 2.0,
     "max_start_delay_min": 15,
+    "lifecycle_status": "pending",
+    "lifecycle_reason": None,
+    "lifecycle_updated_at": None,
 }
 
 
@@ -76,7 +89,7 @@ class AnkerEmsPlanStore:
     async def async_set_value(self, slot: int, key: str, value: Any) -> None:
         if slot not in self._plans:
             raise ValueError(f"Unknown plan slot: {slot}")
-        if key not in DEFAULT_PLAN:
+        if key not in CONTROL_FIELDS:
             raise ValueError(f"Unknown plan field: {key}")
 
         if isinstance(value, datetime):
@@ -85,6 +98,32 @@ class AnkerEmsPlanStore:
             value = value.isoformat()
 
         self._plans[slot][key] = value
+        # Any user edit makes a terminal/active plan eligible for a fresh
+        # lifecycle. This prevents completed plans from silently becoming
+        # start-ready again until the user actually changes the plan.
+        self._plans[slot]["lifecycle_status"] = "pending"
+        self._plans[slot]["lifecycle_reason"] = "plan_changed"
+        self._plans[slot]["lifecycle_updated_at"] = dt_util.now().isoformat()
+        await self._async_save()
+        self._notify_listeners()
+
+    async def async_mark_lifecycle(
+        self, slot: int, status: str, reason: str | None = None
+    ) -> None:
+        if slot not in self._plans:
+            raise ValueError(f"Unknown plan slot: {slot}")
+        if status not in {
+            "pending",
+            "actief",
+            "voltooid",
+            "geannuleerd",
+            "fout",
+        }:
+            raise ValueError(f"Unknown lifecycle status: {status}")
+
+        self._plans[slot]["lifecycle_status"] = status
+        self._plans[slot]["lifecycle_reason"] = reason
+        self._plans[slot]["lifecycle_updated_at"] = dt_util.now().isoformat()
         await self._async_save()
         self._notify_listeners()
 
@@ -106,6 +145,10 @@ class AnkerEmsPlanStore:
         plan = self._plans[slot]
         action = plan.get("action")
         execution_mode = plan.get("execution_mode")
+        lifecycle_status = plan.get("lifecycle_status", "pending")
+
+        if lifecycle_status in {"actief", "voltooid", "geannuleerd", "fout"}:
+            return str(lifecycle_status)
         start_time = plan.get("start_time")
         power = plan.get("power_w")
         target_soc = plan.get("target_soc")
