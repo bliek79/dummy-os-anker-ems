@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.0.1-alpha.8
+
+- Added non-actuating Action Controller.
+- Added Safety Guard for selected scheduler plans.
+- Added safety checks for source availability, SOC, target SOC, power and conflicting battery flow.
+- Added semantic desired command attributes for later device-specific execution.
+- Added Safety Guard and Action Controller status/binary sensors.
+- Physical Anker writes remain disabled; alpha 8 is still safe simulation/observe preparation.
+
 ## 0.0.1-alpha.7
 
 - Added simulation-only Scheduler on top of the persistent Plan Store.
