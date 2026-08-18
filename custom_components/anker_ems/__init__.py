@@ -8,6 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.util import dt as dt_util
 
 from .const import (
     DOMAIN,
@@ -16,6 +17,10 @@ from .const import (
     SERVICE_STOP_PHYSICAL_TEST,
     SERVICE_EXECUTE_SELECTED_PLAN,
     SERVICE_STOP_EXECUTION,
+    SERVICE_SCHEDULE_PLAN,
+    SERVICE_START_PLAN_NOW,
+    SERVICE_CANCEL_PLAN,
+    SERVICE_STOP_ALL,
     TEST_DEFAULT_DURATION_S,
     TEST_DEFAULT_POWER_W,
     TEST_MAX_DURATION_S,
@@ -68,6 +73,100 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         coordinator = _single_coordinator(hass)
         await coordinator.execution.async_stop("manual_stop", emergency=False)
 
+
+    def _slot_from_call(call: ServiceCall) -> int:
+        slot = int(call.data.get("slot", 0))
+        if slot not in {1, 2, 3}:
+            raise HomeAssistantError("Planplaats moet 1, 2 of 3 zijn")
+        return slot
+
+    async def _schedule_plan(call: ServiceCall) -> None:
+        coordinator = _single_coordinator(hass)
+        slot = _slot_from_call(call)
+        current = coordinator.plan_store.get_plan(slot)
+        if current.get("action") == "geen":
+            raise HomeAssistantError(f"Plan {slot} heeft nog geen actie")
+        start_raw = current.get("start_time")
+        start = dt_util.parse_datetime(str(start_raw)) if start_raw else None
+        if start is None:
+            raise HomeAssistantError(f"Plan {slot} heeft geen geldige starttijd")
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+        if start <= dt_util.now():
+            raise HomeAssistantError(f"Plan {slot} starttijd moet in de toekomst liggen")
+        await coordinator.plan_store.async_set_value(slot, "execution_mode", "gepland")
+        await coordinator.plan_store.async_mark_lifecycle(slot, "pending", "scheduled_by_user")
+        await coordinator.async_refresh()
+
+    async def _start_plan_now(call: ServiceCall) -> None:
+        if call.data.get("confirm") is not True:
+            raise HomeAssistantError("Bevestiging ontbreekt: zet confirm op true")
+        coordinator = _single_coordinator(hass)
+        slot = _slot_from_call(call)
+        current = coordinator.plan_store.get_plan(slot)
+        if current.get("action") == "geen":
+            raise HomeAssistantError(f"Plan {slot} heeft nog geen actie")
+        await coordinator.plan_store.async_set_value(slot, "execution_mode", "direct")
+        await coordinator.plan_store.async_mark_lifecycle(slot, "pending", "start_now_by_user")
+        await coordinator.async_refresh()
+        data = coordinator.data
+        if data.get("scheduler_selected_slot") != slot or not data.get("scheduler_ready"):
+            raise HomeAssistantError(f"Plan {slot} is niet startklaar")
+        await coordinator.execution.async_execute_selected_plan()
+
+    async def _cancel_plan(call: ServiceCall) -> None:
+        coordinator = _single_coordinator(hass)
+        slot = _slot_from_call(call)
+        execution = coordinator.execution.data
+        if execution.get("active") and int(execution.get("slot") or 0) == slot:
+            await coordinator.execution.async_stop("manual_stop", emergency=False)
+            return
+        await coordinator.plan_store.async_mark_lifecycle(slot, "geannuleerd", "manual_cancel")
+        await coordinator.async_refresh()
+
+    async def _stop_all(call: ServiceCall) -> None:
+        coordinator = _single_coordinator(hass)
+        errors: list[str] = []
+        if coordinator.physical_test.data.get("active"):
+            try:
+                await coordinator.physical_test.async_stop("manual_stop", emergency=False)
+            except Exception as err:
+                errors.append(f"physical_test: {err}")
+        if coordinator.execution.data.get("active"):
+            try:
+                await coordinator.execution.async_stop("manual_stop", emergency=False)
+            except Exception as err:
+                errors.append(f"execution: {err}")
+
+        # Extra safe-return path for an externally controlled battery even when
+        # no controller object currently considers itself active.
+        ids = coordinator.control_entity_ids
+        power_entity = ids.get("power_setpoint")
+        mode_entity = ids.get("operating_mode")
+        if power_entity:
+            state = hass.states.get(power_entity)
+            if state is not None and state.state not in {"unknown", "unavailable"}:
+                try:
+                    await hass.services.async_call(
+                        "number", "set_value", {"value": 0},
+                        target={"entity_id": power_entity}, blocking=True
+                    )
+                except Exception as err:
+                    errors.append(f"power_zero: {err}")
+        if mode_entity:
+            state = hass.states.get(mode_entity)
+            if state is not None and state.state not in {"unknown", "unavailable", "self_consumption"}:
+                try:
+                    await hass.services.async_call(
+                        "select", "select_option", {"option": "self_consumption"},
+                        target={"entity_id": mode_entity}, blocking=True
+                    )
+                except Exception as err:
+                    errors.append(f"self_consumption: {err}")
+        await coordinator.async_refresh()
+        if errors:
+            raise HomeAssistantError("Alles stoppen deels mislukt: " + "; ".join(errors))
+
     hass.services.async_register(
         DOMAIN,
         SERVICE_START_CHARGE_TEST,
@@ -105,6 +204,10 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     hass.services.async_register(
         DOMAIN,
         SERVICE_STOP_EXECUTION,
+    SERVICE_SCHEDULE_PLAN,
+    SERVICE_START_PLAN_NOW,
+    SERVICE_CANCEL_PLAN,
+    SERVICE_STOP_ALL,
         _stop_execution,
         schema=vol.Schema({}),
     )

@@ -109,6 +109,8 @@ class AnkerEmsScheduler:
                 detail["status"] = lifecycle_status
             elif action == "geen":
                 detail["status"] = "leeg"
+            elif lifecycle_status == "concept":
+                detail["status"] = "concept"
             elif not self._base_valid(plan):
                 detail["status"] = "ongeldig"
             elif execution_mode == "direct":

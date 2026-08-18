@@ -31,7 +31,7 @@ DEFAULT_PLAN: dict[str, Any] = {
     "target_soc": 80,
     "max_runtime_h": 2.0,
     "max_start_delay_min": 15,
-    "lifecycle_status": "pending",
+    "lifecycle_status": "concept",
     "lifecycle_reason": None,
     "lifecycle_updated_at": None,
 }
@@ -101,7 +101,7 @@ class AnkerEmsPlanStore:
         # Any user edit makes a terminal/active plan eligible for a fresh
         # lifecycle. This prevents completed plans from silently becoming
         # start-ready again until the user actually changes the plan.
-        self._plans[slot]["lifecycle_status"] = "pending"
+        self._plans[slot]["lifecycle_status"] = "concept"
         self._plans[slot]["lifecycle_reason"] = "plan_changed"
         self._plans[slot]["lifecycle_updated_at"] = dt_util.now().isoformat()
         await self._async_save()
@@ -113,6 +113,7 @@ class AnkerEmsPlanStore:
         if slot not in self._plans:
             raise ValueError(f"Unknown plan slot: {slot}")
         if status not in {
+            "concept",
             "pending",
             "actief",
             "voltooid",
@@ -157,6 +158,8 @@ class AnkerEmsPlanStore:
 
         if action == "geen":
             return "leeg"
+        if lifecycle_status == "concept":
+            return "concept"
         if action not in {"laden", "ontladen"}:
             return "ongeldig"
         if execution_mode not in {"direct", "gepland"}:

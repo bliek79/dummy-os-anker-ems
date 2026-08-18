@@ -5,7 +5,7 @@ Home Assistant EMS-integratie voor de Anker SOLIX Solarbank Max AC.
 **Status:** experimentele alpha  
 **Domein:** `anker_ems`  
 **Minimale Home Assistant-versie:** 2026.7.0  
-**Huidige release:** `0.0.1-alpha.14`
+**Huidige release:** `0.0.1-alpha.15`
 
 ## Alpha 5 - Forecast Sources
 
@@ -115,3 +115,11 @@ Nieuwe diagnose-entiteiten:
 ## Alpha 13 - Source Monitor
 
 Alpha 13 observes when Solcast, Stroomvoorspeller, EnergyZero price data and the price forecast are reported and when their actual content changes. The monitor keeps seven days of event history in Home Assistant storage. It is observational only and does not yet trigger the automatic planner.
+
+
+## Alpha 15 - Handmatige bediening
+
+Alpha 15 maakt de handmatige planworkflow expliciet: planvelden wijzigen maakt
+een plan eerst een concept. Via `schedule_plan` of `start_plan_now` wordt het
+plan bewust vrijgegeven aan Scheduler en uitvoering. `cancel_plan` en `stop_all`
+completeren de handmatige bedieningslaag.

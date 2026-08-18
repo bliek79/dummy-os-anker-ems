@@ -67,3 +67,66 @@ stop_execution:
   description: >-
     Stop een actieve EMS-uitvoering direct, zet het vermogenssetpoint op 0 W
     en keert terug naar self_consumption.
+
+schedule_plan:
+  name: Plan inplannen
+  description: >-
+    Zet de gekozen planplaats expliciet op gepland en maakt het plan beschikbaar
+    voor de Scheduler. De starttijd moet geldig en in de toekomst zijn.
+  fields:
+    slot:
+      name: Planplaats
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 1
+          max: 3
+          step: 1
+          mode: box
+
+start_plan_now:
+  name: Plan nu starten
+  description: >-
+    Zet de gekozen planplaats op direct, maakt hem startklaar en start de fysieke
+    uitvoering via de bestaande Safety Guard en Action Controller.
+  fields:
+    slot:
+      name: Planplaats
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 1
+          max: 3
+          step: 1
+          mode: box
+    confirm:
+      name: Bevestigen
+      required: true
+      example: true
+      selector:
+        boolean:
+
+cancel_plan:
+  name: Plan annuleren
+  description: >-
+    Annuleer de gekozen planplaats. Als precies deze planplaats actief wordt
+    uitgevoerd, wordt de uitvoering veilig gestopt en als geannuleerd gemarkeerd.
+  fields:
+    slot:
+      name: Planplaats
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 1
+          max: 3
+          step: 1
+          mode: box
+
+stop_all:
+  name: Alles stoppen
+  description: >-
+    Stop een actieve fysieke test of EMS-uitvoering, zet waar mogelijk het
+    vermogenssetpoint op 0 W en keer terug naar self_consumption.

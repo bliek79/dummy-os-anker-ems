@@ -1,6 +1,13 @@
 # Changelog
 
-## 0.0.1-alpha.14
+## 0.0.1-alpha.15
+
+- Added explicit manual plan controls: schedule, start now, cancel, and stop all.
+- Plan edits now become `concept` first and are not scheduler-eligible until the user explicitly schedules or starts them.
+- Existing plan lifecycle, safe execution, Source Monitor, and simulation-first architecture remain intact.
+
+
+## 0.0.1-alpha.15
 
 - Added persistent plan lifecycle states for the three manual plan slots.
 - A physically started plan now becomes `actief` and is no longer selectable by the Scheduler.
