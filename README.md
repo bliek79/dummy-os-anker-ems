@@ -5,7 +5,7 @@ Home Assistant EMS-integratie voor de Anker SOLIX Solarbank Max AC.
 **Status:** experimentele alpha  
 **Domein:** `anker_ems`  
 **Minimale Home Assistant-versie:** 2026.7.0  
-**Huidige release:** `0.0.1-alpha.11`
+**Huidige release:** `0.0.1-alpha.12`
 
 ## Alpha 5 - Forecast Sources
 
@@ -83,3 +83,30 @@ Veiligheidsgrenzen voor deze test:
 - bij herstart of unload tijdens een actieve test wordt een safe-stop poging uitgevoerd.
 
 De eerste aanbevolen test is 300 W gedurende 120 seconden.
+
+
+## Alpha 12 - automatische modusovergang en uitvoerstate-machine
+
+Alpha 12 bouwt voort op de geslaagde fysieke laadtest van alpha 11. De nieuwe
+uitvoerstate-machine kan een door de Scheduler geselecteerd laadplan na een
+expliciete bevestiging fysiek uitvoeren.
+
+Belangrijkste eigenschappen:
+
+- service `anker_ems.execute_selected_plan` met verplichte `confirm: true`;
+- schakelt zelfstandig van `self_consumption` naar `third_party_control`;
+- wacht maximaal 20 seconden tot richting- en setpoint-entiteiten beschikbaar zijn;
+- voert daarna opnieuw Safety Guard en Action Controller uit;
+- zet richting en gepland laadvermogen pas na een geldige veiligheidscontrole;
+- bewaakt doel-SOC, maximale looptijd, externe modus, richting, bronbeschikbaarheid en onverwacht ontladen;
+- safe-stop zet eerst het setpoint op 0 W en schakelt daarna terug naar `self_consumption`;
+- actieve uitvoering wordt persistent gevolgd en na een Home Assistant-herstart veilig afgebroken;
+- service `anker_ems.stop_execution` blijft beschikbaar voor handmatige stop;
+- ontladen is in alpha 12 nog fysiek geblokkeerd totdat een afzonderlijke gecontroleerde ontlaadtest is uitgevoerd;
+- de automatische 72-uursplanner start deze uitvoerstate-machine nog niet zelfstandig.
+
+Nieuwe diagnose-entiteiten:
+
+- `Dummy OS EMS Uitvoering status`;
+- `Dummy OS EMS Uitvoering resterend`;
+- `Dummy OS EMS Uitvoering actief`.

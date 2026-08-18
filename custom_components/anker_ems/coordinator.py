@@ -14,6 +14,7 @@ from .scheduler import AnkerEmsScheduler
 from .safety_guard import AnkerEmsSafetyGuard
 from .action_controller import AnkerEmsActionController
 from .physical_test import AnkerEmsPhysicalTestController
+from .execution import AnkerEmsExecutionController
 
 from .const import (
     NAME,
@@ -94,6 +95,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         safety_guard: AnkerEmsSafetyGuard,
         action_controller: AnkerEmsActionController,
         physical_test: AnkerEmsPhysicalTestController,
+        execution: AnkerEmsExecutionController,
     ) -> None:
         super().__init__(
             hass,
@@ -108,6 +110,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.safety_guard = safety_guard
         self.action_controller = action_controller
         self.physical_test = physical_test
+        self.execution = execution
 
     @property
     def simulation_mode(self) -> bool:
@@ -278,4 +281,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         data.update(self.action_controller.evaluate(data))
         test_data = self.physical_test.data
         data.update({f"physical_test_{key}": value for key, value in test_data.items()})
+
+        execution_data = self.execution.data
+        data.update({f"execution_{key}": value for key, value in execution_data.items()})
         return data

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.0.1-alpha.12
+
+- Added explicit plan execution state machine via `anker_ems.execute_selected_plan`.
+- Added automatic transition from `self_consumption` to `third_party_control`.
+- Waits for Anker control entities to become available before setting direction and power.
+- Re-validates Safety Guard and Action Controller after entering external mode.
+- Monitors target SOC, maximum runtime, mode, direction and unexpected discharge during execution.
+- Added guaranteed safe-stop back to 0 W and `self_consumption`.
+- Added persistent restart recovery for an interrupted execution.
+- Added execution status, remaining-time and active entities.
+- Physical discharge remains blocked pending a separate controlled discharge test.
+- Automatic 72-hour planner execution remains disabled; starting an existing selected plan still requires explicit confirmation.
+
 ## 0.0.1-alpha.11
 
 - Fixed the physical test auto-stop path after the first 300 W / 120 s live test showed the countdown could reach 0 while the test remained running.

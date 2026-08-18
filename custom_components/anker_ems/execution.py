@@ -6,40 +6,37 @@ from datetime import datetime, timedelta
 import logging
 from typing import Any
 
-from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .const import (
-    DOMAIN,
-    TEST_DEFAULT_DURATION_S,
-    TEST_DEFAULT_POWER_W,
-    TEST_MAX_DURATION_S,
-    TEST_MAX_POWER_W,
-    TEST_MIN_DURATION_S,
-    TEST_MIN_POWER_W,
-)
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 _STORAGE_VERSION = 1
+_EXTERNAL_MODE = "third_party_control"
+_SELF_MODE = "self_consumption"
+_MODE_WAIT_SECONDS = 20
+_MONITOR_INTERVAL_SECONDS = 5
 
 
-class AnkerEmsPhysicalTestController:
-    """Run a tightly bounded physical charge test.
+class AnkerEmsExecutionController:
+    """Execute a scheduler-selected plan with an explicit user confirmation.
 
-    This controller is intentionally separate from the normal Action Controller.
-    It can only be started through an explicit service action, only charges, and
-    always attempts to return the battery to self_consumption when it stops.
+    Alpha 12 introduces the real execution state machine and automatic mode
+    transition. It does not yet auto-trigger from the scheduler: a user/service
+    call must explicitly start the selected plan. Charging is physically
+    enabled; discharging remains blocked until a separate controlled discharge
+    test has been validated.
     """
 
     def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
         self.hass = hass
         self.entry_id = entry_id
         self._store: Store[dict[str, Any]] = Store(
-            hass, _STORAGE_VERSION, f"{DOMAIN}.{entry_id}.physical_test"
+            hass, _STORAGE_VERSION, f"{DOMAIN}.{entry_id}.execution"
         )
         self._coordinator = None
         self._stop_task: asyncio.Task[None] | None = None
@@ -48,9 +45,12 @@ class AnkerEmsPhysicalTestController:
         self._state: dict[str, Any] = {
             "active": False,
             "status": "idle",
-            "reason": "Geen fysieke test actief",
+            "reason": "Geen EMS-uitvoering actief",
+            "slot": None,
+            "action": None,
             "power_w": None,
-            "duration_s": None,
+            "target_soc": None,
+            "max_runtime_h": None,
             "started_at": None,
             "stop_at": None,
             "last_result": None,
@@ -103,81 +103,131 @@ class AnkerEmsPhysicalTestController:
             raise HomeAssistantError("Vermogenssetpoint moet een number-entiteit zijn")
         return mode, direction, power
 
+    async def _wait_for_external_controls(self) -> None:
+        """Wait until external mode and its dependent control entities are live."""
+        if self._coordinator is None:
+            raise HomeAssistantError("Dummy OS EMS coordinator is niet beschikbaar")
+        deadline = dt_util.now() + timedelta(seconds=_MODE_WAIT_SECONDS)
+        while dt_util.now() < deadline:
+            await self._coordinator.async_refresh()
+            data = self._coordinator.data
+            if (
+                data.get("operating_mode") == _EXTERNAL_MODE
+                and data.get("action_direction") is not None
+                and data.get("power_setpoint_w") is not None
+            ):
+                return
+            await asyncio.sleep(1)
+        raise HomeAssistantError(
+            "Externe modus werd niet tijdig beschikbaar of besturingsbronnen bleven unavailable"
+        )
+
     async def async_recover_if_needed(self) -> None:
-        """Fail safe after a Home Assistant restart during an active test."""
         if not self._state.get("active"):
             return
-        _LOGGER.warning("Recovering interrupted Dummy OS EMS physical test")
+        _LOGGER.warning("Recovering interrupted Dummy OS EMS execution")
         await self.async_stop("restart_recovery", emergency=True)
 
-    async def async_start_charge_test(
-        self,
-        *,
-        power_w: int = TEST_DEFAULT_POWER_W,
-        duration_s: int = TEST_DEFAULT_DURATION_S,
-    ) -> None:
+    async def async_execute_selected_plan(self) -> None:
         if self._coordinator is None:
             raise HomeAssistantError("Dummy OS EMS coordinator is niet beschikbaar")
         if self._state.get("active"):
-            raise HomeAssistantError("Er is al een fysieke test actief")
-        if (
-            self._coordinator is not None
-            and getattr(self._coordinator, "execution", None) is not None
-            and self._coordinator.execution.data.get("active")
-        ):
             raise HomeAssistantError("Er is al een EMS-uitvoering actief")
-        if not TEST_MIN_POWER_W <= power_w <= TEST_MAX_POWER_W:
-            raise HomeAssistantError(
-                f"Testvermogen moet tussen {TEST_MIN_POWER_W} en {TEST_MAX_POWER_W} W liggen"
-            )
-        if not TEST_MIN_DURATION_S <= duration_s <= TEST_MAX_DURATION_S:
-            raise HomeAssistantError(
-                f"Testduur moet tussen {TEST_MIN_DURATION_S} en {TEST_MAX_DURATION_S} seconden liggen"
-            )
+        if self._coordinator.physical_test.data.get("active"):
+            raise HomeAssistantError("Er is nog een fysieke test actief")
 
         await self._coordinator.async_refresh()
         data = self._coordinator.data
-
-        # This alpha only permits an explicit test while the normal EMS remains
-        # in simulation mode. It prevents accidental activation of the normal
-        # controller path.
         if not data.get("simulation_mode"):
-            raise HomeAssistantError("Fysieke test is alleen toegestaan terwijl EMS op simulation staat")
+            raise HomeAssistantError(
+                "Alpha 12 verwacht dat de normale automatische planner nog in simulation staat"
+            )
         if not data.get("scheduler_ready"):
             raise HomeAssistantError("Scheduler heeft geen startklaar plan")
-        if data.get("controller_action") != "laden":
-            raise HomeAssistantError("Alpha 10 ondersteunt uitsluitend een laadtest")
-        if not data.get("safety_safe"):
+
+        slot = data.get("scheduler_selected_slot")
+        slots = data.get("scheduler_slots", {}) or {}
+        detail = slots.get(slot) or slots.get(str(slot)) or {}
+        action = detail.get("action")
+        power_w = int(float(detail.get("power_w") or 0))
+        target_soc = float(detail.get("target_soc") or 0)
+        max_runtime_h = float(detail.get("max_runtime_h") or 0)
+        soc = data.get("soc")
+
+        if action == "ontladen":
             raise HomeAssistantError(
-                f"Safety Guard blokkeert de test: {data.get('safety_reason') or 'onbekende reden'}"
+                "Alpha 12 voert ontladen nog niet fysiek uit; eerst is een gecontroleerde ontlaadtest nodig"
             )
-        if data.get("operating_mode") != "third_party_control":
-            raise HomeAssistantError("Zet de batterij eerst op third_party_control")
-        if data.get("action_direction") is None or data.get("power_setpoint_w") is None:
-            raise HomeAssistantError("Besturingsbronnen zijn niet beschikbaar")
+        if action != "laden":
+            raise HomeAssistantError("Geselecteerd plan is geen ondersteunde laadactie")
+        if not 100 <= power_w <= 3500:
+            raise HomeAssistantError("Planvermogen valt buiten 100-3500 W")
+        if not 5 <= target_soc <= 100:
+            raise HomeAssistantError("Doel-SOC valt buiten 5-100%")
+        if not 0.5 <= max_runtime_h <= 12:
+            raise HomeAssistantError("Maximale looptijd valt buiten 0,5-12 uur")
+        if soc is None:
+            raise HomeAssistantError("SOC is niet beschikbaar")
+        if float(soc) >= target_soc:
+            raise HomeAssistantError("Doel-SOC is al bereikt")
         if (data.get("discharge_power_w") or 0) > 100:
-            raise HomeAssistantError("Ontlaadvermogen is actief; test wordt niet gestart")
+            raise HomeAssistantError("Batterij ontlaadt momenteel; uitvoering wordt niet gestart")
 
         mode_entity, direction_entity, power_entity = self._entity_ids()
         now = dt_util.now()
-        stop_at = now + timedelta(seconds=duration_s)
+        stop_at = now + timedelta(hours=max_runtime_h)
         self._state.update(
             {
                 "active": True,
-                "status": "starting",
-                "reason": "Fysieke laadtest wordt gestart",
+                "status": "arming_external_mode",
+                "reason": "Externe modus wordt automatisch geactiveerd",
+                "slot": slot,
+                "action": action,
                 "power_w": power_w,
-                "duration_s": duration_s,
+                "target_soc": target_soc,
+                "max_runtime_h": max_runtime_h,
                 "started_at": now.isoformat(),
                 "stop_at": stop_at.isoformat(),
                 "last_result": None,
             }
         )
         await self._async_save()
+        await self._coordinator.async_refresh()
 
         try:
-            # Direction first, power second. Operating mode is deliberately not
-            # switched automatically in alpha 10; the user must arm it manually.
+            if data.get("operating_mode") != _EXTERNAL_MODE:
+                await self.hass.services.async_call(
+                    "select",
+                    "select_option",
+                    {"option": _EXTERNAL_MODE},
+                    target={"entity_id": mode_entity},
+                    blocking=True,
+                )
+            await self._wait_for_external_controls()
+
+            # Re-evaluate the full safety/controller chain after the mode switch.
+            await self._coordinator.async_refresh()
+            armed = self._coordinator.data
+            if not armed.get("safety_safe"):
+                raise HomeAssistantError(
+                    f"Safety Guard blokkeert uitvoering: {armed.get('safety_reason') or 'onbekende reden'}"
+                )
+            if not armed.get("controller_ready"):
+                raise HomeAssistantError(
+                    f"Action Controller niet gereed: {armed.get('controller_reason') or 'onbekende reden'}"
+                )
+            if armed.get("controller_action") != action:
+                raise HomeAssistantError("Geselecteerde actie wijzigde tijdens het inschakelen")
+
+            self._state.update(
+                {
+                    "status": "starting",
+                    "reason": f"Plan {slot} wordt gestart: {power_w} W laden tot {target_soc:.0f}%",
+                }
+            )
+            await self._async_save()
+            await self._coordinator.async_refresh()
+
             await self.hass.services.async_call(
                 "select",
                 "select_option",
@@ -193,14 +243,14 @@ class AnkerEmsPhysicalTestController:
                 blocking=True,
             )
         except Exception as err:
-            _LOGGER.exception("Failed to start physical charge test")
+            _LOGGER.exception("Failed to start Dummy OS EMS execution")
             await self.async_stop(f"start_failed: {err}", emergency=True)
-            raise HomeAssistantError(f"Start fysieke test mislukt: {err}") from err
+            raise HomeAssistantError(f"EMS-uitvoering starten mislukt: {err}") from err
 
         self._state.update(
             {
                 "status": "running",
-                "reason": f"Laadtest actief: {power_w} W gedurende maximaal {duration_s} s",
+                "reason": f"Plan {slot} actief: laden met {power_w} W tot {target_soc:.0f}% of max {max_runtime_h:g} uur",
             }
         )
         await self._async_save()
@@ -209,19 +259,11 @@ class AnkerEmsPhysicalTestController:
         await self._coordinator.async_refresh()
 
     def _schedule_stop(self, stop_at: datetime) -> None:
-        """Schedule a dedicated fail-safe task for the absolute stop time.
-
-        Alpha 10 used ``async_call_later`` for the primary stop callback. During
-        the first physical test the countdown reached zero while that callback
-        did not complete the safe-stop path. A dedicated task is easier to
-        supervise and, importantly, cannot accidentally cancel its own callback
-        while ``async_stop`` is running.
-        """
         if self._stop_task is not None and not self._stop_task.done():
             self._stop_task.cancel()
         self._stop_task = self.hass.async_create_task(
             self._async_auto_stop_at(stop_at),
-            "Dummy OS EMS physical test auto-stop",
+            "Dummy OS EMS execution max-runtime stop",
         )
 
     async def _async_auto_stop_at(self, stop_at: datetime) -> None:
@@ -229,14 +271,11 @@ class AnkerEmsPhysicalTestController:
             delay = max(0.0, (stop_at - dt_util.now()).total_seconds())
             await asyncio.sleep(delay)
             if self._state.get("active"):
-                _LOGGER.info("Dummy OS EMS physical test duration reached; executing safe stop")
-                await self.async_stop("test_duration_reached", emergency=False)
+                await self.async_stop("max_runtime_reached", emergency=False)
         except asyncio.CancelledError:
             raise
         except Exception:
-            _LOGGER.exception("Automatic safe stop for physical test failed")
-            # Keep the test marked active so restart recovery/manual stop can
-            # still see that intervention is required.
+            _LOGGER.exception("Automatic EMS execution stop failed")
             self._state.update(
                 {
                     "status": "stop_error",
@@ -253,7 +292,7 @@ class AnkerEmsPhysicalTestController:
             self._cancel_monitor()
         self._cancel_monitor = async_call_later(
             self.hass,
-            5,
+            _MONITOR_INTERVAL_SECONDS,
             lambda _now: self.hass.async_create_task(self._async_monitor_once()),
         )
 
@@ -263,7 +302,7 @@ class AnkerEmsPhysicalTestController:
         await self._coordinator.async_refresh()
         data = self._coordinator.data
 
-        if data.get("operating_mode") != "third_party_control":
+        if data.get("operating_mode") != _EXTERNAL_MODE:
             await self.async_stop("operating_mode_changed", emergency=True)
             return
         if data.get("action_direction") != "charge":
@@ -275,28 +314,28 @@ class AnkerEmsPhysicalTestController:
         if (data.get("discharge_power_w") or 0) > 100:
             await self.async_stop("unexpected_discharge_detected", emergency=True)
             return
+
+        # Reaching the planned target is a normal completion condition. Check
+        # this before the Safety Guard, because the guard correctly marks a
+        # charge action unsafe once the target is already reached.
+        soc = data.get("soc")
+        target_soc = self._state.get("target_soc")
+        if soc is not None and target_soc is not None and float(soc) >= float(target_soc):
+            await self.async_stop("target_soc_reached", emergency=False)
+            return
         if not data.get("safety_safe"):
             await self.async_stop("safety_guard_became_unsafe", emergency=True)
             return
-
-        target_soc = data.get("controller_target_soc")
-        soc = data.get("soc")
-        if target_soc is not None and soc is not None and soc >= target_soc:
-            await self.async_stop("target_soc_reached", emergency=False)
-            return
-
         if self.remaining_seconds == 0:
-            await self.async_stop("test_duration_reached", emergency=False)
+            await self.async_stop("max_runtime_reached", emergency=False)
             return
 
         self._schedule_monitor()
 
     async def async_stop(self, reason: str, *, emergency: bool = False) -> None:
-        """Stop the test and return the battery to self consumption."""
         async with self._stop_lock:
-            # A second stop request may arrive while the first one is completing
-            # (for example watchdog + manual stop). Treat it as idempotent.
             if not self._state.get("active") and self._state.get("status") not in {
+                "arming_external_mode",
                 "starting",
                 "running",
                 "stopping",
@@ -312,16 +351,12 @@ class AnkerEmsPhysicalTestController:
                 self._stop_task.cancel()
             if self._stop_task is not current_task:
                 self._stop_task = None
-
             if self._cancel_monitor is not None:
                 self._cancel_monitor()
                 self._cancel_monitor = None
 
             self._state.update(
-                {
-                    "status": "stopping",
-                    "reason": f"Safe-stop actief: {reason}",
-                }
+                {"status": "stopping", "reason": f"Safe-stop actief: {reason}"}
             )
             await self._async_save()
             if self._coordinator is not None:
@@ -346,16 +381,13 @@ class AnkerEmsPhysicalTestController:
                 except Exception as err:
                     errors.append(f"power_zero_failed: {err}")
 
-            # Give the device a brief moment to accept the zero setpoint before
-            # handing control back to its own self-consumption logic.
             await asyncio.sleep(1)
-
             if mode_entity:
                 try:
                     await self.hass.services.async_call(
                         "select",
                         "select_option",
-                        {"option": "self_consumption"},
+                        {"option": _SELF_MODE},
                         target={"entity_id": mode_entity},
                         blocking=True,
                     )
@@ -366,7 +398,6 @@ class AnkerEmsPhysicalTestController:
             if errors:
                 result = "stop_error"
                 reason = f"{reason}; {'; '.join(errors)}"
-
             self._state.update(
                 {
                     "active": False,
@@ -379,7 +410,6 @@ class AnkerEmsPhysicalTestController:
             await self._async_save()
             if self._coordinator is not None:
                 await self._coordinator.async_refresh()
-
             if self._stop_task is current_task:
                 self._stop_task = None
 
@@ -388,4 +418,4 @@ class AnkerEmsPhysicalTestController:
             try:
                 await self.async_stop("home_assistant_stop", emergency=True)
             except Exception:
-                _LOGGER.exception("Could not stop physical test during Home Assistant shutdown")
+                _LOGGER.exception("Could not stop EMS execution during Home Assistant shutdown")

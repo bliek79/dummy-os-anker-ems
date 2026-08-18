@@ -72,6 +72,25 @@ def _physical_test_attrs(data: dict[str, Any]) -> dict[str, Any]:
         "test_limits": {"max_power_w": 500, "max_duration_s": 120, "charge_only": True},
     }
 
+
+
+def _execution_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "active": data.get("execution_active", False),
+        "reason": data.get("execution_reason"),
+        "slot": data.get("execution_slot"),
+        "action": data.get("execution_action"),
+        "power_w": data.get("execution_power_w"),
+        "target_soc": data.get("execution_target_soc"),
+        "max_runtime_h": data.get("execution_max_runtime_h"),
+        "remaining_s": data.get("execution_remaining_s"),
+        "started_at": data.get("execution_started_at"),
+        "stop_at": data.get("execution_stop_at"),
+        "last_result": data.get("execution_last_result"),
+        "automatic_mode_switch": True,
+        "discharge_enabled": False,
+    }
+
 def _controller_attrs(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "selected_slot": data.get("controller_selected_slot"),
@@ -181,6 +200,19 @@ SENSORS: tuple[AnkerEmsSensorDescription, ...] = (
         native_unit_of_measurement="s",
         value_fn=lambda d: d.get("physical_test_remaining_s"),
         attrs_fn=_physical_test_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="execution_status",
+        name="Dummy OS EMS Uitvoering status",
+        value_fn=lambda d: d.get("execution_status") or "idle",
+        attrs_fn=_execution_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="execution_remaining",
+        name="Dummy OS EMS Uitvoering resterend",
+        native_unit_of_measurement="s",
+        value_fn=lambda d: d.get("execution_remaining_s"),
+        attrs_fn=_execution_attrs,
     ),
 )
 

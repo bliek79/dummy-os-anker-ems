@@ -26,6 +26,7 @@ async def async_setup_entry(
             AnkerEmsSafetySafe(coordinator, entry),
             AnkerEmsControllerReady(coordinator, entry),
             AnkerEmsPhysicalTestActive(coordinator, entry),
+            AnkerEmsExecutionActive(coordinator, entry),
         ]
     )
 
@@ -200,4 +201,30 @@ class AnkerEmsPhysicalTestActive(_AnkerEmsBinarySensorBase):
             "started_at": data.get("physical_test_started_at"),
             "stop_at": data.get("physical_test_stop_at"),
             "last_result": data.get("physical_test_last_result"),
+        }
+
+
+class AnkerEmsExecutionActive(_AnkerEmsBinarySensorBase):
+    _attr_name = "Dummy OS EMS Uitvoering actief"
+
+    def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{entry.entry_id}_execution_active"
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self.coordinator.data.get("execution_active"))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        data = self.coordinator.data
+        return {
+            "status": data.get("execution_status"),
+            "reason": data.get("execution_reason"),
+            "slot": data.get("execution_slot"),
+            "action": data.get("execution_action"),
+            "power_w": data.get("execution_power_w"),
+            "target_soc": data.get("execution_target_soc"),
+            "remaining_s": data.get("execution_remaining_s"),
+            "last_result": data.get("execution_last_result"),
         }

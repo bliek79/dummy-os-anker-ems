@@ -14,6 +14,8 @@ from .const import (
     PLATFORMS,
     SERVICE_START_CHARGE_TEST,
     SERVICE_STOP_PHYSICAL_TEST,
+    SERVICE_EXECUTE_SELECTED_PLAN,
+    SERVICE_STOP_EXECUTION,
     TEST_DEFAULT_DURATION_S,
     TEST_DEFAULT_POWER_W,
     TEST_MAX_DURATION_S,
@@ -27,6 +29,7 @@ from .scheduler import AnkerEmsScheduler
 from .safety_guard import AnkerEmsSafetyGuard
 from .action_controller import AnkerEmsActionController
 from .physical_test import AnkerEmsPhysicalTestController
+from .execution import AnkerEmsExecutionController
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -54,6 +57,16 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         coordinator = _single_coordinator(hass)
         await coordinator.physical_test.async_stop("manual_stop", emergency=False)
 
+    async def _execute_selected_plan(call: ServiceCall) -> None:
+        if call.data.get("confirm") is not True:
+            raise HomeAssistantError("Bevestiging ontbreekt: zet confirm op true")
+        coordinator = _single_coordinator(hass)
+        await coordinator.execution.async_execute_selected_plan()
+
+    async def _stop_execution(call: ServiceCall) -> None:
+        coordinator = _single_coordinator(hass)
+        await coordinator.execution.async_stop("manual_stop", emergency=False)
+
     hass.services.async_register(
         DOMAIN,
         SERVICE_START_CHARGE_TEST,
@@ -63,10 +76,16 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
                 vol.Required("confirm"): bool,
                 vol.Optional(
                     "power_w", default=TEST_DEFAULT_POWER_W
-                ): vol.All(vol.Coerce(int), vol.Range(min=TEST_MIN_POWER_W, max=TEST_MAX_POWER_W)),
+                ): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(min=TEST_MIN_POWER_W, max=TEST_MAX_POWER_W),
+                ),
                 vol.Optional(
                     "duration_s", default=TEST_DEFAULT_DURATION_S
-                ): vol.All(vol.Coerce(int), vol.Range(min=TEST_MIN_DURATION_S, max=TEST_MAX_DURATION_S)),
+                ): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(min=TEST_MIN_DURATION_S, max=TEST_MAX_DURATION_S),
+                ),
             }
         ),
     )
@@ -74,6 +93,18 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         DOMAIN,
         SERVICE_STOP_PHYSICAL_TEST,
         _stop_physical_test,
+        schema=vol.Schema({}),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_EXECUTE_SELECTED_PLAN,
+        _execute_selected_plan,
+        schema=vol.Schema({vol.Required("confirm"): bool}),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_STOP_EXECUTION,
+        _stop_execution,
         schema=vol.Schema({}),
     )
     return True
@@ -88,6 +119,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     action_controller = AnkerEmsActionController()
     physical_test = AnkerEmsPhysicalTestController(hass, entry.entry_id)
     await physical_test.async_load()
+    execution = AnkerEmsExecutionController(hass, entry.entry_id)
+    await execution.async_load()
 
     coordinator = AnkerEmsCoordinator(
         hass,
@@ -97,8 +130,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         safety_guard,
         action_controller,
         physical_test,
+        execution,
     )
     physical_test.attach_coordinator(coordinator)
+    execution.attach_coordinator(coordinator)
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
@@ -106,6 +141,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # If Home Assistant restarted during a physical test, immediately attempt a
     # safe stop before exposing the integration as fully loaded.
     await physical_test.async_recover_if_needed()
+    await execution.async_recover_if_needed()
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
@@ -117,6 +153,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     @callback
     def _shutdown(_event) -> None:
         hass.async_create_task(physical_test.async_shutdown_stop())
+        hass.async_create_task(execution.async_shutdown_stop())
 
     entry.async_on_unload(hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _shutdown))
 
@@ -136,6 +173,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator: AnkerEmsCoordinator | None = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     if coordinator is not None and coordinator.physical_test.data.get("active"):
         await coordinator.physical_test.async_stop("integration_unload", emergency=True)
+    if coordinator is not None and coordinator.execution.data.get("active"):
+        await coordinator.execution.async_stop("integration_unload", emergency=True)
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
