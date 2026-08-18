@@ -174,15 +174,11 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         schema=vol.Schema(
             {
                 vol.Required("confirm"): bool,
-                vol.Optional(
-                    "power_w", default=TEST_DEFAULT_POWER_W
-                ): vol.All(
+                vol.Optional("power_w", default=TEST_DEFAULT_POWER_W): vol.All(
                     vol.Coerce(int),
                     vol.Range(min=TEST_MIN_POWER_W, max=TEST_MAX_POWER_W),
                 ),
-                vol.Optional(
-                    "duration_s", default=TEST_DEFAULT_DURATION_S
-                ): vol.All(
+                vol.Optional("duration_s", default=TEST_DEFAULT_DURATION_S): vol.All(
                     vol.Coerce(int),
                     vol.Range(min=TEST_MIN_DURATION_S, max=TEST_MAX_DURATION_S),
                 ),
@@ -204,11 +200,38 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     hass.services.async_register(
         DOMAIN,
         SERVICE_STOP_EXECUTION,
-    SERVICE_SCHEDULE_PLAN,
-    SERVICE_START_PLAN_NOW,
-    SERVICE_CANCEL_PLAN,
-    SERVICE_STOP_ALL,
         _stop_execution,
+        schema=vol.Schema({}),
+    )
+
+    plan_slot_schema = vol.All(vol.Coerce(int), vol.Range(min=1, max=3))
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SCHEDULE_PLAN,
+        _schedule_plan,
+        schema=vol.Schema({vol.Required("slot"): plan_slot_schema}),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_START_PLAN_NOW,
+        _start_plan_now,
+        schema=vol.Schema(
+            {
+                vol.Required("slot"): plan_slot_schema,
+                vol.Required("confirm"): bool,
+            }
+        ),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CANCEL_PLAN,
+        _cancel_plan,
+        schema=vol.Schema({vol.Required("slot"): plan_slot_schema}),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_STOP_ALL,
+        _stop_all,
         schema=vol.Schema({}),
     )
     return True

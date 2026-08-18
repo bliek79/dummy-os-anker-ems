@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.0.1-alpha.16
+
+- Hotfix for alpha15 service registration.
+- Fixes Home Assistant startup error: `ServiceRegistry.async_register() got multiple values for argument 'schema'`.
+- No intended functional changes to the alpha15 manual plan controls.
+
+
 ## 0.0.1-alpha.15
 
 - Added explicit manual plan controls: schedule, start now, cancel, and stop all.
