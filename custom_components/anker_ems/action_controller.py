@@ -6,7 +6,7 @@ from typing import Any
 class AnkerEmsActionController:
     """Prepare a semantic battery command without executing it.
 
-    Alpha 8 proves the controller/safety decision chain. It intentionally does
+    Alpha 10 keeps the controller/safety decision chain in simulation. It intentionally does
     not call Home Assistant services. Device-specific command mapping and
     physical writes are reserved for a later alpha after explicit validation.
     """
@@ -58,7 +58,7 @@ class AnkerEmsActionController:
             "controller_reason": (
                 "Commando veilig voorbereid; simulatiemodus voorkomt fysieke uitvoering"
                 if simulation
-                else "Commando veilig voorbereid; alpha 8 heeft fysieke uitvoering nog uitgeschakeld"
+                else "Commando veilig voorbereid; normale EMS-besturing heeft fysieke uitvoering nog uitgeschakeld"
             ),
             "controller_desired_mode": "third_party_control",
             "controller_desired_direction": detail.get("action"),

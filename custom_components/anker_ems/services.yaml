@@ -1,0 +1,46 @@
+start_charge_test:
+  name: Start fysieke laadtest
+  description: >-
+    Start een expliciete, begrensde fysieke laadtest. Alleen laden is toegestaan.
+    De normale EMS-besturing blijft in simulatiemodus. De test stopt automatisch
+    en probeert daarna terug te keren naar self_consumption.
+  fields:
+    confirm:
+      name: Bevestigen
+      description: Moet expliciet op true staan om de fysieke test te starten.
+      required: true
+      example: true
+      selector:
+        boolean:
+    power_w:
+      name: Testvermogen
+      description: Laadvermogen voor de test, begrensd op 100 tot 500 W.
+      required: false
+      default: 300
+      example: 300
+      selector:
+        number:
+          min: 100
+          max: 500
+          step: 100
+          unit_of_measurement: W
+          mode: box
+    duration_s:
+      name: Testduur
+      description: Maximale testduur, begrensd op 10 tot 120 seconden.
+      required: false
+      default: 120
+      example: 120
+      selector:
+        number:
+          min: 10
+          max: 120
+          step: 10
+          unit_of_measurement: s
+          mode: box
+
+stop_physical_test:
+  name: Stop fysieke test
+  description: >-
+    Stop de fysieke test direct, zet het vermogenssetpoint op 0 W en probeert
+    terug te keren naar self_consumption.

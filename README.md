@@ -5,7 +5,7 @@ Home Assistant EMS-integratie voor de Anker SOLIX Solarbank Max AC.
 **Status:** experimentele alpha  
 **Domein:** `anker_ems`  
 **Minimale Home Assistant-versie:** 2026.7.0  
-**Huidige release:** `0.0.1-alpha.9`
+**Huidige release:** `0.0.1-alpha.10`
 
 ## Alpha 5 - Forecast Sources
 
@@ -66,3 +66,20 @@ The Scheduler evaluates persistent plans, start windows and conflicts. It remain
 ## Alpha 8 safety boundary
 
 Alpha 8 adds the Action Controller and Safety Guard decision chain, but it does not call Home Assistant services or write commands to the Anker device. It only prepares and validates the semantic command that a later alpha may execute after explicit validation.
+
+## Alpha 10 - gecontroleerde fysieke laadtest
+
+Alpha 10 voegt uitsluitend een expliciete fysieke testactie toe. De normale EMS-keten blijft in simulatie.
+
+Veiligheidsgrenzen voor deze test:
+
+- alleen laden;
+- expliciete `confirm: true`;
+- 100-500 W;
+- 10-120 seconden;
+- `third_party_control` moet vooraf actief zijn;
+- Scheduler, Safety Guard en Action Controller moeten de laadactie goedkeuren;
+- automatische stop naar 0 W en terug naar `self_consumption`;
+- bij herstart of unload tijdens een actieve test wordt een safe-stop poging uitgevoerd.
+
+De eerste aanbevolen test is 300 W gedurende 120 seconden.

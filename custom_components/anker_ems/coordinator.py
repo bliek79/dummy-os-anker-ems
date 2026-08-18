@@ -13,6 +13,7 @@ from .plan_store import AnkerEmsPlanStore
 from .scheduler import AnkerEmsScheduler
 from .safety_guard import AnkerEmsSafetyGuard
 from .action_controller import AnkerEmsActionController
+from .physical_test import AnkerEmsPhysicalTestController
 
 from .const import (
     NAME,
@@ -92,6 +93,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         scheduler: AnkerEmsScheduler,
         safety_guard: AnkerEmsSafetyGuard,
         action_controller: AnkerEmsActionController,
+        physical_test: AnkerEmsPhysicalTestController,
     ) -> None:
         super().__init__(
             hass,
@@ -105,6 +107,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.scheduler = scheduler
         self.safety_guard = safety_guard
         self.action_controller = action_controller
+        self.physical_test = physical_test
 
     @property
     def simulation_mode(self) -> bool:
@@ -112,6 +115,15 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _entity_id(self, key: str, default: str | None = None) -> str | None:
         return self.entry.options.get(key) or self.entry.data.get(key) or default
+
+
+    @property
+    def control_entity_ids(self) -> dict[str, str | None]:
+        return {
+            "operating_mode": self._entity_id(CONF_OPERATING_MODE_ENTITY),
+            "action_direction": self._entity_id(CONF_ACTION_DIRECTION_ENTITY),
+            "power_setpoint": self._entity_id(CONF_POWER_SETPOINT_ENTITY),
+        }
 
     def _state_by_entity_id(self, entity_id: str | None) -> Any:
         if not entity_id:
@@ -264,4 +276,6 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         data.update(self.scheduler.evaluate())
         data.update(self.safety_guard.evaluate(data))
         data.update(self.action_controller.evaluate(data))
+        test_data = self.physical_test.data
+        data.update({f"physical_test_{key}": value for key, value in test_data.items()})
         return data

@@ -8,7 +8,7 @@ from .const import MAX_SOC_PERCENT, MIN_SOC_PERCENT
 class AnkerEmsSafetyGuard:
     """Evaluate whether a scheduler-selected action is safe to prepare.
 
-    Alpha 8 is deliberately non-actuating. The guard validates the current
+    Alpha 10 keeps the normal EMS controller non-actuating. The guard validates the current
     Home Assistant source state and the selected persistent plan, but never
     calls services or writes to the physical battery.
     """
@@ -58,13 +58,15 @@ class AnkerEmsSafetyGuard:
         if any(value is None for value in observation_values):
             reasons.append("observation_sources_missing")
 
-        control_values = (
-            data.get("operating_mode"),
-            data.get("action_direction"),
-            data.get("power_setpoint_w"),
-        )
-        if any(value is None for value in control_values):
-            reasons.append("control_sources_missing")
+        if data.get("operating_mode") != "third_party_control":
+            reasons.append("not_in_external_mode")
+        else:
+            control_values = (
+                data.get("action_direction"),
+                data.get("power_setpoint_w"),
+            )
+            if any(value is None for value in control_values):
+                reasons.append("control_sources_missing")
 
         if action not in {"laden", "ontladen"}:
             reasons.append("invalid_action")
@@ -103,7 +105,7 @@ class AnkerEmsSafetyGuard:
             reason_text = "Veiligheidscontrole akkoord; fysieke uitvoering geblokkeerd door simulatiemodus"
         elif safe:
             status = "veilig_observe"
-            reason_text = "Veiligheidscontrole akkoord; alpha 8 voert nog geen fysieke commando's uit"
+            reason_text = "Veiligheidscontrole akkoord; normale EMS-controller voert nog geen fysieke commando's uit"
         else:
             status = "geblokkeerd"
             reason_text = ", ".join(reasons)
