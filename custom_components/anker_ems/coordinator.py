@@ -11,6 +11,8 @@ from homeassistant.util import dt as dt_util
 
 from .plan_store import AnkerEmsPlanStore
 from .scheduler import AnkerEmsScheduler
+from .safety_guard import AnkerEmsSafetyGuard
+from .action_controller import AnkerEmsActionController
 
 from .const import (
     NAME,
@@ -88,6 +90,8 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         entry: ConfigEntry,
         plan_store: AnkerEmsPlanStore,
         scheduler: AnkerEmsScheduler,
+        safety_guard: AnkerEmsSafetyGuard,
+        action_controller: AnkerEmsActionController,
     ) -> None:
         super().__init__(
             hass,
@@ -99,6 +103,8 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.entry = entry
         self.plan_store = plan_store
         self.scheduler = scheduler
+        self.safety_guard = safety_guard
+        self.action_controller = action_controller
 
     @property
     def simulation_mode(self) -> bool:
@@ -256,4 +262,6 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
         data.update(self._build_forecast())
         data.update(self.scheduler.evaluate())
+        data.update(self.safety_guard.evaluate(data))
+        data.update(self.action_controller.evaluate(data))
         return data

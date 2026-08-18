@@ -47,6 +47,32 @@ def _scheduler_attrs(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _safety_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "selected_slot": data.get("safety_selected_slot"),
+        "reason": data.get("safety_reason"),
+        "reasons": data.get("safety_reasons", []),
+        "warnings": data.get("safety_warnings", []),
+        "physical_control": data.get("safety_physical_control", False),
+    }
+
+
+def _controller_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "selected_slot": data.get("controller_selected_slot"),
+        "action": data.get("controller_action"),
+        "power_w": data.get("controller_power_w"),
+        "target_soc": data.get("controller_target_soc"),
+        "max_runtime_h": data.get("controller_max_runtime_h"),
+        "execution_mode": data.get("controller_execution_mode"),
+        "reason": data.get("controller_reason"),
+        "desired_mode": data.get("controller_desired_mode"),
+        "desired_direction": data.get("controller_desired_direction"),
+        "desired_power_w": data.get("controller_desired_power_w"),
+        "physical_control": data.get("controller_physical_control", False),
+    }
+
+
 SENSORS: tuple[AnkerEmsSensorDescription, ...] = (
     AnkerEmsSensorDescription(
         key="status",
@@ -103,6 +129,30 @@ SENSORS: tuple[AnkerEmsSensorDescription, ...] = (
             else "geen"
         ),
         attrs_fn=_scheduler_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="safety_status",
+        name="Dummy OS EMS Safety Guard status",
+        value_fn=lambda d: d.get("safety_status"),
+        attrs_fn=_safety_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="safety_reason",
+        name="Dummy OS EMS Safety Guard reden",
+        value_fn=lambda d: d.get("safety_reason"),
+        attrs_fn=_safety_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="controller_status",
+        name="Dummy OS EMS Action Controller status",
+        value_fn=lambda d: d.get("controller_status"),
+        attrs_fn=_controller_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="controller_action",
+        name="Dummy OS EMS Action Controller actie",
+        value_fn=lambda d: d.get("controller_action") or "geen",
+        attrs_fn=_controller_attrs,
     ),
 )
 
@@ -202,4 +252,6 @@ class AnkerEmsPlanStatusSensor(CoordinatorEntity[AnkerEmsCoordinator], SensorEnt
             "scheduler_selected": scheduler_detail.get("selected", False),
             "scheduler_start_window_end": scheduler_detail.get("start_window_end"),
             "physical_control": False,
+            "safety_status": self.coordinator.data.get("safety_status"),
+            "controller_status": self.coordinator.data.get("controller_status"),
         }

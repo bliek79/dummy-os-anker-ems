@@ -23,6 +23,8 @@ async def async_setup_entry(
             AnkerEmsControlAvailable(coordinator, entry),
             AnkerEmsForecastSourcesAvailable(coordinator, entry),
             AnkerEmsSchedulerReady(coordinator, entry),
+            AnkerEmsSafetySafe(coordinator, entry),
+            AnkerEmsControllerReady(coordinator, entry),
         ]
     )
 
@@ -121,5 +123,54 @@ class AnkerEmsSchedulerReady(_AnkerEmsBinarySensorBase):
             "selected_action": data.get("scheduler_selected_action"),
             "selected_execution_mode": data.get("scheduler_selected_execution_mode"),
             "selected_start_time": data.get("scheduler_selected_start_time"),
+            "physical_control": False,
+        }
+
+
+class AnkerEmsSafetySafe(_AnkerEmsBinarySensorBase):
+    _attr_name = "Dummy OS EMS Safety Guard veilig"
+
+    def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{entry.entry_id}_safety_safe"
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self.coordinator.data.get("safety_safe"))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        data = self.coordinator.data
+        return {
+            "status": data.get("safety_status"),
+            "reason": data.get("safety_reason"),
+            "reasons": data.get("safety_reasons", []),
+            "warnings": data.get("safety_warnings", []),
+            "selected_slot": data.get("safety_selected_slot"),
+            "physical_control": False,
+        }
+
+
+class AnkerEmsControllerReady(_AnkerEmsBinarySensorBase):
+    _attr_name = "Dummy OS EMS Action Controller gereed"
+
+    def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{entry.entry_id}_controller_ready"
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self.coordinator.data.get("controller_ready"))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        data = self.coordinator.data
+        return {
+            "status": data.get("controller_status"),
+            "selected_slot": data.get("controller_selected_slot"),
+            "action": data.get("controller_action"),
+            "power_w": data.get("controller_power_w"),
+            "target_soc": data.get("controller_target_soc"),
+            "reason": data.get("controller_reason"),
             "physical_control": False,
         }
