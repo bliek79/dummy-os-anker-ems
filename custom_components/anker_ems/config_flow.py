@@ -33,6 +33,12 @@ from .const import (
     DEFAULT_SOLAR_TODAY_ENTITY,
     DEFAULT_SOLAR_TOMORROW_ENTITY,
     DEFAULT_SOLAR_DAY3_ENTITY,
+    CONF_MONITOR_ENERGYZERO_ENTITY,
+    CONF_MONITOR_STROOMVOORSPELLER_ENTITY,
+    CONF_MONITOR_SOLCAST_API_ENTITY,
+    DEFAULT_MONITOR_ENERGYZERO_ENTITY,
+    DEFAULT_MONITOR_STROOMVOORSPELLER_ENTITY,
+    DEFAULT_MONITOR_SOLCAST_API_ENTITY,
 )
 
 
@@ -114,6 +120,18 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_SOLAR_DAY3_ENTITY,
                     default=options.get(CONF_SOLAR_DAY3_ENTITY, DEFAULT_SOLAR_DAY3_ENTITY),
+                ): _entity_selector("sensor"),
+                vol.Optional(
+                    CONF_MONITOR_ENERGYZERO_ENTITY,
+                    default=options.get(CONF_MONITOR_ENERGYZERO_ENTITY, DEFAULT_MONITOR_ENERGYZERO_ENTITY),
+                ): _entity_selector("sensor"),
+                vol.Optional(
+                    CONF_MONITOR_STROOMVOORSPELLER_ENTITY,
+                    default=options.get(CONF_MONITOR_STROOMVOORSPELLER_ENTITY, DEFAULT_MONITOR_STROOMVOORSPELLER_ENTITY),
+                ): _entity_selector("sensor"),
+                vol.Optional(
+                    CONF_MONITOR_SOLCAST_API_ENTITY,
+                    default=options.get(CONF_MONITOR_SOLCAST_API_ENTITY, DEFAULT_MONITOR_SOLCAST_API_ENTITY),
                 ): _entity_selector("sensor"),
             }
         )

@@ -15,6 +15,7 @@ from .safety_guard import AnkerEmsSafetyGuard
 from .action_controller import AnkerEmsActionController
 from .physical_test import AnkerEmsPhysicalTestController
 from .execution import AnkerEmsExecutionController
+from .source_monitor import AnkerEmsSourceMonitor
 
 from .const import (
     NAME,
@@ -40,6 +41,12 @@ from .const import (
     DEFAULT_SOLAR_TODAY_ENTITY,
     DEFAULT_SOLAR_TOMORROW_ENTITY,
     DEFAULT_SOLAR_DAY3_ENTITY,
+    CONF_MONITOR_ENERGYZERO_ENTITY,
+    CONF_MONITOR_STROOMVOORSPELLER_ENTITY,
+    CONF_MONITOR_SOLCAST_API_ENTITY,
+    DEFAULT_MONITOR_ENERGYZERO_ENTITY,
+    DEFAULT_MONITOR_STROOMVOORSPELLER_ENTITY,
+    DEFAULT_MONITOR_SOLCAST_API_ENTITY,
     FORECAST_HORIZON_HOURS,
 )
 
@@ -96,6 +103,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         action_controller: AnkerEmsActionController,
         physical_test: AnkerEmsPhysicalTestController,
         execution: AnkerEmsExecutionController,
+        source_monitor: AnkerEmsSourceMonitor,
     ) -> None:
         super().__init__(
             hass,
@@ -111,6 +119,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.action_controller = action_controller
         self.physical_test = physical_test
         self.execution = execution
+        self.source_monitor = source_monitor
 
     @property
     def simulation_mode(self) -> bool:
@@ -262,6 +271,58 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "forecast": forecast,
         }
 
+    def _source_monitor_specs(self) -> dict[str, dict[str, Any]]:
+        forecast_ids = self._forecast_entity_ids()
+        energyzero_id = self._entity_id(
+            CONF_MONITOR_ENERGYZERO_ENTITY, DEFAULT_MONITOR_ENERGYZERO_ENTITY
+        ) or ""
+        stroom_id = self._entity_id(
+            CONF_MONITOR_STROOMVOORSPELLER_ENTITY, DEFAULT_MONITOR_STROOMVOORSPELLER_ENTITY
+        ) or ""
+        solcast_api_id = self._entity_id(
+            CONF_MONITOR_SOLCAST_API_ENTITY, DEFAULT_MONITOR_SOLCAST_API_ENTITY
+        ) or ""
+
+        def state_payload(entity_id: str, attrs: tuple[str, ...]) -> Any:
+            state = self.hass.states.get(entity_id) if entity_id else None
+            if state is None:
+                return None
+            payload: dict[str, Any] = {"state": state.state}
+            for attr in attrs:
+                if attr in state.attributes:
+                    payload[attr] = state.attributes.get(attr)
+            return payload
+
+        solar_ids = [
+            forecast_ids["solar_today"],
+            forecast_ids["solar_tomorrow"],
+            forecast_ids["solar_day3"],
+        ]
+        solar_content = [state_payload(entity_id, ("detailedHourly",)) for entity_id in solar_ids]
+
+        return {
+            "solcast_api": {
+                "entity_ids": [solcast_api_id],
+                "content": state_payload(solcast_api_id, ()),
+            },
+            "solcast_forecast": {
+                "entity_ids": solar_ids,
+                "content": solar_content,
+            },
+            "energyzero_prices": {
+                "entity_ids": [energyzero_id],
+                "content": state_payload(energyzero_id, ("prices", "price_count", "available_until")),
+            },
+            "stroomvoorspeller": {
+                "entity_ids": [stroom_id],
+                "content": state_payload(stroom_id, ("today", "tomorrow", "hours", "prices")),
+            },
+            "price_forecast": {
+                "entity_ids": [forecast_ids["forecast_price"]],
+                "content": state_payload(forecast_ids["forecast_price"], ("forecasts",)),
+            },
+        }
+
     async def _async_update_data(self) -> dict[str, Any]:
         data = {
             "simulation_mode": self.simulation_mode,
@@ -276,6 +337,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "power_setpoint_w": self._number(CONF_POWER_SETPOINT_ENTITY),
         }
         data.update(self._build_forecast())
+        data.update(await self.source_monitor.async_observe(self._source_monitor_specs()))
         data.update(self.scheduler.evaluate())
         data.update(self.safety_guard.evaluate(data))
         data.update(self.action_controller.evaluate(data))

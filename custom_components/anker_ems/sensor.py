@@ -7,7 +7,7 @@ from homeassistant.components.sensor import SensorEntity, SensorEntityDescriptio
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE, UnitOfPower
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -91,6 +91,17 @@ def _execution_attrs(data: dict[str, Any]) -> dict[str, Any]:
         "discharge_enabled": False,
     }
 
+
+def _source_monitor_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "sources": data.get("source_monitor_sources", {}),
+        "recent_events": data.get("source_monitor_recent_events", []),
+        "recalculation_candidates_today": data.get("source_monitor_recalc_candidates_today", 0),
+        "last_content_change": data.get("source_monitor_last_content_change"),
+        "retention_days": data.get("source_monitor_retention_days", 7),
+        "purpose": "observe source timing before event-driven planner activation",
+    }
+
 def _controller_attrs(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "selected_slot": data.get("controller_selected_slot"),
@@ -147,6 +158,13 @@ SENSORS: tuple[AnkerEmsSensorDescription, ...] = (
         name="Dummy OS EMS Forecast complete uren",
         native_unit_of_measurement="h",
         value_fn=lambda d: d.get("forecast_complete_hours"),
+    ),
+    AnkerEmsSensorDescription(
+        key="source_monitor",
+        name="Dummy OS EMS Bronmonitor",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda d: d.get("source_monitor_status") or "recording",
+        attrs_fn=_source_monitor_attrs,
     ),
     AnkerEmsSensorDescription(
         key="scheduler_status",

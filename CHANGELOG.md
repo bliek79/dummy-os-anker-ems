@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.0.1-alpha.13
+
+- Added persistent Source Monitor for Solcast, Stroomvoorspeller, EnergyZero price data and price forecast updates.
+- Tracks Home Assistant report moments separately from actual content changes.
+- Keeps seven days of recent monitor events for later planner-trigger analysis.
+- Adds one diagnostic entity: `Dummy OS EMS Bronmonitor`.
+- Does not trigger replanning yet; this version only measures when source data really changes.
+
+
 ## 0.0.1-alpha.12
 
 - Added explicit plan execution state machine via `anker_ems.execute_selected_plan`.

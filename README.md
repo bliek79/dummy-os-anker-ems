@@ -5,7 +5,7 @@ Home Assistant EMS-integratie voor de Anker SOLIX Solarbank Max AC.
 **Status:** experimentele alpha  
 **Domein:** `anker_ems`  
 **Minimale Home Assistant-versie:** 2026.7.0  
-**Huidige release:** `0.0.1-alpha.12`
+**Huidige release:** `0.0.1-alpha.13`
 
 ## Alpha 5 - Forecast Sources
 
@@ -110,3 +110,8 @@ Nieuwe diagnose-entiteiten:
 - `Dummy OS EMS Uitvoering status`;
 - `Dummy OS EMS Uitvoering resterend`;
 - `Dummy OS EMS Uitvoering actief`.
+
+
+## Alpha 13 - Source Monitor
+
+Alpha 13 observes when Solcast, Stroomvoorspeller, EnergyZero price data and the price forecast are reported and when their actual content changes. The monitor keeps seven days of event history in Home Assistant storage. It is observational only and does not yet trigger the automatic planner.

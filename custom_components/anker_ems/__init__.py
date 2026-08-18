@@ -30,6 +30,7 @@ from .safety_guard import AnkerEmsSafetyGuard
 from .action_controller import AnkerEmsActionController
 from .physical_test import AnkerEmsPhysicalTestController
 from .execution import AnkerEmsExecutionController
+from .source_monitor import AnkerEmsSourceMonitor
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -121,6 +122,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await physical_test.async_load()
     execution = AnkerEmsExecutionController(hass, entry.entry_id)
     await execution.async_load()
+    source_monitor = AnkerEmsSourceMonitor(hass, entry.entry_id)
+    await source_monitor.async_load()
 
     coordinator = AnkerEmsCoordinator(
         hass,
@@ -131,6 +134,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         action_controller,
         physical_test,
         execution,
+        source_monitor,
     )
     physical_test.attach_coordinator(coordinator)
     execution.attach_coordinator(coordinator)
