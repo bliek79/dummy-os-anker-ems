@@ -1,3 +1,47 @@
+# 0.0.1-alpha.24.4
+
+## Correctie dynamische reserve
+- `next_usable_solar: null` wordt niet meer geïnterpreteerd als bewijs dat er
+  binnen de toekomst geen bruikbare zon meer komt.
+- Bij een onvolledige solarhorizon valt de reserve terug op:
+  5% apparaatgrens + softwarematige veiligheidsreserve.
+- De resterende woningforecast wordt dan niet meer volledig opgestapeld tot
+  een kunstmatige 100% reserve.
+- Nieuwe diagnosevelden:
+  - `solar_horizon_complete`
+  - `solar_horizon_incomplete_hours`
+  - per planuur `solar_horizon_complete`
+
+## Goedkoopste noodzakelijke veiligheidsuren
+- Dynamische veiligheidslading wordt vooraf gepland.
+- Voor elk aantoonbaar reservepiekmoment wordt alleen het werkelijk benodigde
+  energietekort bepaald.
+- De planner selecteert vervolgens de goedkoopste haalbare uren vóór dat
+  tekortmoment.
+- Maximaal laadvermogen en laadrendement blijven onderdeel van de selectie.
+- Veiligheidslading blijft gescheiden van handelslading.
+
+## Nieuwe entiteiten
+- Dummy OS EMS Automatisch plan solarhorizon
+- Dummy OS EMS Automatisch plan solarhorizon ontbrekende uren
+
+## Ongewijzigd
+- Solar Charge Delay blijft actief.
+- Handelsreserve-logica blijft actief.
+- Geen automatische planslot-creatie.
+- Geen Scheduler-aanroep.
+- Geen fysieke batterijaansturing.
+
+## Te valideren
+- Reserve mag bij ontbrekende toekomstige solar niet meer naar 100% springen.
+- `solarhorizon` moet `onvolledig` aangeven wanneer de resterende forecast geen
+  volgende bruikbare zonneperiode bevat.
+- Veiligheidslading moet naar goedkopere beschikbare uren verschuiven wanneer
+  het tekort pas later optreedt.
+- Alleen de benodigde hoeveelheid veiligheidsenergie mag worden gepland.
+- SOC en dynamische reserve moeten gedurende de volledige horizon consistent
+  blijven.
+
 # 0.0.1-alpha.24.3
 
 ## Dynamische 72-uurs reserve

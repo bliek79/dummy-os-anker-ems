@@ -139,7 +139,14 @@ def build_72h_plan_preview(
                 usable_index = candidate
                 break
 
-        stop_index = usable_index if usable_index is not None else len(rows)
+        if usable_index is None:
+            # The end of the available forecast is not proof that there will be
+            # no usable solar later. Do not reserve the complete remainder of the
+            # 72-hour horizon. Fall back to the normal hardware + software reserve
+            # and mark the solar horizon as incomplete through first_usable=None.
+            return base_reserve_floor_kwh, 0.0, None
+
+        stop_index = usable_index
         net_home_need_kwh = 0.0
 
         for need_index in range(index, stop_index):
@@ -158,7 +165,7 @@ def build_72h_plan_preview(
                 base_reserve_floor_kwh + stored_need_kwh,
             ),
         )
-        first_usable = rows[usable_index]["time"] if usable_index is not None else None
+        first_usable = rows[usable_index]["time"]
         return floor_kwh, net_home_need_kwh, first_usable
 
     safety_hours_raw = planner_preview.get("planner_preview_safety_charge_hours") or []
@@ -226,6 +233,93 @@ def build_72h_plan_preview(
 
     trade_energy_reserved_kwh = 0.0
 
+    def _planned_dynamic_safety_charge_by_hour() -> dict[str, float]:
+        """Pre-plan dynamic safety charging in the cheapest feasible hours.
+
+        Work backwards from each reserve peak and buy only the stored energy that
+        cannot be covered by the simulated starting battery and prior solar.
+        This is observer-only and intentionally conservative.
+        """
+        planned: dict[str, float] = {}
+        if not rows:
+            return planned
+
+        # Build reserve requirements first.
+        reserve_requirements = []
+        for idx, _row in enumerate(rows):
+            floor_kwh, _, next_solar = _dynamic_reserve(idx)
+            reserve_requirements.append((idx, floor_kwh, next_solar))
+
+        # Detect local reserve peaks that are tied to a real future usable-solar block.
+        peaks: list[tuple[int, float, datetime]] = []
+        for idx, floor_kwh, next_solar in reserve_requirements:
+            if next_solar is None:
+                continue
+            prev_floor = reserve_requirements[idx - 1][1] if idx > 0 else base_reserve_floor_kwh
+            next_floor = (
+                reserve_requirements[idx + 1][1]
+                if idx + 1 < len(reserve_requirements)
+                else base_reserve_floor_kwh
+            )
+            if floor_kwh > prev_floor + _MIN_ENERGY_KWH and floor_kwh >= next_floor - _MIN_ENERGY_KWH:
+                peaks.append((idx, floor_kwh, next_solar))
+
+        for peak_idx, required_floor_kwh, next_solar in peaks:
+            # Estimate stored energy available at peak from initial SOC plus solar surplus,
+            # ignoring discretionary discharge. This prevents unnecessary safety charging.
+            estimated_stored = capacity * start_soc / 100.0
+            for sim_idx in range(0, peak_idx + 1):
+                sim_row = rows[sim_idx]
+                frac = _hour_fraction(sim_row["time"], now_utc)
+                solar_surplus = max(
+                    0.0,
+                    (sim_row["solar_kwh"] - sim_row["home_kwh"]) * frac,
+                )
+                estimated_stored = min(
+                    capacity,
+                    estimated_stored + solar_surplus * charge_eff,
+                )
+                key = sim_row["time"].isoformat()
+                if key in planned:
+                    estimated_stored = min(
+                        capacity,
+                        estimated_stored + planned[key],
+                    )
+
+            deficit_stored = max(0.0, required_floor_kwh - estimated_stored)
+            if deficit_stored <= _MIN_ENERGY_KWH:
+                continue
+
+            candidates = []
+            for cand_idx in range(0, peak_idx + 1):
+                cand = rows[cand_idx]
+                price = cand["price"]
+                if price is None:
+                    continue
+                fraction = _hour_fraction(cand["time"], now_utc)
+                max_stored = MAX_CHARGE_POWER_W / 1000.0 * fraction * charge_eff
+                if max_stored <= _MIN_ENERGY_KWH:
+                    continue
+                candidates.append((price, cand["time"], max_stored))
+
+            candidates.sort(key=lambda item: (item[0], item[1]))
+            remaining = deficit_stored
+            for _price, cand_time, max_stored in candidates:
+                if remaining <= _MIN_ENERGY_KWH:
+                    break
+                key = cand_time.isoformat()
+                already = planned.get(key, 0.0)
+                available = max(0.0, max_stored - already)
+                if available <= _MIN_ENERGY_KWH:
+                    continue
+                add = min(available, remaining)
+                planned[key] = already + add
+                remaining -= add
+
+        return planned
+
+    dynamic_safety_by_time = _planned_dynamic_safety_charge_by_hour()
+
     for index, row in enumerate(rows):
         hour = row["time"]
         fraction = _hour_fraction(hour, now_utc)
@@ -273,10 +367,7 @@ def build_72h_plan_preview(
         # sufficient for the dynamically calculated requirement from this hour
         # until the next usable solar block.
         planned_safety_target_stored = safety_by_time.get(hour.isoformat(), 0.0)
-        dynamic_safety_target_stored = max(
-            0.0,
-            reserve_floor_start_kwh - stored_kwh,
-        )
+        dynamic_safety_target_stored = dynamic_safety_by_time.get(hour.isoformat(), 0.0)
         safety_target_stored = max(
             planned_safety_target_stored,
             dynamic_safety_target_stored,
@@ -466,6 +557,7 @@ def build_72h_plan_preview(
                     if next_usable_solar is not None
                     else None
                 ),
+                "solar_horizon_complete": next_usable_solar is not None,
                 "trade_reserved_kwh": round(trade_energy_reserved_kwh, 3),
                 "action": "+".join(action_parts),
                 "observational_only": True,
@@ -494,6 +586,12 @@ def build_72h_plan_preview(
         ),
         "auto_plan_72h_dynamic_reserve_min_soc": round(dynamic_reserve_min_soc, 1),
         "auto_plan_72h_dynamic_reserve_max_soc": round(dynamic_reserve_max_soc, 1),
+        "auto_plan_72h_solar_horizon_complete": all(
+            item.get("solar_horizon_complete", False) for item in plan
+        ),
+        "auto_plan_72h_solar_horizon_incomplete_hours": sum(
+            1 for item in plan if not item.get("solar_horizon_complete", False)
+        ),
         "auto_plan_72h_solar_charge_kwh": round(total_solar_charge, 3),
         "auto_plan_72h_grid_safety_charge_kwh": round(total_grid_safety_charge, 3),
         "auto_plan_72h_grid_trade_charge_kwh": round(total_grid_trade_charge, 3),
@@ -507,8 +605,9 @@ def build_72h_plan_preview(
         "auto_plan_72h_observational_only": True,
         "auto_plan_72h_execution_enabled": False,
         "auto_plan_72h_note": (
-            "Alpha24.3 berekent de reservevloer dynamisch per uur tot de volgende "
-            "bruikbare zonneperiode en past zo nodig observerende veiligheidslading toe. "
-            "Er worden geen planslots gevuld en geen fysieke commando's uitgevoerd."
+            "Alpha24.4 gebruikt dynamische reserve alleen wanneer een volgende "
+            "bruikbare zonneperiode binnen de forecast aantoonbaar is en plant "
+            "veiligheidslading in de goedkoopste haalbare uren. Er worden geen "
+            "planslots gevuld en geen fysieke commando's uitgevoerd."
         ),
     }

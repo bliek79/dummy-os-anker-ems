@@ -176,6 +176,8 @@ def _auto_plan_72h_attrs(data: dict[str, Any]) -> dict[str, Any]:
         "reserve_floor_soc": data.get("auto_plan_72h_reserve_floor_soc"),
         "dynamic_reserve_min_soc": data.get("auto_plan_72h_dynamic_reserve_min_soc"),
         "dynamic_reserve_max_soc": data.get("auto_plan_72h_dynamic_reserve_max_soc"),
+        "solar_horizon_complete": data.get("auto_plan_72h_solar_horizon_complete"),
+        "solar_horizon_incomplete_hours": data.get("auto_plan_72h_solar_horizon_incomplete_hours"),
         "solar_charge_kwh": data.get("auto_plan_72h_solar_charge_kwh"),
         "grid_safety_charge_kwh": data.get("auto_plan_72h_grid_safety_charge_kwh"),
         "grid_trade_charge_kwh": data.get("auto_plan_72h_grid_trade_charge_kwh"),
@@ -453,6 +455,23 @@ SENSORS: tuple[AnkerEmsSensorDescription, ...] = (
         name="Dummy OS EMS Automatisch plan maximale reserve",
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda d: d.get("auto_plan_72h_dynamic_reserve_max_soc"),
+        attrs_fn=_auto_plan_72h_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="auto_plan_72h_solar_horizon_status",
+        name="Dummy OS EMS Automatisch plan solarhorizon",
+        value_fn=lambda d: (
+            "volledig"
+            if d.get("auto_plan_72h_solar_horizon_complete")
+            else "onvolledig"
+        ),
+        attrs_fn=_auto_plan_72h_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="auto_plan_72h_solar_horizon_incomplete_hours",
+        name="Dummy OS EMS Automatisch plan solarhorizon ontbrekende uren",
+        native_unit_of_measurement="h",
+        value_fn=lambda d: d.get("auto_plan_72h_solar_horizon_incomplete_hours"),
         attrs_fn=_auto_plan_72h_attrs,
     ),
     AnkerEmsSensorDescription(

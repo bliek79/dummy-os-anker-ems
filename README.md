@@ -7,7 +7,7 @@ Het project wordt ontwikkeld als een lokale, modulaire EMS-laag bovenop Home Ass
 > **Status:** experimentele alpha  
 > **Domein:** `anker_ems`  
 > **Minimale Home Assistant-versie:** 2026.7.0  
-> **Huidige ontwikkelversie:** `0.0.1-alpha.24.3`
+> **Huidige ontwikkelversie:** `0.0.1-alpha.24.4`
 
 ---
 
@@ -967,4 +967,27 @@ Per planuur zijn toegevoegd:
 - `dynamic_need_until_solar_kwh`
 - `dynamic_need_after_hour_kwh`
 - `next_usable_solar`
+
+
+
+### Alpha24.4 - horizon fallback en goedkoopste veiligheidsuren
+
+Wanneer binnen de resterende forecast geen volgende bruikbare zonneperiode
+meer aantoonbaar is, wordt dat niet langer geïnterpreteerd als "er komt geen
+zon meer". De planner valt dan terug op de normale 5% apparaatgrens plus de
+softwarematige veiligheidsreserve.
+
+Daardoor kan een onvolledige solarhorizon de reserve niet kunstmatig naar
+100% trekken.
+
+Daarnaast wordt dynamische veiligheidslading niet meer automatisch geplaatst
+op het eerste uur waarop een toekomstig tekort zichtbaar wordt. Voor elk
+reservepiekmoment selecteert de preview de goedkoopste nog haalbare uren vóór
+dat moment en verdeelt alleen de werkelijk benodigde opgeslagen energie over
+die uren.
+
+Nieuwe diagnose:
+- `solar_horizon_complete`
+- `solar_horizon_incomplete_hours`
+- per planuur `solar_horizon_complete`
 
