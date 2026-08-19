@@ -107,8 +107,59 @@ def build_72h_plan_preview(
     stored_kwh = capacity * start_soc / 100.0
 
     reserve_kwh = _as_float(energy_need.get("energy_need_safety_reserve_kwh")) or 0.0
-    reserve_floor_kwh = capacity * float(MIN_SOC_PERCENT) / 100.0 + reserve_kwh
-    reserve_floor_kwh = min(capacity, max(capacity * float(MIN_SOC_PERCENT) / 100.0, reserve_floor_kwh))
+    minimum_stored_kwh = capacity * float(MIN_SOC_PERCENT) / 100.0
+    base_reserve_floor_kwh = minimum_stored_kwh + reserve_kwh
+    base_reserve_floor_kwh = min(
+        capacity,
+        max(minimum_stored_kwh, base_reserve_floor_kwh),
+    )
+
+    def _is_usable_solar(index: int) -> bool:
+        if index < 0 or index >= len(rows):
+            return False
+        row = rows[index]
+        return row["solar_kwh"] > 0 and row["solar_kwh"] >= row["home_kwh"]
+
+    def _dynamic_reserve(index: int) -> tuple[float, float, datetime | None]:
+        """Required stored energy from this hour until the next usable solar block.
+
+        The usable-solar rule stays aligned with alpha21: the first of two
+        consecutive hours where solar >= forecast home consumption.
+
+        Home deficits are converted to required stored battery energy using the
+        configured discharge efficiency. The fixed software safety reserve and
+        5% hardware floor are then added.
+        """
+        if index >= len(rows):
+            return base_reserve_floor_kwh, 0.0, None
+
+        usable_index: int | None = None
+        for candidate in range(index, len(rows) - 1):
+            if _is_usable_solar(candidate) and _is_usable_solar(candidate + 1):
+                usable_index = candidate
+                break
+
+        stop_index = usable_index if usable_index is not None else len(rows)
+        net_home_need_kwh = 0.0
+
+        for need_index in range(index, stop_index):
+            need_row = rows[need_index]
+            fraction = _hour_fraction(need_row["time"], now_utc)
+            net_home_need_kwh += max(
+                0.0,
+                need_row["home_kwh"] - need_row["solar_kwh"],
+            ) * fraction
+
+        stored_need_kwh = net_home_need_kwh / discharge_eff
+        floor_kwh = min(
+            capacity,
+            max(
+                minimum_stored_kwh,
+                base_reserve_floor_kwh + stored_need_kwh,
+            ),
+        )
+        first_usable = rows[usable_index]["time"] if usable_index is not None else None
+        return floor_kwh, net_home_need_kwh, first_usable
 
     safety_hours_raw = planner_preview.get("planner_preview_safety_charge_hours") or []
     safety_by_time: dict[str, float] = {}
@@ -138,6 +189,8 @@ def build_72h_plan_preview(
     total_solar_export = 0.0
     min_soc_seen = start_soc
     max_soc_seen = start_soc
+    dynamic_reserve_min_soc = 100.0
+    dynamic_reserve_max_soc = 0.0
 
     # Reserve a future high-value discharge opportunity. This prevents battery
     # energy from being consumed too early by low-value home deficits.
@@ -176,6 +229,13 @@ def build_72h_plan_preview(
     for index, row in enumerate(rows):
         hour = row["time"]
         fraction = _hour_fraction(hour, now_utc)
+
+        reserve_floor_start_kwh, reserve_need_start_kwh, next_usable_solar = _dynamic_reserve(index)
+        reserve_floor_end_kwh, reserve_need_end_kwh, _ = _dynamic_reserve(index + 1)
+        reserve_floor_start_soc = reserve_floor_start_kwh / capacity * 100.0
+        reserve_floor_end_soc = reserve_floor_end_kwh / capacity * 100.0
+        dynamic_reserve_min_soc = min(dynamic_reserve_min_soc, reserve_floor_end_soc)
+        dynamic_reserve_max_soc = max(dynamic_reserve_max_soc, reserve_floor_start_soc)
         charge_input_limit = MAX_CHARGE_POWER_W / 1000.0 * fraction
         discharge_output_limit = MAX_DISCHARGE_POWER_W / 1000.0 * fraction
 
@@ -207,12 +267,29 @@ def build_72h_plan_preview(
 
         solar_export = max(0.0, solar_surplus)
 
-        # 2) Required safety grid charge always has priority.
-        safety_target_stored = safety_by_time.get(hour.isoformat(), 0.0)
+        # 2) Safety grid charge always has priority.
+        # Alpha21/22 can already nominate a safety-charge hour. Alpha24.3 adds
+        # a live 72-hour check: after solar charging, stored energy must be
+        # sufficient for the dynamically calculated requirement from this hour
+        # until the next usable solar block.
+        planned_safety_target_stored = safety_by_time.get(hour.isoformat(), 0.0)
+        dynamic_safety_target_stored = max(
+            0.0,
+            reserve_floor_start_kwh - stored_kwh,
+        )
+        safety_target_stored = max(
+            planned_safety_target_stored,
+            dynamic_safety_target_stored,
+        )
+
         if safety_target_stored > _MIN_ENERGY_KWH and stored_kwh < capacity - _MIN_ENERGY_KWH:
             max_input_by_capacity = (capacity - stored_kwh) / charge_eff
             requested_input = safety_target_stored / charge_eff
-            grid_safety_input = min(requested_input, available_charge_input, max_input_by_capacity)
+            grid_safety_input = min(
+                requested_input,
+                available_charge_input,
+                max_input_by_capacity,
+            )
             stored_kwh += grid_safety_input * charge_eff
             available_charge_input -= grid_safety_input
 
@@ -262,8 +339,11 @@ def build_72h_plan_preview(
 
         # 4) Home deficit uses battery only when doing so does not consume
         # energy reserved for a later, more valuable trade discharge.
-        operational_floor = reserve_floor_kwh + trade_energy_reserved_kwh
-        operational_floor = min(capacity, max(reserve_floor_kwh, operational_floor))
+        operational_floor = reserve_floor_end_kwh + trade_energy_reserved_kwh
+        operational_floor = min(
+            capacity,
+            max(reserve_floor_end_kwh, operational_floor),
+        )
 
         available_stored_above_floor = max(0.0, stored_kwh - operational_floor)
         max_output_from_storage = available_stored_above_floor * discharge_eff
@@ -314,7 +394,10 @@ def build_72h_plan_preview(
             and hour == best_discharge_time
         ):
             remaining_output_limit = max(0.0, discharge_output_limit - discharge_to_home)
-            available_stored_above_reserve = max(0.0, stored_kwh - reserve_floor_kwh)
+            available_stored_above_reserve = max(
+                0.0,
+                stored_kwh - reserve_floor_end_kwh,
+            )
             max_trade_output = available_stored_above_reserve * discharge_eff
             discharge_to_grid = min(remaining_output_limit, max_trade_output)
             if discharge_to_grid > _MIN_ENERGY_KWH:
@@ -374,7 +457,15 @@ def build_72h_plan_preview(
                 "solar_export_kwh": round(solar_export, 3),
                 "soc_start": round(float(soc_start), 1),
                 "soc_end": round(soc_end, 1),
-                "reserve_floor_soc": round(reserve_floor_kwh / capacity * 100.0, 1),
+                "reserve_floor_soc": round(reserve_floor_end_soc, 1),
+                "reserve_floor_start_soc": round(reserve_floor_start_soc, 1),
+                "dynamic_need_until_solar_kwh": round(reserve_need_start_kwh, 3),
+                "dynamic_need_after_hour_kwh": round(reserve_need_end_kwh, 3),
+                "next_usable_solar": (
+                    next_usable_solar.isoformat()
+                    if next_usable_solar is not None
+                    else None
+                ),
                 "trade_reserved_kwh": round(trade_energy_reserved_kwh, 3),
                 "action": "+".join(action_parts),
                 "observational_only": True,
@@ -398,7 +489,11 @@ def build_72h_plan_preview(
         "auto_plan_72h_end_soc": round(float(end_soc), 1),
         "auto_plan_72h_min_soc": round(min_soc_seen, 1),
         "auto_plan_72h_max_soc": round(max_soc_seen, 1),
-        "auto_plan_72h_reserve_floor_soc": round(reserve_floor_kwh / capacity * 100.0, 1),
+        "auto_plan_72h_reserve_floor_soc": (
+            round(plan[0]["reserve_floor_start_soc"], 1) if plan else None
+        ),
+        "auto_plan_72h_dynamic_reserve_min_soc": round(dynamic_reserve_min_soc, 1),
+        "auto_plan_72h_dynamic_reserve_max_soc": round(dynamic_reserve_max_soc, 1),
         "auto_plan_72h_solar_charge_kwh": round(total_solar_charge, 3),
         "auto_plan_72h_grid_safety_charge_kwh": round(total_grid_safety_charge, 3),
         "auto_plan_72h_grid_trade_charge_kwh": round(total_grid_trade_charge, 3),
@@ -412,8 +507,8 @@ def build_72h_plan_preview(
         "auto_plan_72h_observational_only": True,
         "auto_plan_72h_execution_enabled": False,
         "auto_plan_72h_note": (
-            "Alpha24.1 corrigeert handelsladen met Solar Charge Delay en reserveert "
-            "handelsenergie voor financieel waardevollere uren. Er worden geen "
-            "planslots gevuld en geen fysieke commando's uitgevoerd."
+            "Alpha24.3 berekent de reservevloer dynamisch per uur tot de volgende "
+            "bruikbare zonneperiode en past zo nodig observerende veiligheidslading toe. "
+            "Er worden geen planslots gevuld en geen fysieke commando's uitgevoerd."
         ),
     }

@@ -1,3 +1,43 @@
+# 0.0.1-alpha.24.3
+
+## Dynamische 72-uurs reserve
+- Reservevloer wordt nu voor ieder forecastuur opnieuw berekend.
+- Dezelfde bruikbare-zonregel als alpha21 wordt gebruikt:
+  eerste van twee opeenvolgende uren waarin solar >= woningverbruik.
+- Woningbehoefte tot de volgende bruikbare zonneperiode wordt per uur bepaald.
+- Ontlaadrendement wordt meegenomen bij de benodigde opgeslagen energie.
+- 5% apparaatgrens en softwarematige veiligheidsreserve blijven onderdeel van
+  de reservevloer.
+- Woningontlading en handelsontlading mogen de dynamische reserve niet
+  onderschrijden.
+- Observerende veiligheidslading kan worden toegevoegd wanneer de opgeslagen
+  energie na zonnelading onder de actuele dynamische reservebehoefte ligt.
+- Nieuwe planvelden:
+  - `reserve_floor_start_soc`
+  - `reserve_floor_soc`
+  - `dynamic_need_until_solar_kwh`
+  - `dynamic_need_after_hour_kwh`
+  - `next_usable_solar`
+- Nieuwe sensoren:
+  - Dummy OS EMS Automatisch plan dynamische reserve
+  - Dummy OS EMS Automatisch plan maximale reserve
+
+## Ongewijzigd
+- Solar Charge Delay uit alpha24.1 blijft actief.
+- Handelsreserve-logica blijft actief.
+- Geen automatische planslot-creatie.
+- Geen Scheduler-aanroep.
+- Geen fysieke batterijaansturing.
+
+## Te valideren
+- Reservevloer moet door de 72 uur heen zichtbaar veranderen.
+- Reserve moet in de avond/nacht oplopen wanneer meer energie nodig is tot
+  de volgende bruikbare zon.
+- Reserve moet terugvallen wanneer bruikbare solar beschikbaar wordt.
+- SOC mag na woning- of handelsontlading niet onder de dynamische reserve komen.
+- Eventuele veiligheidslading moet alleen ontstaan wanneer de actuele
+  batterijvoorraad werkelijk onvoldoende is voor behoefte plus reserve.
+
 # 0.0.1-alpha.24.2
 
 ## Hotfix

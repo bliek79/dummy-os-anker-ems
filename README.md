@@ -7,7 +7,7 @@ Het project wordt ontwikkeld als een lokale, modulaire EMS-laag bovenop Home Ass
 > **Status:** experimentele alpha  
 > **Domein:** `anker_ems`  
 > **Minimale Home Assistant-versie:** 2026.7.0  
-> **Huidige ontwikkelversie:** `0.0.1-alpha.24.2`
+> **Huidige ontwikkelversie:** `0.0.1-alpha.24.3`
 
 ---
 
@@ -939,3 +939,32 @@ Dummy OS EMS-entiteiten onbeschikbaar.
 
 De samenvatting gebruikt nu rechtstreeks de werkelijk geplande
 handelsnetlading maal het ingestelde laadrendement.
+
+
+### Alpha24.3 - dynamische reserve over 72 uur
+
+De reservevloer is niet langer één vaste SOC-waarde voor de hele horizon.
+
+Voor ieder forecastuur bepaalt de planner opnieuw:
+- de volgende bruikbare zonneperiode;
+- de verwachte netto woningbehoefte tot die zonneperiode;
+- de daarvoor benodigde opgeslagen batterij-energie, inclusief
+  ontlaadrendement;
+- de vaste 5% apparaatgrens;
+- de ingestelde softwarematige veiligheidsreserve.
+
+De resulterende reservevloer kan daardoor gedurende de 72 uur stijgen en
+dalen. Ontladen voor woning of handel mag deze dynamische reserve niet
+onderschrijden.
+
+Wanneer de actuele opgeslagen energie na zonnelading toch onder de dynamische
+reservebehoefte ligt, kan de preview een observerende veiligheidslading
+opnemen. Fysieke uitvoering blijft uitgeschakeld.
+
+Per planuur zijn toegevoegd:
+- `reserve_floor_start_soc`
+- `reserve_floor_soc`
+- `dynamic_need_until_solar_kwh`
+- `dynamic_need_after_hour_kwh`
+- `next_usable_solar`
+
