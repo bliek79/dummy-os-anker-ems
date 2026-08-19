@@ -1,3 +1,42 @@
+# 0.0.1-alpha.23
+
+## Toegevoegd / gewijzigd
+- Observerende financiële handelslogica bovenop de alpha22 Planner Decision Preview.
+- Configureerbaar laadrendement, standaard 92%.
+- Configureerbaar ontlaadrendement, standaard 92%.
+- Configureerbare minimale netto handelsmarge, standaard € 0,10/kWh.
+- Roundtrip-rendement wordt expliciet berekend.
+- Effectieve laadkost wordt gecorrigeerd voor laad- én ontlaadverliezen.
+- Alle toekomstige prijsuren worden als laad/ontlaad-combinatie vergeleken.
+- Beste handelslaaduur en beste handelsontlaaduur worden gepubliceerd.
+- Verwachte netto handelsmarge wordt gepubliceerd.
+- Nieuwe binary sensor `Dummy OS EMS Handel rendabel`.
+- Plannerbeslissing kan observerend `handelsladen` of `ontladen` aangeven wanneer het huidige uur financieel het beste uur is en de veiligheidsvoorwaarden dit toelaten.
+- Veiligheidslading blijft altijd leidend boven handel.
+
+## Nieuwe entiteiten
+- Dummy OS EMS Planner roundtrip rendement
+- Dummy OS EMS Effectieve laadkost
+- Dummy OS EMS Verwachte handelsmarge
+- Dummy OS EMS Minimale handelsmarge
+- Dummy OS EMS Beste handelslaaduur
+- Dummy OS EMS Beste handelslaadprijs
+- Dummy OS EMS Beste handelsontlaaduur
+- Dummy OS EMS Beste handelsontlaadprijs
+- Dummy OS EMS Handel rendabel
+
+## Veiligheid
+- Nog geen automatische plancreatie.
+- Nog geen nieuwe fysieke handelsuitvoering.
+- Bestaande Scheduler, Safety Guard, Action Controller en Execution Controller blijven ongewijzigd.
+
+## Te valideren
+- Roundtrip-rendement bij 92% / 92% moet 84,6% zijn.
+- Effectieve laadkost en verwachte handelsmarge controleren tegen actuele prijsuren.
+- Beste laad- en ontlaaduren controleren op chronologische volgorde.
+- `Handel rendabel` moet alleen Aan zijn wanneer netto marge minimaal € 0,10/kWh bedraagt.
+- Veiligheidslading moet handelslogica blijven overrulen.
+
 # 0.0.1-alpha.22
 
 ## Toegevoegd / gewijzigd

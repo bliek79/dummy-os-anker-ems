@@ -52,6 +52,12 @@ from .const import (
     FORECAST_HORIZON_HOURS,
     CONF_SOFTWARE_RESERVE_PERCENT,
     DEFAULT_SOFTWARE_RESERVE_PERCENT,
+    CONF_CHARGE_EFFICIENCY_PERCENT,
+    CONF_DISCHARGE_EFFICIENCY_PERCENT,
+    CONF_MINIMUM_TRADE_MARGIN,
+    DEFAULT_CHARGE_EFFICIENCY_PERCENT,
+    DEFAULT_DISCHARGE_EFFICIENCY_PERCENT,
+    DEFAULT_MINIMUM_TRADE_MARGIN,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -348,9 +354,23 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             data.get("forecast", []), data.get("soc"), reserve_percent
         )
         data.update(energy_need)
+        charge_efficiency_percent = self.entry.options.get(
+            CONF_CHARGE_EFFICIENCY_PERCENT, DEFAULT_CHARGE_EFFICIENCY_PERCENT
+        )
+        discharge_efficiency_percent = self.entry.options.get(
+            CONF_DISCHARGE_EFFICIENCY_PERCENT, DEFAULT_DISCHARGE_EFFICIENCY_PERCENT
+        )
+        minimum_trade_margin = self.entry.options.get(
+            CONF_MINIMUM_TRADE_MARGIN, DEFAULT_MINIMUM_TRADE_MARGIN
+        )
         data.update(
             build_planner_preview(
-                data.get("forecast", []), energy_need, data.get("soc")
+                data.get("forecast", []),
+                energy_need,
+                data.get("soc"),
+                charge_efficiency_percent,
+                discharge_efficiency_percent,
+                minimum_trade_margin,
             )
         )
         data.update(await self.source_monitor.async_observe(self._source_monitor_specs()))

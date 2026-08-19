@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from math import ceil
 from typing import Any
 
 from homeassistant.util import dt as dt_util
@@ -39,24 +38,27 @@ def build_planner_preview(
     forecast: list[dict[str, Any]],
     energy_need: dict[str, Any],
     soc: float | None,
+    charge_efficiency_percent: float,
+    discharge_efficiency_percent: float,
+    minimum_trade_margin: float,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Build an observational decision preview without creating plans.
+    """Build an observational planner and financial trade preview.
 
-    Alpha22 intentionally keeps financial trading decisions non-executable.
-    Safety charging can already be identified from the alpha21 energy balance.
-    Price hours are ranked for observation, but charge/discharge losses and a
-    required net-profit threshold are not yet part of the trading decision.
+    Alpha23 still creates no plans and performs no physical trading action.
     """
     now_utc = (now or dt_util.utcnow()).astimezone(dt_util.UTC)
     current_hour = now_utc.replace(minute=0, second=0, microsecond=0)
 
+    charge_eff = max(0.50, min(1.00, float(charge_efficiency_percent) / 100.0))
+    discharge_eff = max(0.50, min(1.00, float(discharge_efficiency_percent) / 100.0))
+    roundtrip_eff = charge_eff * discharge_eff
+    min_margin = max(0.0, float(minimum_trade_margin))
+
     valid = bool(energy_need.get("energy_need_valid"))
     need_kwh = _as_float(energy_need.get("energy_need_until_solar_kwh")) or 0.0
     reserve_kwh = _as_float(energy_need.get("energy_need_safety_reserve_kwh")) or 0.0
-    additional_kwh = _as_float(
-        energy_need.get("energy_need_additional_grid_charge_kwh")
-    )
+    additional_kwh = _as_float(energy_need.get("energy_need_additional_grid_charge_kwh"))
     tradable_kwh = _as_float(energy_need.get("energy_need_tradable_battery_kwh"))
     first_usable = _parse_time(energy_need.get("energy_need_first_usable_solar"))
 
@@ -89,14 +91,8 @@ def build_planner_preview(
         price_max - price_min if price_min is not None and price_max is not None else None
     )
 
-    # Safety charging must happen before usable solar returns. Rank available
-    # hours by price and allocate only the energy deficit. A 3500 W maximum is
-    # used solely to estimate how many hourly slots would be needed. Losses are
-    # deliberately not applied yet, so these are candidate hours, not commands.
     safety_candidates = [
-        row
-        for row in price_rows
-        if first_usable is None or row["time"] < first_usable
+        row for row in price_rows if first_usable is None or row["time"] < first_usable
     ]
     safety_candidates.sort(key=lambda item: (item["price"], item["time"]))
 
@@ -109,7 +105,7 @@ def build_planner_preview(
         if row["time"] == current_hour:
             elapsed = now_utc.minute / 60.0 + now_utc.second / 3600.0
             fraction = max(0.0, min(1.0, 1.0 - elapsed))
-        capacity_kwh = MAX_CHARGE_POWER_W / 1000.0 * fraction
+        capacity_kwh = MAX_CHARGE_POWER_W / 1000.0 * fraction * charge_eff
         if capacity_kwh <= 0:
             continue
         allocated = min(remaining, capacity_kwh)
@@ -118,8 +114,8 @@ def build_planner_preview(
                 "time": row["time"].isoformat(),
                 "price": row["price"],
                 "price_source": row["price_source"],
-                "max_slot_energy_kwh": round(capacity_kwh, 3),
-                "candidate_energy_kwh": round(allocated, 3),
+                "max_battery_energy_kwh": round(capacity_kwh, 3),
+                "candidate_battery_energy_kwh": round(allocated, 3),
             }
         )
         remaining -= allocated
@@ -130,6 +126,7 @@ def build_planner_preview(
     safety_schedule_sufficient = bool(
         not safety_charge_needed or remaining <= _MIN_ENERGY_KWH
     )
+
     discharge_possible = bool(
         valid
         and tradable_kwh is not None
@@ -145,19 +142,48 @@ def build_planner_preview(
         and first_usable > now_utc
     )
 
-    # Trading is only a candidate in alpha22. A positive price spread and free
-    # battery capacity are observable facts, but actual profitability must wait
-    # for explicit charge/discharge losses and a minimum net-margin model.
     free_capacity_kwh = None
     if soc is not None:
-        free_capacity_kwh = DEFAULT_BATTERY_CAPACITY_KWH * max(0.0, 100.0 - float(soc)) / 100.0
+        free_capacity_kwh = (
+            DEFAULT_BATTERY_CAPACITY_KWH * max(0.0, 100.0 - float(soc)) / 100.0
+        )
+
+    # Financial pair search: buy in an earlier hour, use/sell in a later
+    # more expensive hour. Cost is expressed per delivered kWh after both
+    # charge and discharge losses.
+    best_trade: dict[str, Any] | None = None
+    for i, charge_row in enumerate(price_rows):
+        effective_charge_cost = charge_row["price"] / roundtrip_eff
+        for discharge_row in price_rows[i + 1:]:
+            net_margin = discharge_row["price"] - effective_charge_cost
+            if best_trade is None or net_margin > best_trade["net_margin"]:
+                best_trade = {
+                    "charge_time": charge_row["time"],
+                    "charge_price": charge_row["price"],
+                    "discharge_time": discharge_row["time"],
+                    "discharge_price": discharge_row["price"],
+                    "effective_charge_cost": effective_charge_cost,
+                    "net_margin": net_margin,
+                }
+
+    trade_profitable = bool(
+        best_trade is not None
+        and best_trade["net_margin"] >= min_margin
+    )
+
+    current_is_best_charge = bool(
+        best_trade is not None and best_trade["charge_time"] == current_hour
+    )
+    current_is_best_discharge = bool(
+        best_trade is not None and best_trade["discharge_time"] == current_hour
+    )
+
     trade_charge_candidate = bool(
         valid
         and not safety_charge_needed
         and free_capacity_kwh is not None
         and free_capacity_kwh > _MIN_ENERGY_KWH
-        and price_spread is not None
-        and price_spread > 0
+        and trade_profitable
     )
 
     if not valid:
@@ -168,23 +194,41 @@ def build_planner_preview(
         if safety_schedule_sufficient:
             reason = (
                 "Batterij-energie is onvoldoende voor behoefte plus reserve; "
-                "goedkoopste kandidaat-laaduren zijn geselecteerd"
+                "goedkoopste benodigde laaduren zijn geselecteerd"
             )
         else:
             reason = (
-                "Batterij-energie is onvoldoende en de beschikbare uren voor "
+                "Batterij-energie is onvoldoende en beschikbare laaduren vóór "
                 "bruikbare zon lijken niet genoeg om het tekort volledig te laden"
             )
+    elif current_is_best_discharge and discharge_possible and trade_profitable:
+        decision = "ontladen"
+        reason = (
+            "Huidig uur is financieel beste ontlaaduur en energie boven reserve "
+            "is beschikbaar"
+        )
+    elif current_is_best_charge and trade_charge_candidate and not solar_charge_delay:
+        decision = "handelsladen"
+        reason = (
+            "Huidig uur is financieel beste laaduur en verwachte netto marge "
+            "overschrijdt de ingestelde minimum handelsmarge"
+        )
     elif solar_charge_delay:
         decision = "wachten"
         reason = (
             "Voldoende batterijreserve tot bruikbare zon; netladen nu uitstellen"
         )
+    elif trade_profitable:
+        decision = "wachten"
+        reason = (
+            "Financieel rendabele handelscombinatie gevonden; beste laad- of "
+            "ontlaaduur ligt later"
+        )
     else:
         decision = "geen_actie"
         reason = (
-            "Geen veiligheidslading nodig; handelsbeslissing blijft observerend "
-            "tot verliezen en minimale netto marge zijn gemodelleerd"
+            "Geen veiligheidslading nodig en geen handelscombinatie voldoet aan "
+            "de ingestelde netto handelsmarge"
         )
 
     cheapest_preview = sorted(price_rows, key=lambda item: (item["price"], item["time"]))[:6]
@@ -227,13 +271,37 @@ def build_planner_preview(
         "planner_preview_free_capacity_kwh": (
             round(free_capacity_kwh, 3) if free_capacity_kwh is not None else None
         ),
+        "planner_preview_charge_efficiency_percent": round(charge_eff * 100.0, 1),
+        "planner_preview_discharge_efficiency_percent": round(discharge_eff * 100.0, 1),
+        "planner_preview_roundtrip_efficiency_percent": round(roundtrip_eff * 100.0, 1),
+        "planner_preview_minimum_trade_margin": round(min_margin, 4),
+        "planner_preview_trade_profitable": trade_profitable,
+        "planner_preview_best_charge_time": (
+            best_trade["charge_time"].isoformat() if best_trade else None
+        ),
+        "planner_preview_best_charge_price": (
+            round(best_trade["charge_price"], 6) if best_trade else None
+        ),
+        "planner_preview_best_discharge_time": (
+            best_trade["discharge_time"].isoformat() if best_trade else None
+        ),
+        "planner_preview_best_discharge_price": (
+            round(best_trade["discharge_price"], 6) if best_trade else None
+        ),
+        "planner_preview_effective_charge_cost": (
+            round(best_trade["effective_charge_cost"], 6) if best_trade else None
+        ),
+        "planner_preview_expected_trade_margin": (
+            round(best_trade["net_margin"], 6) if best_trade else None
+        ),
         "planner_preview_replan_reason": "periodieke_observatieve_herberekening",
         "planner_preview_observational_only": True,
         "planner_preview_trading_execution_enabled": False,
-        "planner_preview_losses_included": False,
+        "planner_preview_losses_included": True,
         "planner_preview_assumed_max_charge_power_w": MAX_CHARGE_POWER_W,
         "planner_preview_note": (
-            "Veiligheidslading is afgeleid uit alpha21. Handelsmogelijkheden zijn "
-            "alleen kandidaten; verliezen en minimale netto handelsmarge volgen later."
+            "Alpha23 rekent handelsrendement observerend door met laad- en "
+            "ontlaadrendement en minimum handelsmarge. Er worden nog geen "
+            "automatische plannen aangemaakt."
         ),
     }

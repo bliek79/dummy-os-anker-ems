@@ -31,6 +31,7 @@ async def async_setup_entry(
             AnkerEmsPlannerTradeChargeCandidate(coordinator, entry),
             AnkerEmsPlannerDischargePossible(coordinator, entry),
             AnkerEmsPlannerSolarChargeDelay(coordinator, entry),
+            AnkerEmsPlannerTradeProfitable(coordinator, entry),
         ]
     )
 
@@ -293,3 +294,30 @@ class AnkerEmsPlannerSolarChargeDelay(_AnkerEmsPlannerBinaryBase):
     @property
     def is_on(self) -> bool:
         return bool(self.coordinator.data.get("planner_preview_solar_charge_delay"))
+
+
+class AnkerEmsPlannerTradeProfitable(_AnkerEmsBinarySensorBase):
+    _attr_name = "Dummy OS EMS Handel rendabel"
+
+    def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{entry.entry_id}_planner_trade_profitable"
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self.coordinator.data.get("planner_preview_trade_profitable"))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        data = self.coordinator.data
+        return {
+            "best_charge_time": data.get("planner_preview_best_charge_time"),
+            "best_charge_price": data.get("planner_preview_best_charge_price"),
+            "best_discharge_time": data.get("planner_preview_best_discharge_time"),
+            "best_discharge_price": data.get("planner_preview_best_discharge_price"),
+            "effective_charge_cost": data.get("planner_preview_effective_charge_cost"),
+            "expected_trade_margin": data.get("planner_preview_expected_trade_margin"),
+            "minimum_trade_margin": data.get("planner_preview_minimum_trade_margin"),
+            "roundtrip_efficiency_percent": data.get("planner_preview_roundtrip_efficiency_percent"),
+            "observational_only": True,
+        }

@@ -7,7 +7,7 @@ Het project wordt ontwikkeld als een lokale, modulaire EMS-laag bovenop Home Ass
 > **Status:** experimentele alpha  
 > **Domein:** `anker_ems`  
 > **Minimale Home Assistant-versie:** 2026.7.0  
-> **Huidige ontwikkelversie:** `0.0.1-alpha.22`
+> **Huidige ontwikkelversie:** `0.0.1-alpha.23`
 
 ---
 
@@ -853,3 +853,26 @@ Het project is niet gelieerd aan of goedgekeurd door:
 Productnamen en merknamen blijven eigendom van hun rechthebbenden.
 
 Batterijbesturing betreft fysieke elektrische apparatuur. Gebruik van deze software is op eigen risico. Respecteer altijd de veiligheidsgrenzen en voorschriften van batterij, omvormer, elektrische installatie en fabrikant.
+
+
+## Financiële handelslaag
+
+Alpha23 voegt een observerende financiële handelslaag toe aan de Planner Decision Preview.
+
+De integratie gebruikt hierbij dezelfde uitgangspunten als de bestaande YAML-referentie:
+- laadrendement standaard 92%;
+- ontlaadrendement standaard 92%;
+- minimale netto handelsmarge standaard € 0,10/kWh.
+
+Deze drie waarden zijn via de integratie-opties instelbaar.
+
+Voor iedere mogelijke combinatie van een eerder goedkoop laad-uur en een later duurder ontlaad-/besparingsuur berekent Dummy OS EMS:
+- roundtrip-rendement;
+- effectieve laadkost per later geleverde kWh;
+- verwachte netto handelsmarge;
+- beste handelslaaduur;
+- beste handelsontlaaduur;
+- of de combinatie de minimale handelsmarge haalt.
+
+Veiligheidslading heeft altijd voorrang op handelslogica. De handelslaag blijft in alpha23 volledig observerend: er worden nog geen automatische plannen aangemaakt of uitgevoerd.
+

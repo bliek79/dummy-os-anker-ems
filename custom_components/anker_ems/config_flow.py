@@ -29,6 +29,12 @@ from .const import (
     CONF_SOLAR_DAY3_ENTITY,
     CONF_SOFTWARE_RESERVE_PERCENT,
     DEFAULT_SOFTWARE_RESERVE_PERCENT,
+    CONF_CHARGE_EFFICIENCY_PERCENT,
+    CONF_DISCHARGE_EFFICIENCY_PERCENT,
+    CONF_MINIMUM_TRADE_MARGIN,
+    DEFAULT_CHARGE_EFFICIENCY_PERCENT,
+    DEFAULT_DISCHARGE_EFFICIENCY_PERCENT,
+    DEFAULT_MINIMUM_TRADE_MARGIN,
     DEFAULT_KNOWN_PRICE_ENTITY,
     DEFAULT_FORECAST_PRICE_ENTITY,
     DEFAULT_HOME_FORECAST_ENTITY,
@@ -132,6 +138,39 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
                     selector.NumberSelectorConfig(
                         min=0, max=30, step=1, mode=selector.NumberSelectorMode.BOX,
                         unit_of_measurement="%"
+                    )
+                ),
+                vol.Optional(
+                    CONF_CHARGE_EFFICIENCY_PERCENT,
+                    default=options.get(
+                        CONF_CHARGE_EFFICIENCY_PERCENT, DEFAULT_CHARGE_EFFICIENCY_PERCENT
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=50, max=100, step=1, mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="%"
+                    )
+                ),
+                vol.Optional(
+                    CONF_DISCHARGE_EFFICIENCY_PERCENT,
+                    default=options.get(
+                        CONF_DISCHARGE_EFFICIENCY_PERCENT, DEFAULT_DISCHARGE_EFFICIENCY_PERCENT
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=50, max=100, step=1, mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="%"
+                    )
+                ),
+                vol.Optional(
+                    CONF_MINIMUM_TRADE_MARGIN,
+                    default=options.get(
+                        CONF_MINIMUM_TRADE_MARGIN, DEFAULT_MINIMUM_TRADE_MARGIN
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0, max=1, step=0.01, mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="€/kWh"
                     )
                 ),
                 vol.Optional(
