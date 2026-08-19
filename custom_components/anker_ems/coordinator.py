@@ -18,6 +18,7 @@ from .execution import AnkerEmsExecutionController
 from .source_monitor import AnkerEmsSourceMonitor
 from .energy_need import build_energy_need_analysis
 from .planner_preview import build_planner_preview
+from .planner_72h import build_72h_plan_preview
 
 from .const import (
     NAME,
@@ -363,14 +364,23 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         minimum_trade_margin = self.entry.options.get(
             CONF_MINIMUM_TRADE_MARGIN, DEFAULT_MINIMUM_TRADE_MARGIN
         )
+        planner_preview = build_planner_preview(
+            data.get("forecast", []),
+            energy_need,
+            data.get("soc"),
+            charge_efficiency_percent,
+            discharge_efficiency_percent,
+            minimum_trade_margin,
+        )
+        data.update(planner_preview)
         data.update(
-            build_planner_preview(
+            build_72h_plan_preview(
                 data.get("forecast", []),
                 energy_need,
+                planner_preview,
                 data.get("soc"),
                 charge_efficiency_percent,
                 discharge_efficiency_percent,
-                minimum_trade_margin,
             )
         )
         data.update(await self.source_monitor.async_observe(self._source_monitor_specs()))

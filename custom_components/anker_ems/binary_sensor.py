@@ -32,6 +32,7 @@ async def async_setup_entry(
             AnkerEmsPlannerDischargePossible(coordinator, entry),
             AnkerEmsPlannerSolarChargeDelay(coordinator, entry),
             AnkerEmsPlannerTradeProfitable(coordinator, entry),
+            AnkerEmsAutoPlan72hValid(coordinator, entry),
         ]
     )
 
@@ -320,4 +321,29 @@ class AnkerEmsPlannerTradeProfitable(_AnkerEmsBinarySensorBase):
             "minimum_trade_margin": data.get("planner_preview_minimum_trade_margin"),
             "roundtrip_efficiency_percent": data.get("planner_preview_roundtrip_efficiency_percent"),
             "observational_only": True,
+        }
+
+
+class AnkerEmsAutoPlan72hValid(_AnkerEmsBinarySensorBase):
+    _attr_name = "Dummy OS EMS Automatisch plan 72u geldig"
+
+    def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{entry.entry_id}_auto_plan_72h_valid"
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self.coordinator.data.get("auto_plan_72h_valid"))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        data = self.coordinator.data
+        return {
+            "status": data.get("auto_plan_72h_status"),
+            "reason": data.get("auto_plan_72h_reason"),
+            "hours": data.get("auto_plan_72h_count"),
+            "start": data.get("auto_plan_72h_start"),
+            "end": data.get("auto_plan_72h_end"),
+            "observational_only": data.get("auto_plan_72h_observational_only", True),
+            "execution_enabled": data.get("auto_plan_72h_execution_enabled", False),
         }

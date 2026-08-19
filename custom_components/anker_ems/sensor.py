@@ -161,6 +161,35 @@ def _planner_preview_attrs(data: dict[str, Any]) -> dict[str, Any]:
         "note": data.get("planner_preview_note"),
     }
 
+
+def _auto_plan_72h_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "valid": data.get("auto_plan_72h_valid", False),
+        "reason": data.get("auto_plan_72h_reason"),
+        "count": data.get("auto_plan_72h_count"),
+        "start": data.get("auto_plan_72h_start"),
+        "end": data.get("auto_plan_72h_end"),
+        "start_soc": data.get("auto_plan_72h_start_soc"),
+        "end_soc": data.get("auto_plan_72h_end_soc"),
+        "min_soc": data.get("auto_plan_72h_min_soc"),
+        "max_soc": data.get("auto_plan_72h_max_soc"),
+        "reserve_floor_soc": data.get("auto_plan_72h_reserve_floor_soc"),
+        "solar_charge_kwh": data.get("auto_plan_72h_solar_charge_kwh"),
+        "grid_safety_charge_kwh": data.get("auto_plan_72h_grid_safety_charge_kwh"),
+        "grid_trade_charge_kwh": data.get("auto_plan_72h_grid_trade_charge_kwh"),
+        "home_discharge_kwh": data.get("auto_plan_72h_home_discharge_kwh"),
+        "grid_trade_discharge_kwh": data.get("auto_plan_72h_grid_trade_discharge_kwh"),
+        "grid_import_for_home_kwh": data.get("auto_plan_72h_grid_import_for_home_kwh"),
+        "solar_export_kwh": data.get("auto_plan_72h_solar_export_kwh"),
+        "charge_efficiency_percent": data.get("auto_plan_72h_charge_efficiency_percent"),
+        "discharge_efficiency_percent": data.get("auto_plan_72h_discharge_efficiency_percent"),
+        "observational_only": data.get("auto_plan_72h_observational_only", True),
+        "execution_enabled": data.get("auto_plan_72h_execution_enabled", False),
+        "plan": data.get("auto_plan_72h_plan", []),
+        "note": data.get("auto_plan_72h_note"),
+    }
+
+
 def _controller_attrs(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "selected_slot": data.get("controller_selected_slot"),
@@ -382,6 +411,68 @@ SENSORS: tuple[AnkerEmsSensorDescription, ...] = (
         native_unit_of_measurement="€/kWh",
         value_fn=lambda d: d.get("planner_preview_best_discharge_price"),
         attrs_fn=_planner_preview_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="auto_plan_72h_status",
+        name="Dummy OS EMS Automatisch plan 72u status",
+        value_fn=lambda d: d.get("auto_plan_72h_status"),
+        attrs_fn=_auto_plan_72h_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="auto_plan_72h_hours",
+        name="Dummy OS EMS Automatisch plan 72u",
+        native_unit_of_measurement="h",
+        value_fn=lambda d: d.get("auto_plan_72h_count"),
+        attrs_fn=_auto_plan_72h_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="auto_plan_72h_end_soc",
+        name="Dummy OS EMS Automatisch plan eind-SOC",
+        native_unit_of_measurement=PERCENTAGE,
+        value_fn=lambda d: d.get("auto_plan_72h_end_soc"),
+        attrs_fn=_auto_plan_72h_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="auto_plan_72h_min_soc",
+        name="Dummy OS EMS Automatisch plan minimum-SOC",
+        native_unit_of_measurement=PERCENTAGE,
+        value_fn=lambda d: d.get("auto_plan_72h_min_soc"),
+        attrs_fn=_auto_plan_72h_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="auto_plan_72h_solar_charge",
+        name="Dummy OS EMS Automatisch plan zonnelading",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value_fn=lambda d: d.get("auto_plan_72h_solar_charge_kwh"),
+        attrs_fn=_auto_plan_72h_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="auto_plan_72h_grid_safety_charge",
+        name="Dummy OS EMS Automatisch plan veiligheidslading",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value_fn=lambda d: d.get("auto_plan_72h_grid_safety_charge_kwh"),
+        attrs_fn=_auto_plan_72h_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="auto_plan_72h_grid_trade_charge",
+        name="Dummy OS EMS Automatisch plan handelslading",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value_fn=lambda d: d.get("auto_plan_72h_grid_trade_charge_kwh"),
+        attrs_fn=_auto_plan_72h_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="auto_plan_72h_home_discharge",
+        name="Dummy OS EMS Automatisch plan ontladen woning",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value_fn=lambda d: d.get("auto_plan_72h_home_discharge_kwh"),
+        attrs_fn=_auto_plan_72h_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="auto_plan_72h_grid_trade_discharge",
+        name="Dummy OS EMS Automatisch plan ontladen net",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value_fn=lambda d: d.get("auto_plan_72h_grid_trade_discharge_kwh"),
+        attrs_fn=_auto_plan_72h_attrs,
     ),
     AnkerEmsSensorDescription(
         key="source_monitor",

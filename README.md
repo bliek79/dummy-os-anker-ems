@@ -7,7 +7,7 @@ Het project wordt ontwikkeld als een lokale, modulaire EMS-laag bovenop Home Ass
 > **Status:** experimentele alpha  
 > **Domein:** `anker_ems`  
 > **Minimale Home Assistant-versie:** 2026.7.0  
-> **Huidige ontwikkelversie:** `0.0.1-alpha.23`
+> **Huidige ontwikkelversie:** `0.0.1-alpha.24`
 
 ---
 
@@ -875,4 +875,39 @@ Voor iedere mogelijke combinatie van een eerder goedkoop laad-uur en een later d
 - of de combinatie de minimale handelsmarge haalt.
 
 Veiligheidslading heeft altijd voorrang op handelslogica. De handelslaag blijft in alpha23 volledig observerend: er worden nog geen automatische plannen aangemaakt of uitgevoerd.
+
+
+
+## Automatische 72-uurs planpreview
+
+Alpha24 voegt de eerste doorlopende automatische 72-uurs planpreview toe.
+
+De preview rekent sequentieel uur voor uur met:
+- actuele SOC als startpunt;
+- batterijcapaciteit 7,2 kWh;
+- minimale apparaatgrens 5%;
+- softwarematige veiligheidsreserve;
+- woningverbruikforecast;
+- zonneforecast;
+- bekende en voorspelde energieprijzen;
+- maximaal 3,5 kW laden;
+- maximaal 3,0 kW ontladen;
+- laad- en ontlaadrendement uit de integratie-opties;
+- veiligheidslading uit de alpha21/22 energiebalans;
+- observerende handelskans uit alpha23.
+
+Prioriteit per uur:
+1. solar dekt eerst het woningverbruik;
+2. solaroverschot laadt de batterij;
+3. noodzakelijke veiligheidslading uit het net;
+4. observerende handelslading op het financieel beste laaduur;
+5. batterij dekt woningtekort boven de reserve;
+6. observerend ontladen naar het net op het beste handelsontlaaduur.
+
+De volledige reeks wordt gepubliceerd als `plan`-attribuut van
+`Dummy OS EMS Automatisch plan 72u`.
+
+Alpha24 is uitsluitend een preview. De drie handmatige planslots, Scheduler,
+Safety Guard, Action Controller en Execution Controller worden nog niet
+automatisch door deze planner aangestuurd.
 

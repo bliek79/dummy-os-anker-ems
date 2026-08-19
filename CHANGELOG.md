@@ -1,3 +1,46 @@
+# 0.0.1-alpha.24
+
+## Toegevoegd
+- Eerste volledige, doorlopende automatische 72-uurs planpreview.
+- Sequentiële SOC-berekening per forecastuur.
+- Batterijcapaciteit 7,2 kWh en 5% absolute ondergrens.
+- Softwarematige veiligheidsreserve wordt gedurende de planning bewaakt.
+- Solar dekt eerst woningverbruik; overschot kan de batterij laden.
+- Veiligheidslading uit alpha21/22 wordt in de 72-uurs preview geplaatst.
+- Financieel beste handelslaaduur uit alpha23 kan observerend worden ingepland.
+- Financieel beste handelsontlaaduur uit alpha23 kan observerend worden ingepland.
+- Woningtekort kan uit de batterij worden gedekt zolang de reserve intact blijft.
+- Laadlimiet 3,5 kW en ontlaadlimiet 3,0 kW.
+- Laad- en ontlaadverliezen worden in het SOC-pad verwerkt.
+- Volledige uurreeks wordt gepubliceerd in het `plan`-attribuut.
+
+## Nieuwe entiteiten
+- Dummy OS EMS Automatisch plan 72u status
+- Dummy OS EMS Automatisch plan 72u
+- Dummy OS EMS Automatisch plan eind-SOC
+- Dummy OS EMS Automatisch plan minimum-SOC
+- Dummy OS EMS Automatisch plan zonnelading
+- Dummy OS EMS Automatisch plan veiligheidslading
+- Dummy OS EMS Automatisch plan handelslading
+- Dummy OS EMS Automatisch plan ontladen woning
+- Dummy OS EMS Automatisch plan ontladen net
+- Dummy OS EMS Automatisch plan 72u geldig
+
+## Veiligheid
+- Geen automatische plancreatie in de drie planslots.
+- Geen Scheduler-aanroep vanuit de 72-uurs planner.
+- Geen fysieke batterijaansturing vanuit de 72-uurs planner.
+- Bestaande handmatige besturingsketen blijft ongewijzigd.
+
+## Te valideren
+- Plan bevat maximaal 72 chronologische uren.
+- SOC blijft tussen 5% en 100%.
+- Reservevloer wordt niet door normale woning-/handelsontlading onderschreden.
+- Zonnelading, veiligheidslading en handelslading worden apart zichtbaar.
+- Laad- en ontlaadlimieten worden per uur gerespecteerd.
+- Eind-SOC komt overeen met het laatste planuur.
+- Plan-attribuut blijft stabiel beschikbaar in Home Assistant.
+
 # 0.0.1-alpha.23
 
 ## Toegevoegd / gewijzigd
