@@ -280,6 +280,64 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     entry.async_on_unload(plan_store.add_listener(_plan_changed))
 
+    # Alpha 17: scheduled charging plans must not stop at the simulation-only
+    # Scheduler/Action Controller layer. As soon as a user-scheduled charge
+    # plan becomes start-ready, hand it to the proven Execution Controller.
+    # That controller performs the safe sequence:
+    # self_consumption -> third_party_control -> wait for controls -> recheck
+    # safety -> execute -> safe stop.
+    #
+    # Direct plans remain explicit via start_plan_now. Physical discharge is
+    # intentionally not auto-started until the controlled discharge path has
+    # been validated separately.
+    scheduled_autostart_task = None
+
+    @callback
+    def _scheduler_execution_listener() -> None:
+        nonlocal scheduled_autostart_task
+        data = coordinator.data or {}
+
+        if not data.get("scheduler_ready"):
+            return
+        if data.get("scheduler_selected_execution_mode") != "gepland":
+            return
+        if data.get("scheduler_selected_action") != "laden":
+            return
+        if execution.data.get("active") or physical_test.data.get("active"):
+            return
+        if scheduled_autostart_task is not None and not scheduled_autostart_task.done():
+            return
+
+        async def _async_start_scheduled_plan() -> None:
+            nonlocal scheduled_autostart_task
+            slot = data.get("scheduler_selected_slot")
+            try:
+                _LOGGER.info(
+                    "Automatically starting scheduled Dummy OS EMS charge plan %s",
+                    slot,
+                )
+                await execution.async_execute_selected_plan()
+            except HomeAssistantError as err:
+                _LOGGER.warning(
+                    "Scheduled Dummy OS EMS plan %s could not start: %s",
+                    slot,
+                    err,
+                )
+            except Exception:
+                _LOGGER.exception(
+                    "Unexpected error while automatically starting scheduled Dummy OS EMS plan %s",
+                    slot,
+                )
+            finally:
+                scheduled_autostart_task = None
+
+        scheduled_autostart_task = hass.async_create_task(
+            _async_start_scheduled_plan(),
+            "Dummy OS EMS scheduled plan auto-start",
+        )
+
+    entry.async_on_unload(coordinator.async_add_listener(_scheduler_execution_listener))
+
     @callback
     def _shutdown(_event) -> None:
         hass.async_create_task(physical_test.async_shutdown_stop())

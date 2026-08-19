@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.0.1-alpha.17
+
+- Fixed scheduled manual charge plans stopping at `startklaar` while `self_consumption` was active.
+- A user-scheduled charge plan now automatically hands off from the Scheduler to the existing Execution Controller when its start window opens.
+- The Execution Controller performs the proven automatic mode transition to `third_party_control`, waits for the Anker control entities, rechecks Safety Guard/Action Controller, and then starts charging.
+- `Nu starten` remains an explicit direct action and is unchanged.
+- Scheduled physical discharge remains intentionally disabled until the separate controlled discharge path has been validated.
+- Prevents duplicate auto-start tasks while coordinator refreshes occur during the mode transition.
+
 ## 0.0.1-alpha.16
 
 - Hotfix for alpha15 service registration.
