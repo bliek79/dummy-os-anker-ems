@@ -7,7 +7,7 @@ Het project wordt ontwikkeld als een lokale, modulaire EMS-laag bovenop Home Ass
 > **Status:** experimentele alpha  
 > **Domein:** `anker_ems`  
 > **Minimale Home Assistant-versie:** 2026.7.0  
-> **Huidige ontwikkelversie:** `0.0.1-alpha.20`
+> **Huidige ontwikkelversie:** `0.0.1-alpha.21`
 
 ---
 
@@ -366,6 +366,30 @@ De forecastlaag **normaliseert bestaande databronnen; zij maakt op dit moment ni
 
 ---
 
+# Observatieve energiebalans
+
+Alpha21 voegt de eerste rekenlaag toe die later als input voor de automatische 72-uursplanner wordt gebruikt. Deze laag **maakt nog geen plannen aan en stuurt de batterij niet aan**.
+
+De berekening bepaalt onder andere:
+
+- de netto woningenergiebehoefte vanaf nu tot bruikbare zonneproductie;
+- de beschikbare batterij-energie boven de absolute 5% SOC-ondergrens;
+- een softwarematige veiligheidsreserve bovenop die energiebehoefte;
+- eventueel benodigde aanvullende netlading;
+- vrije/verhandelbare batterij-energie boven behoefte en reserve;
+- het eerste verwachte bruikbare solar-uur;
+- een leesbare beslis-/diagnosereden.
+
+Voor deze eerste observatieve versie geldt een uur als **bruikbaar solar-uur** wanneer solarforecast minimaal gelijk is aan de woningverbruiksforecast. Om een losse forecastpiek niet direct als omslagpunt te gebruiken, moeten **twee opeenvolgende uren** aan die voorwaarde voldoen.
+
+Voor het lopende uur wordt alleen het resterende deel van het uur meegeteld. Voor uren vóór het bruikbare solar-uur wordt de netto behoefte berekend als woningverbruik minus beschikbare solar, met minimaal 0 kWh per uur.
+
+De batterijcapaciteit is momenteel 7,2 kWh en de absolute ondergrens blijft 5% SOC. De extra softwarematige veiligheidsreserve is via de integratie-opties instelbaar van **0 tot 30%**, met **7% als standaardwaarde**. De 7% is dus geen vaste plannerregel.
+
+Deze laag is bewust observerend. Eerst worden de uitkomsten in de praktijk beoordeeld voordat deze waarden automatische laad- of ontlaadplannen mogen veroorzaken.
+
+---
+
 # Source Monitor
 
 De Source Monitor registreert wanneer belangrijke brondata opnieuw wordt gerapporteerd en wanneer de inhoud werkelijk verandert.
@@ -405,6 +429,16 @@ Belangrijke groepen zijn:
 - `Dummy OS EMS Forecast complete uren`
 - `Dummy OS EMS Forecast bronnen beschikbaar`
 - `Dummy OS EMS Bronmonitor`
+
+### Observatieve energiebalans
+- `Dummy OS EMS Energiebehoefte status`
+- `Dummy OS EMS Energiebehoefte tot bruikbare zon`
+- `Dummy OS EMS Beschikbare batterij-energie`
+- `Dummy OS EMS Veiligheidsreserve`
+- `Dummy OS EMS Benodigde aanvullende netlading`
+- `Dummy OS EMS Vrije verhandelbare batterij-energie`
+- `Dummy OS EMS Eerste bruikbare solar`
+- `Dummy OS EMS Energiebehoefte reden`
 
 ### Scheduler
 - `Dummy OS EMS Scheduler status`
@@ -504,13 +538,13 @@ De Anker-batterij hanteert standaard een minimale SOC van **5%**. Dummy OS EMS m
 
 ## 1. Handmatige bediening volledig afronden
 
-Nog te voltooien:
+De kern van de handmatige uitvoeringsketen is inmiddels fysiek gevalideerd voor gepland laden en ontladen. Alpha20 heeft daarnaast het startvenster voor tijdelijk geblokkeerde plannen toegevoegd en de praktische overdracht na een tijdelijke blokkade is succesvol getest.
 
-- geplande laadactie na de alpha17 Scheduler → Execution-fix opnieuw valideren;
-- normale directe en geplande ontlaaduitvoering verder end-to-end valideren;
-- alle drie planplaatsen end-to-end testen;
-- edge-cases rond herstart, annuleren en stoppen verder valideren;
-- tijdelijk onuitvoerbare plannen binnen `max_start_delay` slimmer opnieuw laten proberen.
+Nog te valideren wanneer relevant:
+
+- alle drie planplaatsen in complexere combinaties;
+- aanvullende edge-cases rond herstart, annuleren en stoppen;
+- geïsoleerde retry na een daadwerkelijk mislukte fysieke startpoging.
 
 ---
 

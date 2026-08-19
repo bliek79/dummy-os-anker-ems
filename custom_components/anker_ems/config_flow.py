@@ -27,6 +27,8 @@ from .const import (
     CONF_SOLAR_TODAY_ENTITY,
     CONF_SOLAR_TOMORROW_ENTITY,
     CONF_SOLAR_DAY3_ENTITY,
+    CONF_SOFTWARE_RESERVE_PERCENT,
+    DEFAULT_SOFTWARE_RESERVE_PERCENT,
     DEFAULT_KNOWN_PRICE_ENTITY,
     DEFAULT_FORECAST_PRICE_ENTITY,
     DEFAULT_HOME_FORECAST_ENTITY,
@@ -121,6 +123,17 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
                     CONF_SOLAR_DAY3_ENTITY,
                     default=options.get(CONF_SOLAR_DAY3_ENTITY, DEFAULT_SOLAR_DAY3_ENTITY),
                 ): _entity_selector("sensor"),
+                vol.Optional(
+                    CONF_SOFTWARE_RESERVE_PERCENT,
+                    default=options.get(
+                        CONF_SOFTWARE_RESERVE_PERCENT, DEFAULT_SOFTWARE_RESERVE_PERCENT
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0, max=30, step=1, mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="%"
+                    )
+                ),
                 vol.Optional(
                     CONF_MONITOR_ENERGYZERO_ENTITY,
                     default=options.get(CONF_MONITOR_ENERGYZERO_ENTITY, DEFAULT_MONITOR_ENERGYZERO_ENTITY),

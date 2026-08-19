@@ -1,3 +1,38 @@
+# 0.0.1-alpha.21
+
+## Toegevoegd
+- Eerste **observatieve energiebalans** als rekenlaag voor de toekomstige automatische planner.
+- Nieuwe berekening van netto energiebehoefte vanaf nu tot de eerstvolgende bruikbare zonneproductie.
+- Bruikbare zon wordt in deze eerste versie gedefinieerd als het eerste van twee opeenvolgende forecasturen waarin `solar_kwh >= home_consumption_kwh`.
+- Het resterende deel van het actuele uur wordt proportioneel meegenomen.
+- Beschikbare batterij-energie wordt berekend boven de absolute 5% SOC-ondergrens op basis van 7,2 kWh batterijcapaciteit.
+- Softwarematige veiligheidsreserve toegevoegd als configureerbare integratie-optie van 0-30%; standaard 7%.
+- Berekening van benodigde aanvullende netlading.
+- Berekening van vrije/verhandelbare batterij-energie boven behoefte plus reserve.
+- Diagnose-/redenstatus voor de energiebalans.
+
+## Nieuwe sensoren
+- `Dummy OS EMS Energiebehoefte status`
+- `Dummy OS EMS Energiebehoefte tot bruikbare zon`
+- `Dummy OS EMS Beschikbare batterij-energie`
+- `Dummy OS EMS Veiligheidsreserve`
+- `Dummy OS EMS Benodigde aanvullende netlading`
+- `Dummy OS EMS Vrije verhandelbare batterij-energie`
+- `Dummy OS EMS Eerste bruikbare solar`
+- `Dummy OS EMS Energiebehoefte reden`
+
+## Veiligheid / scope
+- De nieuwe energiebalans is **uitsluitend observerend**.
+- Alpha21 maakt op basis hiervan nog geen automatische plannen aan.
+- De bestaande Scheduler, Safety Guard, Action Controller en Execution Controller zijn niet gewijzigd door deze rekenlaag.
+- De vaste hardwaregrens van 5% SOC blijft leidend.
+
+## Te valideren
+- Controleer of het eerste bruikbare solar-uur logisch overeenkomt met Solcast en de woningforecast.
+- Controleer of de energiebehoefte afneemt naarmate de tijd richting bruikbare zon vordert.
+- Controleer of beschikbare batterij-energie overeenkomt met SOC en 7,2 kWh capaciteit.
+- Beoordeel gedurende meerdere situaties of benodigde netlading en vrije/verhandelbare energie logisch reageren.
+
 # 0.0.1-alpha.20
 
 ## Toegevoegd / gewijzigd

@@ -5,7 +5,7 @@ from typing import Any, Callable
 
 from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE, UnitOfPower
+from homeassistant.const import PERCENTAGE, UnitOfEnergy, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -103,6 +103,26 @@ def _source_monitor_attrs(data: dict[str, Any]) -> dict[str, Any]:
         "purpose": "observe source timing before event-driven planner activation",
     }
 
+
+def _energy_need_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "valid": data.get("energy_need_valid", False),
+        "reason": data.get("energy_need_reason"),
+        "first_usable_solar": data.get("energy_need_first_usable_solar"),
+        "need_until_solar_kwh": data.get("energy_need_until_solar_kwh"),
+        "available_battery_kwh": data.get("energy_need_available_battery_kwh"),
+        "safety_reserve_percent": data.get("energy_need_safety_reserve_percent"),
+        "safety_reserve_kwh": data.get("energy_need_safety_reserve_kwh"),
+        "required_including_reserve_kwh": data.get("energy_need_required_including_reserve_kwh"),
+        "additional_grid_charge_kwh": data.get("energy_need_additional_grid_charge_kwh"),
+        "tradable_battery_kwh": data.get("energy_need_tradable_battery_kwh"),
+        "contributing_hours": data.get("energy_need_contributing_hours"),
+        "battery_capacity_kwh": data.get("energy_need_battery_capacity_kwh"),
+        "min_soc_percent": data.get("energy_need_min_soc_percent"),
+        "usable_solar_rule": data.get("energy_need_usable_solar_rule"),
+        "observational_only": data.get("energy_need_observational_only", True),
+    }
+
 def _controller_attrs(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "selected_slot": data.get("controller_selected_slot"),
@@ -159,6 +179,59 @@ SENSORS: tuple[AnkerEmsSensorDescription, ...] = (
         name="Dummy OS EMS Forecast complete uren",
         native_unit_of_measurement="h",
         value_fn=lambda d: d.get("forecast_complete_hours"),
+    ),
+    AnkerEmsSensorDescription(
+        key="energy_need_status",
+        name="Dummy OS EMS Energiebehoefte status",
+        value_fn=lambda d: d.get("energy_need_status"),
+        attrs_fn=_energy_need_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="energy_need_until_solar",
+        name="Dummy OS EMS Energiebehoefte tot bruikbare zon",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value_fn=lambda d: d.get("energy_need_until_solar_kwh"),
+        attrs_fn=_energy_need_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="available_battery_energy",
+        name="Dummy OS EMS Beschikbare batterij-energie",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value_fn=lambda d: d.get("energy_need_available_battery_kwh"),
+        attrs_fn=_energy_need_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="safety_reserve",
+        name="Dummy OS EMS Veiligheidsreserve",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value_fn=lambda d: d.get("energy_need_safety_reserve_kwh"),
+        attrs_fn=_energy_need_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="additional_grid_charge_needed",
+        name="Dummy OS EMS Benodigde aanvullende netlading",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value_fn=lambda d: d.get("energy_need_additional_grid_charge_kwh"),
+        attrs_fn=_energy_need_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="tradable_battery_energy",
+        name="Dummy OS EMS Vrije verhandelbare batterij-energie",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value_fn=lambda d: d.get("energy_need_tradable_battery_kwh"),
+        attrs_fn=_energy_need_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="first_usable_solar",
+        name="Dummy OS EMS Eerste bruikbare solar",
+        value_fn=lambda d: d.get("energy_need_first_usable_solar") or "onbekend",
+        attrs_fn=_energy_need_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="energy_need_reason",
+        name="Dummy OS EMS Energiebehoefte reden",
+        value_fn=lambda d: d.get("energy_need_reason"),
+        attrs_fn=_energy_need_attrs,
     ),
     AnkerEmsSensorDescription(
         key="source_monitor",

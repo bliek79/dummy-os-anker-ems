@@ -27,14 +27,15 @@
     "step": {
       "init": {
         "title": "Forecast Sources",
-        "description": "Selecteer de bestaande prijs-, woning- en Solcast-bronnen. Dummy OS EMS normaliseert deze bronnen voor diagnose en toekomstige automatische planning.",
+        "description": "Selecteer de bestaande prijs-, woning- en Solcast-bronnen en stel de softwarematige veiligheidsreserve in. Dummy OS EMS gebruikt deze bronnen voor diagnose en de observatieve energiebalans.",
         "data": {
           "known_price_entity": "Bekende/all-in prijzen",
           "forecast_price_entity": "Prijsforecast",
           "home_forecast_entity": "Woningverbruiksforecast",
           "solar_today_entity": "Solcast vandaag",
           "solar_tomorrow_entity": "Solcast morgen",
-          "solar_day3_entity": "Solcast dag 3"
+          "solar_day3_entity": "Solcast dag 3",
+          "software_reserve_percent": "Softwarematige veiligheidsreserve boven 5% SOC"
         }
       }
     }

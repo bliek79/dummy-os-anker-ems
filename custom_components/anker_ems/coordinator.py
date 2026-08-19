@@ -16,6 +16,7 @@ from .action_controller import AnkerEmsActionController
 from .physical_test import AnkerEmsPhysicalTestController
 from .execution import AnkerEmsExecutionController
 from .source_monitor import AnkerEmsSourceMonitor
+from .energy_need import build_energy_need_analysis
 
 from .const import (
     NAME,
@@ -48,6 +49,8 @@ from .const import (
     DEFAULT_MONITOR_STROOMVOORSPELLER_ENTITY,
     DEFAULT_MONITOR_SOLCAST_API_ENTITY,
     FORECAST_HORIZON_HOURS,
+    CONF_SOFTWARE_RESERVE_PERCENT,
+    DEFAULT_SOFTWARE_RESERVE_PERCENT,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -337,6 +340,14 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "power_setpoint_w": self._number(CONF_POWER_SETPOINT_ENTITY),
         }
         data.update(self._build_forecast())
+        reserve_percent = self.entry.options.get(
+            CONF_SOFTWARE_RESERVE_PERCENT, DEFAULT_SOFTWARE_RESERVE_PERCENT
+        )
+        data.update(
+            build_energy_need_analysis(
+                data.get("forecast", []), data.get("soc"), reserve_percent
+            )
+        )
         data.update(await self.source_monitor.async_observe(self._source_monitor_specs()))
         data.update(self.scheduler.evaluate())
         data.update(self.safety_guard.evaluate(data))
