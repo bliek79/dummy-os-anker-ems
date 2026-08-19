@@ -17,6 +17,7 @@ from .physical_test import AnkerEmsPhysicalTestController
 from .execution import AnkerEmsExecutionController
 from .source_monitor import AnkerEmsSourceMonitor
 from .energy_need import build_energy_need_analysis
+from .planner_preview import build_planner_preview
 
 from .const import (
     NAME,
@@ -343,9 +344,13 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         reserve_percent = self.entry.options.get(
             CONF_SOFTWARE_RESERVE_PERCENT, DEFAULT_SOFTWARE_RESERVE_PERCENT
         )
+        energy_need = build_energy_need_analysis(
+            data.get("forecast", []), data.get("soc"), reserve_percent
+        )
+        data.update(energy_need)
         data.update(
-            build_energy_need_analysis(
-                data.get("forecast", []), data.get("soc"), reserve_percent
+            build_planner_preview(
+                data.get("forecast", []), energy_need, data.get("soc")
             )
         )
         data.update(await self.source_monitor.async_observe(self._source_monitor_specs()))

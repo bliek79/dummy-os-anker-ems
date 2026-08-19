@@ -7,7 +7,7 @@ Het project wordt ontwikkeld als een lokale, modulaire EMS-laag bovenop Home Ass
 > **Status:** experimentele alpha  
 > **Domein:** `anker_ems`  
 > **Minimale Home Assistant-versie:** 2026.7.0  
-> **Huidige ontwikkelversie:** `0.0.1-alpha.21`
+> **Huidige ontwikkelversie:** `0.0.1-alpha.22`
 
 ---
 
@@ -387,6 +387,41 @@ Voor het lopende uur wordt alleen het resterende deel van het uur meegeteld. Voo
 De batterijcapaciteit is momenteel 7,2 kWh en de absolute ondergrens blijft 5% SOC. De extra softwarematige veiligheidsreserve is via de integratie-opties instelbaar van **0 tot 30%**, met **7% als standaardwaarde**. De 7% is dus geen vaste plannerregel.
 
 Deze laag is bewust observerend. Eerst worden de uitkomsten in de praktijk beoordeeld voordat deze waarden automatische laad- of ontlaadplannen mogen veroorzaken.
+
+---
+
+# Planner Decision Preview
+
+Alpha22 voegt bovenop de alpha21-energiebalans een tweede, volledig observerende beslislaag toe. Deze laag maakt nog geen automatische plannen aan en stuurt de batterij niet fysiek aan.
+
+De preview bepaalt onder andere:
+
+- `Planner beslissing`;
+- `Planner reden`;
+- vereiste minimum-SOC op basis van behoefte, 5% absolute ondergrens en softwarematige reserve;
+- energie boven de vereiste reserve;
+- of veiligheidslading nodig is;
+- hoeveel aanvullende veiligheidslading nodig is;
+- de goedkoopste kandidaat-laaduren voor dat tekort;
+- of de beschikbare uren voor bruikbare zon voldoende lijken om het tekort te laden;
+- of ontladen energetisch mogelijk is zonder de berekende reserve aan te tasten;
+- een voorlopige handelslading-kandidaat op basis van vrije capaciteit en prijsverschil;
+- `Solar Charge Delay` wanneer de batterij voldoende energie heeft om bruikbare zon te bereiken zonder netlading;
+- prijsverschil binnen de beschikbare forecast;
+- een observerende herplanreden.
+
+Voor het selecteren van kandidaat-uren voor **veiligheidslading** worden de beschikbare uren tot bruikbare zon op prijs gerangschikt. Alpha22 gebruikt daarbij maximaal 3500 W laadvermogen uitsluitend om te schatten hoeveel uurblokken nodig zouden zijn. Deze uren zijn nog geen uitvoeringscommando's.
+
+De handelslaag blijft bewust beperkt tot een **kandidaatstatus**. Laadverlies, ontlaadverlies en een minimale netto handelsmarge zijn nog niet definitief gemodelleerd. Dummy OS EMS zal daarom in alpha22 niet automatisch voor handelswinst laden of ontladen.
+
+De beslisvolgorde is voorlopig:
+
+1. ongeldige/onvolledige energiebalans -> `wachten`;
+2. energietekort tot bruikbare zon -> `veiligheidsladen`;
+3. voldoende energie tot toekomstige bruikbare zon -> `wachten` met Solar Charge Delay;
+4. anders -> `geen_actie` totdat de financiële handelslaag is gevalideerd.
+
+Deze aanpak volgt de eerder vastgelegde principes uit de praktische vergelijking met de automatisering van de collega en OmniBattery: eerst tekort en reserve bepalen, veiligheidslading scheiden van handelslading, alleen benodigde goedkope laaduren selecteren en pas daarna handelsoptimalisatie toevoegen.
 
 ---
 

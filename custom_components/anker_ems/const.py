@@ -2,7 +2,7 @@ from __future__ import annotations
 
 DOMAIN = "anker_ems"
 NAME = "Dummy OS EMS"
-VERSION = "0.0.1-alpha.21"
+VERSION = "0.0.1-alpha.22"
 
 CONF_SIMULATION_MODE = "simulation_mode"
 

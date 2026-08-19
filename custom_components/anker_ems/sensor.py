@@ -123,6 +123,33 @@ def _energy_need_attrs(data: dict[str, Any]) -> dict[str, Any]:
         "observational_only": data.get("energy_need_observational_only", True),
     }
 
+def _planner_preview_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "decision": data.get("planner_preview_decision"),
+        "reason": data.get("planner_preview_reason"),
+        "required_min_soc": data.get("planner_preview_required_min_soc"),
+        "energy_above_reserve_kwh": data.get("planner_preview_energy_above_reserve_kwh"),
+        "safety_charge_needed": data.get("planner_preview_safety_charge_needed", False),
+        "safety_charge_kwh": data.get("planner_preview_safety_charge_kwh"),
+        "safety_charge_hours": data.get("planner_preview_safety_charge_hours", []),
+        "safety_schedule_sufficient": data.get("planner_preview_safety_schedule_sufficient", False),
+        "trade_charge_candidate": data.get("planner_preview_trade_charge_candidate", False),
+        "discharge_possible": data.get("planner_preview_discharge_possible", False),
+        "solar_charge_delay": data.get("planner_preview_solar_charge_delay", False),
+        "first_usable_solar": data.get("planner_preview_first_usable_solar"),
+        "price_min": data.get("planner_preview_price_min"),
+        "price_max": data.get("planner_preview_price_max"),
+        "price_spread": data.get("planner_preview_price_spread"),
+        "cheapest_hours": data.get("planner_preview_cheapest_hours", []),
+        "free_capacity_kwh": data.get("planner_preview_free_capacity_kwh"),
+        "replan_reason": data.get("planner_preview_replan_reason"),
+        "observational_only": data.get("planner_preview_observational_only", True),
+        "trading_execution_enabled": data.get("planner_preview_trading_execution_enabled", False),
+        "losses_included": data.get("planner_preview_losses_included", False),
+        "assumed_max_charge_power_w": data.get("planner_preview_assumed_max_charge_power_w"),
+        "note": data.get("planner_preview_note"),
+    }
+
 def _controller_attrs(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "selected_slot": data.get("controller_selected_slot"),
@@ -232,6 +259,64 @@ SENSORS: tuple[AnkerEmsSensorDescription, ...] = (
         name="Dummy OS EMS Energiebehoefte reden",
         value_fn=lambda d: d.get("energy_need_reason"),
         attrs_fn=_energy_need_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="planner_preview_status",
+        name="Dummy OS EMS Planner preview status",
+        value_fn=lambda d: d.get("planner_preview_status"),
+        attrs_fn=_planner_preview_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="planner_decision",
+        name="Dummy OS EMS Planner beslissing",
+        value_fn=lambda d: d.get("planner_preview_decision"),
+        attrs_fn=_planner_preview_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="planner_reason",
+        name="Dummy OS EMS Planner reden",
+        value_fn=lambda d: d.get("planner_preview_reason"),
+        attrs_fn=_planner_preview_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="planner_required_min_soc",
+        name="Dummy OS EMS Vereiste minimum-SOC",
+        native_unit_of_measurement=PERCENTAGE,
+        value_fn=lambda d: d.get("planner_preview_required_min_soc"),
+        attrs_fn=_planner_preview_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="planner_energy_above_reserve",
+        name="Dummy OS EMS Energie boven reserve",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value_fn=lambda d: d.get("planner_preview_energy_above_reserve_kwh"),
+        attrs_fn=_planner_preview_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="planner_safety_charge",
+        name="Dummy OS EMS Veiligheidslading nodig",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value_fn=lambda d: d.get("planner_preview_safety_charge_kwh"),
+        attrs_fn=_planner_preview_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="planner_cheapest_required_charge_hours",
+        name="Dummy OS EMS Goedkoopste benodigde laaduren",
+        native_unit_of_measurement="h",
+        value_fn=lambda d: d.get("planner_preview_safety_charge_hour_count"),
+        attrs_fn=_planner_preview_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="planner_price_spread",
+        name="Dummy OS EMS Planner prijsverschil",
+        value_fn=lambda d: d.get("planner_preview_price_spread"),
+        attrs_fn=_planner_preview_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="planner_replan_reason",
+        name="Dummy OS EMS Herplan reden",
+        value_fn=lambda d: d.get("planner_preview_replan_reason"),
+        attrs_fn=_planner_preview_attrs,
     ),
     AnkerEmsSensorDescription(
         key="source_monitor",

@@ -1,3 +1,47 @@
+# 0.0.1-alpha.22
+
+## Toegevoegd / gewijzigd
+- Nieuwe observerende `Planner Decision Preview` bovenop de alpha21-energiebalans.
+- Plannerbeslissing en leesbare plannerreden.
+- Vereiste minimum-SOC uit behoefte, 5% absolute ondergrens en softwarematige reserve.
+- Energie boven reserve zichtbaar gemaakt voor latere handelslogica.
+- Veiligheidslading als afzonderlijke plannerbeslissing.
+- Goedkoopste benodigde kandidaat-laaduren tot bruikbare zon.
+- Controle of voldoende laaduren beschikbaar zijn om het berekende tekort te dekken.
+- `Solar Charge Delay` als observerende status wanneer netladen kan worden uitgesteld tot bruikbare zon.
+- Observerende status voor mogelijke ontlading boven reserve.
+- Observerende handelslading-kandidaat op basis van vrije capaciteit en forecast-prijsverschil.
+- Planner prijsverschil en herplanreden als diagnosewaarden.
+
+## Belangrijke begrenzing
+- Alpha22 maakt nog geen automatische plannen aan.
+- Alpha22 voert geen nieuwe fysieke acties uit.
+- Handelslading is alleen een kandidaatstatus.
+- Laadverlies, ontlaadverlies en minimale netto handelsmarge zijn nog niet gemodelleerd.
+- Kandidaat-laaduren gebruiken maximaal 3500 W alleen voor een observatieve ureninschatting; dit is geen uitvoeringscommando.
+
+## Nieuwe entiteiten
+- Dummy OS EMS Planner preview status
+- Dummy OS EMS Planner beslissing
+- Dummy OS EMS Planner reden
+- Dummy OS EMS Vereiste minimum-SOC
+- Dummy OS EMS Energie boven reserve
+- Dummy OS EMS Veiligheidslading nodig
+- Dummy OS EMS Goedkoopste benodigde laaduren
+- Dummy OS EMS Planner prijsverschil
+- Dummy OS EMS Herplan reden
+- Dummy OS EMS Planner veiligheidslading nodig
+- Dummy OS EMS Planner handelslading kandidaat
+- Dummy OS EMS Planner ontladen mogelijk
+- Dummy OS EMS Solar Charge Delay
+
+## Te valideren
+- Plannerbeslissing gedurende zonnige uren.
+- Omschakeling naar veiligheidsladen wanneer de behoefte tot bruikbare zon groter wordt dan beschikbare batterij-energie minus reserve.
+- Selectie van de goedkoopste benodigde laaduren.
+- Solar Charge Delay in de periode voor verwachte bruikbare zon.
+- Gedrag van handels- en ontlaadkandidaten zonder dat deze fysieke acties veroorzaken.
+
 # 0.0.1-alpha.21
 
 ## Toegevoegd

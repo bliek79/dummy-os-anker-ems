@@ -27,6 +27,10 @@ async def async_setup_entry(
             AnkerEmsControllerReady(coordinator, entry),
             AnkerEmsPhysicalTestActive(coordinator, entry),
             AnkerEmsExecutionActive(coordinator, entry),
+            AnkerEmsPlannerSafetyChargeNeeded(coordinator, entry),
+            AnkerEmsPlannerTradeChargeCandidate(coordinator, entry),
+            AnkerEmsPlannerDischargePossible(coordinator, entry),
+            AnkerEmsPlannerSolarChargeDelay(coordinator, entry),
         ]
     )
 
@@ -228,3 +232,64 @@ class AnkerEmsExecutionActive(_AnkerEmsBinarySensorBase):
             "remaining_s": data.get("execution_remaining_s"),
             "last_result": data.get("execution_last_result"),
         }
+
+
+class _AnkerEmsPlannerBinaryBase(_AnkerEmsBinarySensorBase):
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        data = self.coordinator.data
+        return {
+            "planner_status": data.get("planner_preview_status"),
+            "planner_decision": data.get("planner_preview_decision"),
+            "planner_reason": data.get("planner_preview_reason"),
+            "observational_only": data.get("planner_preview_observational_only", True),
+            "trading_execution_enabled": data.get("planner_preview_trading_execution_enabled", False),
+        }
+
+
+class AnkerEmsPlannerSafetyChargeNeeded(_AnkerEmsPlannerBinaryBase):
+    _attr_name = "Dummy OS EMS Planner veiligheidslading nodig"
+
+    def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{entry.entry_id}_planner_safety_charge_needed"
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self.coordinator.data.get("planner_preview_safety_charge_needed"))
+
+
+class AnkerEmsPlannerTradeChargeCandidate(_AnkerEmsPlannerBinaryBase):
+    _attr_name = "Dummy OS EMS Planner handelslading kandidaat"
+
+    def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{entry.entry_id}_planner_trade_charge_candidate"
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self.coordinator.data.get("planner_preview_trade_charge_candidate"))
+
+
+class AnkerEmsPlannerDischargePossible(_AnkerEmsPlannerBinaryBase):
+    _attr_name = "Dummy OS EMS Planner ontladen mogelijk"
+
+    def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{entry.entry_id}_planner_discharge_possible"
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self.coordinator.data.get("planner_preview_discharge_possible"))
+
+
+class AnkerEmsPlannerSolarChargeDelay(_AnkerEmsPlannerBinaryBase):
+    _attr_name = "Dummy OS EMS Solar Charge Delay"
+
+    def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{entry.entry_id}_planner_solar_charge_delay"
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self.coordinator.data.get("planner_preview_solar_charge_delay"))
