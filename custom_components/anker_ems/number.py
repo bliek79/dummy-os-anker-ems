@@ -26,7 +26,7 @@ class PlanNumberDefinition:
 DEFINITIONS = (
     PlanNumberDefinition("power_w", "Vermogen", 100, 3500, 100, UnitOfPower.WATT),
     PlanNumberDefinition("target_soc", "Doel-SOC", 5, 100, 1, PERCENTAGE),
-    PlanNumberDefinition("max_runtime_h", "Maximale looptijd", 0.5, 12, 0.5, UnitOfTime.HOURS),
+    PlanNumberDefinition("max_runtime_h", "Maximale looptijd", 0.25, 12, 0.25, UnitOfTime.HOURS),
     PlanNumberDefinition("max_start_delay_min", "Maximale startvertraging", 1, 120, 1, UnitOfTime.MINUTES),
 )
 

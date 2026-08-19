@@ -154,24 +154,35 @@ class AnkerEmsExecutionController:
         max_runtime_h = float(detail.get("max_runtime_h") or 0)
         soc = data.get("soc")
 
-        if action == "ontladen":
+        if action not in {"laden", "ontladen"}:
+            raise HomeAssistantError("Geselecteerd plan bevat geen ondersteunde batterijactie")
+        max_power_w = 3000 if action == "ontladen" else 3500
+        if not 100 <= power_w <= max_power_w:
             raise HomeAssistantError(
-                "Alpha 12 voert ontladen nog niet fysiek uit; eerst is een gecontroleerde ontlaadtest nodig"
+                f"Planvermogen valt buiten 100-{max_power_w} W voor {action}"
             )
-        if action != "laden":
-            raise HomeAssistantError("Geselecteerd plan is geen ondersteunde laadactie")
-        if not 100 <= power_w <= 3500:
-            raise HomeAssistantError("Planvermogen valt buiten 100-3500 W")
         if not 5 <= target_soc <= 100:
             raise HomeAssistantError("Doel-SOC valt buiten 5-100%")
-        if not 0.5 <= max_runtime_h <= 12:
-            raise HomeAssistantError("Maximale looptijd valt buiten 0,5-12 uur")
+        if not 0.25 <= max_runtime_h <= 12:
+            raise HomeAssistantError("Maximale looptijd valt buiten 0,25-12 uur")
         if soc is None:
             raise HomeAssistantError("SOC is niet beschikbaar")
-        if float(soc) >= target_soc:
-            raise HomeAssistantError("Doel-SOC is al bereikt")
-        if (data.get("discharge_power_w") or 0) > 100:
-            raise HomeAssistantError("Batterij ontlaadt momenteel; uitvoering wordt niet gestart")
+        try:
+            soc_value = float(soc)
+        except (TypeError, ValueError) as err:
+            raise HomeAssistantError("SOC is ongeldig") from err
+        if action == "laden":
+            if soc_value >= target_soc:
+                raise HomeAssistantError("Laaddoel-SOC is al bereikt")
+            if (data.get("discharge_power_w") or 0) > 100:
+                raise HomeAssistantError("Batterij ontlaadt momenteel; laden wordt niet gestart")
+        else:
+            if soc_value <= 5:
+                raise HomeAssistantError("Minimale SOC van 5% is bereikt")
+            if soc_value <= target_soc:
+                raise HomeAssistantError("Ontlaaddoel-SOC is al bereikt")
+            if (data.get("charge_power_w") or 0) > 100:
+                raise HomeAssistantError("Batterij laadt momenteel; ontladen wordt niet gestart")
 
         mode_entity, direction_entity, power_entity = self._entity_ids()
         now = dt_util.now()
@@ -222,7 +233,7 @@ class AnkerEmsExecutionController:
             self._state.update(
                 {
                     "status": "starting",
-                    "reason": f"Plan {slot} wordt gestart: {power_w} W laden tot {target_soc:.0f}%",
+                    "reason": f"Plan {slot} wordt gestart: {power_w} W {action} tot {target_soc:.0f}%",
                 }
             )
             await self._async_save()
@@ -231,7 +242,7 @@ class AnkerEmsExecutionController:
             await self.hass.services.async_call(
                 "select",
                 "select_option",
-                {"option": "charge"},
+                {"option": "charge" if action == "laden" else "discharge"},
                 target={"entity_id": direction_entity},
                 blocking=True,
             )
@@ -250,7 +261,7 @@ class AnkerEmsExecutionController:
         self._state.update(
             {
                 "status": "running",
-                "reason": f"Plan {slot} actief: laden met {power_w} W tot {target_soc:.0f}% of max {max_runtime_h:g} uur",
+                "reason": f"Plan {slot} actief: {action} met {power_w} W tot {target_soc:.0f}% of max {max_runtime_h:g} uur",
             }
         )
         await self._async_save()
@@ -311,19 +322,23 @@ class AnkerEmsExecutionController:
         if data.get("operating_mode") != _EXTERNAL_MODE:
             await self.async_stop("operating_mode_changed", emergency=True)
             return
-        if data.get("action_direction") != "charge":
+
+        action = self._state.get("action")
+        expected_direction = "charge" if action == "laden" else "discharge"
+        if data.get("action_direction") != expected_direction:
             await self.async_stop("direction_changed", emergency=True)
             return
         if data.get("power_setpoint_w") is None:
             await self.async_stop("power_setpoint_unavailable", emergency=True)
             return
-        if (data.get("discharge_power_w") or 0) > 100:
+        if action == "laden" and (data.get("discharge_power_w") or 0) > 100:
             await self.async_stop("unexpected_discharge_detected", emergency=True)
             return
+        if action == "ontladen" and (data.get("charge_power_w") or 0) > 100:
+            await self.async_stop("unexpected_charge_detected", emergency=True)
+            return
 
-        # Reaching the planned target is a normal completion condition. Check
-        # this before the Safety Guard, because the guard correctly marks a
-        # charge action unsafe once the target is already reached.
+        # Reaching the planned target is a normal completion condition.
         soc = data.get("soc")
         target_soc = self._state.get("target_soc")
         if soc is None:
@@ -343,9 +358,16 @@ class AnkerEmsExecutionController:
         if data.get("charge_power_w") is None or data.get("discharge_power_w") is None:
             await self.async_stop("battery_power_source_unavailable", emergency=True)
             return
-        if target_soc is not None and soc_value >= float(target_soc):
+        if action == "laden" and target_soc is not None and soc_value >= float(target_soc):
             await self.async_stop("target_soc_reached", emergency=False)
             return
+        if action == "ontladen":
+            if soc_value <= 5:
+                await self.async_stop("minimum_soc_reached", emergency=False)
+                return
+            if target_soc is not None and soc_value <= float(target_soc):
+                await self.async_stop("target_soc_reached", emergency=False)
+                return
 
         # Do not reuse the pre-start Safety Guard while a plan is active.
         # The Safety Guard intentionally requires a scheduler-selected

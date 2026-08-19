@@ -168,7 +168,7 @@ class AnkerEmsPlanStore:
             return "ongeldig"
         if not isinstance(target_soc, (int, float)) or not 5 <= float(target_soc) <= 100:
             return "ongeldig"
-        if not isinstance(runtime, (int, float)) or not 0.5 <= float(runtime) <= 12:
+        if not isinstance(runtime, (int, float)) or not 0.25 <= float(runtime) <= 12:
             return "ongeldig"
         if not isinstance(delay, (int, float)) or not 1 <= float(delay) <= 120:
             return "ongeldig"

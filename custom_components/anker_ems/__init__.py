@@ -308,16 +308,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     entry.async_on_unload(plan_store.add_listener(_plan_changed))
 
-    # Alpha 17: scheduled charging plans must not stop at the simulation-only
-    # Scheduler/Action Controller layer. As soon as a user-scheduled charge
-    # plan becomes start-ready, hand it to the proven Execution Controller.
+    # Alpha 19: user-scheduled charge and discharge plans are handed from the
+    # Scheduler to the validated Execution Controller as soon as they become
+    # start-ready.
     # That controller performs the safe sequence:
     # self_consumption -> third_party_control -> wait for controls -> recheck
     # safety -> execute -> safe stop.
     #
-    # Direct plans remain explicit via start_plan_now. Physical discharge is
-    # intentionally not auto-started until the controlled discharge path has
-    # been validated separately.
+    # Direct plans remain explicit via start_plan_now. Both physical charge
+    # and physical discharge paths have now been validated separately.
     scheduled_autostart_task = None
 
     @callback
@@ -329,7 +328,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return
         if data.get("scheduler_selected_execution_mode") != "gepland":
             return
-        if data.get("scheduler_selected_action") != "laden":
+        if data.get("scheduler_selected_action") not in {"laden", "ontladen"}:
             return
         if execution.data.get("active") or physical_test.data.get("active"):
             return
@@ -341,7 +340,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             slot = data.get("scheduler_selected_slot")
             try:
                 _LOGGER.info(
-                    "Automatically starting scheduled Dummy OS EMS charge plan %s",
+                    "Automatically starting scheduled Dummy OS EMS plan %s",
                     slot,
                 )
                 await execution.async_execute_selected_plan()

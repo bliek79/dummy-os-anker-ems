@@ -7,7 +7,7 @@ Het project wordt ontwikkeld als een lokale, modulaire EMS-laag bovenop Home Ass
 > **Status:** experimentele alpha  
 > **Domein:** `anker_ems`  
 > **Minimale Home Assistant-versie:** 2026.7.0  
-> **Huidige ontwikkelversie:** `0.0.1-alpha.18`
+> **Huidige ontwikkelversie:** `0.0.1-alpha.19`
 
 ---
 
@@ -194,7 +194,7 @@ Elke planplaats bevat:
 | Starttijd | datum en tijd |
 | Vermogen | 100–3500 W |
 | Doel-SOC | 5–100% |
-| Maximale looptijd | 0,5–12 uur |
+| Maximale looptijd | 0,25–12 uur (15 min–12 uur) |
 | Maximale startvertraging | 1–120 minuten |
 
 Planinstellingen worden persistent opgeslagen en blijven behouden na een Home Assistant-herstart.
@@ -301,9 +301,9 @@ Bevestigde onderdelen:
 - terugkeer naar `self_consumption`;
 - correcte afronding van de plan-lifecycle.
 
-**Fysiek ontladen via de normale Execution Controller is nog niet als bewezen uitvoerpad vrijgegeven.**
+**Fysiek laden én ontladen zijn gecontroleerd gevalideerd.**
 
-Alpha18 voegt daarom eerst een afzonderlijke, begrensde fysieke ontlaadtest toe. Deze test is bewust gescheiden van normale planuitvoering en moet eerst gecontroleerd worden gevalideerd.
+Alpha19 geeft daarom ook ontladen vrij via de normale Execution Controller. Zowel directe als geplande ontlaadplannen gebruiken dezelfde keten als laden: Scheduler → Safety Guard → Action Controller → Execution Controller → safe-stop → `self_consumption`.
 
 ---
 
@@ -490,7 +490,7 @@ De Anker-batterij hanteert standaard een minimale SOC van **5%**. Dummy OS EMS m
 Nog te voltooien:
 
 - geplande laadactie na de alpha17 Scheduler → Execution-fix opnieuw valideren;
-- gecontroleerde fysieke ontlaadtest via `anker_ems.start_discharge_test`;
+- normale directe en geplande ontlaaduitvoering verder end-to-end valideren;
 - alle drie planplaatsen end-to-end testen;
 - edge-cases rond herstart, annuleren en stoppen verder valideren;
 - tijdelijk onuitvoerbare plannen binnen `max_start_delay` slimmer opnieuw laten proberen.

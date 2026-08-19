@@ -71,7 +71,8 @@ class AnkerEmsSafetyGuard:
         if action not in {"laden", "ontladen"}:
             reasons.append("invalid_action")
 
-        if power is None or not 100 <= power <= 3500:
+        max_power = 3000 if action == "ontladen" else 3500
+        if power is None or not 100 <= power <= max_power:
             reasons.append("invalid_power")
 
         if soc is None or not 0 <= soc <= MAX_SOC_PERCENT:

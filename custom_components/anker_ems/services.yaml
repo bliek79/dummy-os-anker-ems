@@ -91,11 +91,10 @@ stop_physical_test:
 execute_selected_plan:
   name: Voer geselecteerd plan uit
   description: >-
-    Start het door de Scheduler geselecteerde laadplan. Dummy OS EMS schakelt
-    zelfstandig naar third_party_control, wacht tot de besturingsentiteiten
-    beschikbaar zijn, voert de laadactie uit en keert na doel-SOC, maximale
-    looptijd, fout of handmatige stop terug naar self_consumption. Alpha 12
-    voert ontladen nog niet fysiek uit.
+    Start het door de Scheduler geselecteerde laad- of ontlaadplan. Dummy OS EMS
+    schakelt zelfstandig naar third_party_control, wacht tot de besturingsentiteiten
+    beschikbaar zijn, voert de gekozen batterijactie uit en keert na doel-SOC,
+    maximale looptijd, fout of handmatige stop terug naar self_consumption.
   fields:
     confirm:
       name: Bevestigen

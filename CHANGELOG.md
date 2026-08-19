@@ -1,3 +1,22 @@
+# 0.0.1-alpha.19
+
+## Toegevoegd / gewijzigd
+- Normale fysieke ontlaaduitvoering vrijgegeven via de bestaande Execution Controller.
+- Directe ontlaadplannen kunnen via `anker_ems.start_plan_now` worden uitgevoerd.
+- Geplande ontlaadplannen worden bij `startklaar` automatisch overgedragen van Scheduler naar Execution Controller.
+- Ontladen gebruikt dezelfde veilige modusovergang als laden: `self_consumption` → `third_party_control` → besturing beschikbaar → Safety Guard → fysieke uitvoering.
+- Runtime-monitoring controleert nu per actie de juiste richting en tegengestelde energiestroom.
+- Ontladen stopt normaal bij doel-SOC, minimale hardware-SOC van 5% of maximale looptijd.
+- Safe-stop blijft 0 W zetten en terugkeren naar `self_consumption`.
+- Reëel maximaal ontlaadvermogen wordt in de Safety Guard/Execution Controller begrensd op 3000 W.
+- Minimale maximale looptijd verlaagd van 30 minuten naar **15 minuten (0,25 uur)**.
+- Stapgrootte voor maximale looptijd verlaagd naar 15 minuten.
+
+## Validatiestatus
+- Gepland laden: fysiek end-to-end bevestigd in alpha17.
+- Gecontroleerde fysieke ontlaadtest: bevestigd in alpha18.
+- Normale geplande ontlaaduitvoering: te valideren in alpha19.
+
 # 0.0.1-alpha.18
 
 ## Toegevoegd
