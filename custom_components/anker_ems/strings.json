@@ -4,7 +4,7 @@
     "step": {
       "user": {
         "title": "Dummy OS EMS instellen",
-        "description": "Selecteer de bestaande Anker-bron- en bedieningseenheden. De integratie stuurt in deze alpha nog niets fysiek aan.",
+        "description": "Selecteer de bestaande Anker-bron- en bedieningseenheden. Fysieke besturing is alleen beschikbaar via expliciet gevalideerde EMS-paden.",
         "data": {
           "simulation_mode": "Simulatiemodus",
           "soc_entity": "SOC sensor",
@@ -27,7 +27,7 @@
     "step": {
       "init": {
         "title": "Forecast Sources",
-        "description": "Selecteer de bestaande prijs-, woning- en Solcast-bronnen. De integratie normaliseert deze bronnen en gebruikt de persistente plannen in de simulatie-Scheduler; er vindt nog geen fysieke batterijsturing plaats.",
+        "description": "Selecteer de bestaande prijs-, woning- en Solcast-bronnen. Dummy OS EMS normaliseert deze bronnen voor diagnose en toekomstige automatische planning.",
         "data": {
           "known_price_entity": "Bekende/all-in prijzen",
           "forecast_price_entity": "Prijsforecast",

@@ -62,6 +62,7 @@ def _safety_attrs(data: dict[str, Any]) -> dict[str, Any]:
 def _physical_test_attrs(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "active": data.get("physical_test_active", False),
+        "action": data.get("physical_test_action"),
         "reason": data.get("physical_test_reason"),
         "power_w": data.get("physical_test_power_w"),
         "duration_s": data.get("physical_test_duration_s"),

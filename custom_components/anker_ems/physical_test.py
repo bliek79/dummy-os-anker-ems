@@ -28,11 +28,11 @@ _STORAGE_VERSION = 1
 
 
 class AnkerEmsPhysicalTestController:
-    """Run a tightly bounded physical charge test.
+    """Run tightly bounded physical charge/discharge validation tests.
 
     This controller is intentionally separate from the normal Action Controller.
-    It can only be started through an explicit service action, only charges, and
-    always attempts to return the battery to self_consumption when it stops.
+    Tests can only be started through explicit service actions and always attempt
+    to return the battery to self_consumption when they stop.
     """
 
     def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
@@ -49,6 +49,7 @@ class AnkerEmsPhysicalTestController:
             "active": False,
             "status": "idle",
             "reason": "Geen fysieke test actief",
+            "action": None,
             "power_w": None,
             "duration_s": None,
             "started_at": None,
@@ -110,19 +111,13 @@ class AnkerEmsPhysicalTestController:
         _LOGGER.warning("Recovering interrupted Dummy OS EMS physical test")
         await self.async_stop("restart_recovery", emergency=True)
 
-    async def async_start_charge_test(
-        self,
-        *,
-        power_w: int = TEST_DEFAULT_POWER_W,
-        duration_s: int = TEST_DEFAULT_DURATION_S,
-    ) -> None:
+    async def _async_validate_common_test(self, power_w: int, duration_s: int) -> dict[str, Any]:
         if self._coordinator is None:
             raise HomeAssistantError("Dummy OS EMS coordinator is niet beschikbaar")
         if self._state.get("active"):
             raise HomeAssistantError("Er is al een fysieke test actief")
         if (
-            self._coordinator is not None
-            and getattr(self._coordinator, "execution", None) is not None
+            getattr(self._coordinator, "execution", None) is not None
             and self._coordinator.execution.data.get("active")
         ):
             raise HomeAssistantError("Er is al een EMS-uitvoering actief")
@@ -137,24 +132,110 @@ class AnkerEmsPhysicalTestController:
 
         await self._coordinator.async_refresh()
         data = self._coordinator.data
-
-        # This alpha only permits an explicit test while the normal EMS remains
-        # in simulation mode. It prevents accidental activation of the normal
-        # controller path.
         if not data.get("simulation_mode"):
             raise HomeAssistantError("Fysieke test is alleen toegestaan terwijl EMS op simulation staat")
         if not data.get("scheduler_ready"):
             raise HomeAssistantError("Scheduler heeft geen startklaar plan")
-        if data.get("controller_action") != "laden":
-            raise HomeAssistantError("Alpha 10 ondersteunt uitsluitend een laadtest")
-        if not data.get("safety_safe"):
-            raise HomeAssistantError(
-                f"Safety Guard blokkeert de test: {data.get('safety_reason') or 'onbekende reden'}"
-            )
         if data.get("operating_mode") != "third_party_control":
             raise HomeAssistantError("Zet de batterij eerst op third_party_control")
         if data.get("action_direction") is None or data.get("power_setpoint_w") is None:
             raise HomeAssistantError("Besturingsbronnen zijn niet beschikbaar")
+        return data
+
+    async def async_start_discharge_test(
+        self,
+        *,
+        power_w: int = TEST_DEFAULT_POWER_W,
+        duration_s: int = TEST_DEFAULT_DURATION_S,
+    ) -> None:
+        """Run an explicit, bounded physical discharge validation test."""
+        data = await self._async_validate_common_test(power_w, duration_s)
+
+        if data.get("controller_action") != "ontladen":
+            raise HomeAssistantError("Voor de ontlaadtest moet een ontlaadplan startklaar staan")
+        if not data.get("safety_safe"):
+            raise HomeAssistantError(
+                f"Safety Guard blokkeert de test: {data.get('safety_reason') or 'onbekende reden'}"
+            )
+        if (data.get("charge_power_w") or 0) > 100:
+            raise HomeAssistantError("Laadvermogen is actief; ontlaadtest wordt niet gestart")
+
+        soc = data.get("soc")
+        target_soc = data.get("controller_target_soc")
+        if soc is None:
+            raise HomeAssistantError("SOC is niet beschikbaar")
+        try:
+            soc_value = float(soc)
+        except (TypeError, ValueError) as err:
+            raise HomeAssistantError("SOC is ongeldig") from err
+        if soc_value <= 5:
+            raise HomeAssistantError("Ontlaadtest geblokkeerd: minimale SOC van 5% bereikt")
+        if target_soc is not None and soc_value <= float(target_soc):
+            raise HomeAssistantError("Ontlaaddoel is al bereikt")
+
+        mode_entity, direction_entity, power_entity = self._entity_ids()
+        now = dt_util.now()
+        stop_at = now + timedelta(seconds=duration_s)
+        self._state.update(
+            {
+                "active": True,
+                "status": "starting",
+                "reason": "Fysieke ontlaadtest wordt gestart",
+                "action": "ontladen",
+                "power_w": power_w,
+                "duration_s": duration_s,
+                "started_at": now.isoformat(),
+                "stop_at": stop_at.isoformat(),
+                "last_result": None,
+            }
+        )
+        await self._async_save()
+
+        try:
+            await self.hass.services.async_call(
+                "select",
+                "select_option",
+                {"option": "discharge"},
+                target={"entity_id": direction_entity},
+                blocking=True,
+            )
+            await self.hass.services.async_call(
+                "number",
+                "set_value",
+                {"value": power_w},
+                target={"entity_id": power_entity},
+                blocking=True,
+            )
+        except Exception as err:
+            _LOGGER.exception("Failed to start physical discharge test")
+            await self.async_stop(f"start_failed: {err}", emergency=True)
+            raise HomeAssistantError(f"Start fysieke ontlaadtest mislukt: {err}") from err
+
+        self._state.update(
+            {
+                "status": "running",
+                "reason": f"Ontlaadtest actief: {power_w} W gedurende maximaal {duration_s} s",
+            }
+        )
+        await self._async_save()
+        self._schedule_stop(stop_at)
+        self._schedule_monitor()
+        await self._coordinator.async_refresh()
+
+    async def async_start_charge_test(
+        self,
+        *,
+        power_w: int = TEST_DEFAULT_POWER_W,
+        duration_s: int = TEST_DEFAULT_DURATION_S,
+    ) -> None:
+        data = await self._async_validate_common_test(power_w, duration_s)
+
+        if data.get("controller_action") != "laden":
+            raise HomeAssistantError("Voor de laadtest moet een laadplan startklaar staan")
+        if not data.get("safety_safe"):
+            raise HomeAssistantError(
+                f"Safety Guard blokkeert de test: {data.get('safety_reason') or 'onbekende reden'}"
+            )
         if (data.get("discharge_power_w") or 0) > 100:
             raise HomeAssistantError("Ontlaadvermogen is actief; test wordt niet gestart")
 
@@ -166,6 +247,7 @@ class AnkerEmsPhysicalTestController:
                 "active": True,
                 "status": "starting",
                 "reason": "Fysieke laadtest wordt gestart",
+                "action": "laden",
                 "power_w": power_w,
                 "duration_s": duration_s,
                 "started_at": now.isoformat(),
@@ -266,24 +348,44 @@ class AnkerEmsPhysicalTestController:
         if data.get("operating_mode") != "third_party_control":
             await self.async_stop("operating_mode_changed", emergency=True)
             return
-        if data.get("action_direction") != "charge":
+
+        action = self._state.get("action")
+        expected_direction = "charge" if action == "laden" else "discharge"
+        if data.get("action_direction") != expected_direction:
             await self.async_stop("direction_changed", emergency=True)
             return
         if data.get("power_setpoint_w") is None:
             await self.async_stop("power_setpoint_unavailable", emergency=True)
             return
-        if (data.get("discharge_power_w") or 0) > 100:
+
+        if action == "laden" and (data.get("discharge_power_w") or 0) > 100:
             await self.async_stop("unexpected_discharge_detected", emergency=True)
             return
-        if not data.get("safety_safe"):
-            await self.async_stop("safety_guard_became_unsafe", emergency=True)
+        if action == "ontladen" and (data.get("charge_power_w") or 0) > 100:
+            await self.async_stop("unexpected_charge_detected", emergency=True)
             return
 
         target_soc = data.get("controller_target_soc")
         soc = data.get("soc")
-        if target_soc is not None and soc is not None and soc >= target_soc:
+        if soc is None:
+            await self.async_stop("soc_unavailable", emergency=True)
+            return
+        try:
+            soc_value = float(soc)
+        except (TypeError, ValueError):
+            await self.async_stop("invalid_soc", emergency=True)
+            return
+
+        if action == "laden" and target_soc is not None and soc_value >= float(target_soc):
             await self.async_stop("target_soc_reached", emergency=False)
             return
+        if action == "ontladen":
+            if soc_value <= 5:
+                await self.async_stop("minimum_soc_reached", emergency=False)
+                return
+            if target_soc is not None and soc_value <= float(target_soc):
+                await self.async_stop("target_soc_reached", emergency=False)
+                return
 
         if self.remaining_seconds == 0:
             await self.async_stop("test_duration_reached", emergency=False)

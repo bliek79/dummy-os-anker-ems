@@ -14,6 +14,7 @@ from .const import (
     DOMAIN,
     PLATFORMS,
     SERVICE_START_CHARGE_TEST,
+    SERVICE_START_DISCHARGE_TEST,
     SERVICE_STOP_PHYSICAL_TEST,
     SERVICE_EXECUTE_SELECTED_PLAN,
     SERVICE_STOP_EXECUTION,
@@ -55,6 +56,15 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             raise HomeAssistantError("Bevestiging ontbreekt: zet confirm op true")
         coordinator = _single_coordinator(hass)
         await coordinator.physical_test.async_start_charge_test(
+            power_w=int(call.data.get("power_w", TEST_DEFAULT_POWER_W)),
+            duration_s=int(call.data.get("duration_s", TEST_DEFAULT_DURATION_S)),
+        )
+
+    async def _start_discharge_test(call: ServiceCall) -> None:
+        if call.data.get("confirm") is not True:
+            raise HomeAssistantError("Bevestiging ontbreekt: zet confirm op true")
+        coordinator = _single_coordinator(hass)
+        await coordinator.physical_test.async_start_discharge_test(
             power_w=int(call.data.get("power_w", TEST_DEFAULT_POWER_W)),
             duration_s=int(call.data.get("duration_s", TEST_DEFAULT_DURATION_S)),
         )
@@ -171,6 +181,24 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         DOMAIN,
         SERVICE_START_CHARGE_TEST,
         _start_charge_test,
+        schema=vol.Schema(
+            {
+                vol.Required("confirm"): bool,
+                vol.Optional("power_w", default=TEST_DEFAULT_POWER_W): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(min=TEST_MIN_POWER_W, max=TEST_MAX_POWER_W),
+                ),
+                vol.Optional("duration_s", default=TEST_DEFAULT_DURATION_S): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(min=TEST_MIN_DURATION_S, max=TEST_MAX_DURATION_S),
+                ),
+            }
+        ),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_START_DISCHARGE_TEST,
+        _start_discharge_test,
         schema=vol.Schema(
             {
                 vol.Required("confirm"): bool,

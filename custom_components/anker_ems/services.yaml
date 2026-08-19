@@ -39,6 +39,49 @@ start_charge_test:
           unit_of_measurement: s
           mode: box
 
+
+start_discharge_test:
+  name: Start fysieke ontlaadtest
+  description: >-
+    Start een expliciete, begrensde fysieke ontlaadtest. Hiervoor moet een
+    ontlaadplan startklaar staan en de batterij vooraf op third_party_control
+    staan. De test stopt automatisch en keert daarna terug naar self_consumption.
+    Normale automatische ontlaaduitvoering blijft nog geblokkeerd.
+  fields:
+    confirm:
+      name: Bevestigen
+      description: Moet expliciet op true staan om de fysieke ontlaadtest te starten.
+      required: true
+      example: true
+      selector:
+        boolean:
+    power_w:
+      name: Testvermogen
+      description: Ontlaadvermogen voor de test, begrensd op 100 tot 500 W.
+      required: false
+      default: 300
+      example: 300
+      selector:
+        number:
+          min: 100
+          max: 500
+          step: 100
+          unit_of_measurement: W
+          mode: box
+    duration_s:
+      name: Testduur
+      description: Maximale testduur, begrensd op 10 tot 120 seconden.
+      required: false
+      default: 120
+      example: 120
+      selector:
+        number:
+          min: 10
+          max: 120
+          step: 10
+          unit_of_measurement: s
+          mode: box
+
 stop_physical_test:
   name: Stop fysieke test
   description: >-

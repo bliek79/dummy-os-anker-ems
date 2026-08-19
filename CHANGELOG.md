@@ -1,3 +1,20 @@
+# 0.0.1-alpha.18
+
+## Toegevoegd
+- Expliciete service `anker_ems.start_discharge_test` voor een gecontroleerde fysieke ontlaadtest.
+- Ontlaadtest is begrensd op 100-500 W en 10-120 seconden.
+- Test vereist expliciete `confirm: true`, een startklaar ontlaadplan, simulatiemodus en vooraf geactiveerde `third_party_control`.
+- Safety Guard moet de gekozen ontlaadactie vrijgeven voordat de fysieke test kan starten.
+- De test bewaakt richting, tegengesteld laadvermogen, SOC, doel-SOC, testduur en besturingsbeschikbaarheid.
+- Bij 5% SOC of het ingestelde ontlaaddoel stopt de test automatisch.
+- Safe-stop zet het setpoint terug naar 0 W en keert terug naar `self_consumption`.
+- Fysieke testdiagnostiek bevat nu ook de actieve testactie.
+
+## Bewust nog niet gewijzigd
+- De normale Execution Controller voert ontlaadplannen nog niet automatisch uit.
+- Geplande ontlaadacties worden nog niet automatisch gestart.
+- Pas na een geslaagde gecontroleerde ontlaadtest wordt automatische ontlaaduitvoering vrijgegeven.
+
 # Changelog
 
 ## 0.0.1-alpha.17

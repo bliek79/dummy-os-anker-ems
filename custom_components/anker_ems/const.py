@@ -2,7 +2,7 @@ from __future__ import annotations
 
 DOMAIN = "anker_ems"
 NAME = "Dummy OS EMS"
-VERSION = "0.0.1-alpha.17"
+VERSION = "0.0.1-alpha.18"
 
 CONF_SIMULATION_MODE = "simulation_mode"
 
@@ -48,6 +48,7 @@ MAX_SOC_PERCENT = 100
 FORECAST_HORIZON_HOURS = 72
 
 SERVICE_START_CHARGE_TEST = "start_charge_test"
+SERVICE_START_DISCHARGE_TEST = "start_discharge_test"
 SERVICE_STOP_PHYSICAL_TEST = "stop_physical_test"
 
 TEST_MIN_POWER_W = 100

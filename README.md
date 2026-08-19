@@ -7,7 +7,7 @@ Het project wordt ontwikkeld als een lokale, modulaire EMS-laag bovenop Home Ass
 > **Status:** experimentele alpha  
 > **Domein:** `anker_ems`  
 > **Minimale Home Assistant-versie:** 2026.7.0  
-> **Huidige ontwikkelversie:** `0.0.1-alpha.17`
+> **Huidige ontwikkelversie:** `0.0.1-alpha.18`
 
 ---
 
@@ -301,9 +301,9 @@ Bevestigde onderdelen:
 - terugkeer naar `self_consumption`;
 - correcte afronding van de plan-lifecycle.
 
-**Fysiek ontladen is nog niet als bewezen uitvoerpad vrijgegeven.**
+**Fysiek ontladen via de normale Execution Controller is nog niet als bewezen uitvoerpad vrijgegeven.**
 
-Daarvoor wordt eerst een afzonderlijke gecontroleerde ontlaadtest uitgevoerd.
+Alpha18 voegt daarom eerst een afzonderlijke, begrensde fysieke ontlaadtest toe. Deze test is bewust gescheiden van normale planuitvoering en moet eerst gecontroleerd worden gevalideerd.
 
 ---
 
@@ -320,6 +320,7 @@ De integratie bevat onder andere de volgende Home Assistant-services:
 | `anker_ems.execute_selected_plan` | Het geselecteerde Scheduler-plan uitvoeren |
 | `anker_ems.stop_execution` | Een actieve uitvoering stoppen |
 | `anker_ems.start_charge_test` | Beperkte fysieke laadtest |
+| `anker_ems.start_discharge_test` | Beperkte fysieke ontlaadtest (alpha18 validatiepad) |
 | `anker_ems.stop_physical_test` | De fysieke test veilig stoppen |
 
 De normale gebruikersworkflow is bedoeld om via de planplaatsen te werken. De fysieke testservices zijn uitsluitend bedoeld voor gecontroleerde ontwikkeling en validatie.
@@ -489,7 +490,7 @@ De Anker-batterij hanteert standaard een minimale SOC van **5%**. Dummy OS EMS m
 Nog te voltooien:
 
 - geplande laadactie na de alpha17 Scheduler → Execution-fix opnieuw valideren;
-- gecontroleerde fysieke ontlaadtest;
+- gecontroleerde fysieke ontlaadtest via `anker_ems.start_discharge_test`;
 - alle drie planplaatsen end-to-end testen;
 - edge-cases rond herstart, annuleren en stoppen verder valideren;
 - tijdelijk onuitvoerbare plannen binnen `max_start_delay` slimmer opnieuw laten proberen.
