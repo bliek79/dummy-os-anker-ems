@@ -1,3 +1,31 @@
+# 0.0.1-alpha.20
+
+## Toegevoegd / gewijzigd
+- Gecontroleerde retry-logica voor geplande laad- en ontlaadacties.
+- `max_start_delay` wordt nu daadwerkelijk gebruikt als startvenster voor tijdelijke startproblemen.
+- Bij tijdelijke Anker-/besturingsvertraging wordt een gepland plan niet direct definitief afgebroken.
+- Retry-interval: 10 seconden, nooit langer dan de resterende startmarge.
+- Tussen mislukte pogingen wordt de bestaande safe-stop gebruikt en het plan alleen binnen het geldige startvenster opnieuw op `pending` gezet.
+- Ondersteunde tijdelijke retry-redenen omvatten onder andere:
+  - externe modus nog niet tijdig beschikbaar;
+  - `control_sources_missing`;
+  - `not_in_external_mode`;
+  - `observation_sources_missing`;
+  - tijdelijk tegengestelde laad-/ontlaadflow;
+  - tijdelijk niet-gereed Action Controller.
+- Buiten het startvenster of bij een niet-tijdelijke fout wordt niet opnieuw geprobeerd.
+
+## Ongewijzigd
+- Maximale startvertraging blijft per plan instelbaar op 1-120 minuten.
+- Minimale looptijd blijft 15 minuten.
+- Laden en ontladen gebruiken dezelfde Scheduler → Safety Guard → Action Controller → Execution Controller-keten.
+- Safe-stop blijft 0 W zetten en terugkeren naar `self_consumption`.
+
+## Te valideren
+- Een gepland plan waarbij de Anker-besturingsentiteiten bij de eerste startpoging nog niet beschikbaar zijn, maar binnen `max_start_delay` alsnog gereed komen.
+- Een gepland plan waarbij een tegengestelde batterijflow tijdelijk actief is en later binnen het startvenster verdwijnt.
+- Geen automatische start meer nadat `max_start_delay` is verstreken.
+
 # 0.0.1-alpha.19
 
 ## Toegevoegd / gewijzigd

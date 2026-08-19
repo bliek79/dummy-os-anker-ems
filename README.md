@@ -7,7 +7,7 @@ Het project wordt ontwikkeld als een lokale, modulaire EMS-laag bovenop Home Ass
 > **Status:** experimentele alpha  
 > **Domein:** `anker_ems`  
 > **Minimale Home Assistant-versie:** 2026.7.0  
-> **Huidige ontwikkelversie:** `0.0.1-alpha.19`
+> **Huidige ontwikkelversie:** `0.0.1-alpha.20`
 
 ---
 
@@ -231,6 +231,23 @@ Daarbij wordt rekening gehouden met:
 - deterministische selectie wanneer meerdere plannen startklaar zijn.
 
 Er mag maximaal **één fysieke batterijactie tegelijk** actief zijn.
+
+### Startvenster en gecontroleerd opnieuw proberen
+
+Voor geplande acties gebruikt Dummy OS EMS de ingestelde **maximale startvertraging** als echt startvenster.
+
+Wanneer een plan op de geplande starttijd tijdelijk nog niet uitvoerbaar is, bijvoorbeeld omdat:
+
+- `third_party_control` nog niet volledig beschikbaar is;
+- de Anker-richting- of vermogensentiteit nog kort `unavailable` is;
+- een tegengestelde batterijflow nog actief is;
+- een tijdelijke Safety Guard-bronstatus nog niet gereed is;
+
+dan wordt het plan niet direct definitief afgekeurd.
+
+Zolang het ingestelde `max_start_delay`-venster nog open is, probeert Dummy OS EMS de geplande actie gecontroleerd opnieuw met een korte wachttijd tussen pogingen. Voor iedere mislukte poging wordt eerst de bestaande safe-stop uitgevoerd.
+
+Zodra de voorwaarden geldig zijn, wordt het plan alsnog normaal gestart. Wanneer het startvenster verstrijkt, stopt de retry-logica en wordt de actie niet meer automatisch gestart.
 
 Sinds alpha17 wordt een ingepland laadplan dat `startklaar` wordt automatisch overgedragen aan de Execution Controller.
 

@@ -64,8 +64,8 @@ class AnkerEmsScheduler:
     def evaluate(self, now: datetime | None = None) -> dict[str, Any]:
         """Return deterministic scheduler state for all three slots.
 
-        Alpha 7 only decides which slot would be allowed to start. It does not
-        call Home Assistant services and never writes to the Anker device.
+        The Scheduler determines which plan is allowed to start and exposes the
+        user-configured start window. Physical execution is handled separately.
         """
         local_now = now or dt_util.now()
         if local_now.tzinfo is None:

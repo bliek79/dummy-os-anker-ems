@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import voluptuous as vol
@@ -39,6 +40,7 @@ from .execution import AnkerEmsExecutionController
 from .source_monitor import AnkerEmsSourceMonitor
 
 _LOGGER = logging.getLogger(__name__)
+_SCHEDULED_RETRY_SECONDS = 10
 
 
 def _single_coordinator(hass: HomeAssistant) -> AnkerEmsCoordinator:
@@ -338,23 +340,97 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         async def _async_start_scheduled_plan() -> None:
             nonlocal scheduled_autostart_task
             slot = data.get("scheduler_selected_slot")
+            start_window_end_raw = (
+                (data.get("scheduler_slots", {}) or {})
+                .get(slot, {})
+                .get("start_window_end")
+            )
+            start_window_end = (
+                dt_util.parse_datetime(str(start_window_end_raw))
+                if start_window_end_raw
+                else None
+            )
+            if start_window_end is not None and start_window_end.tzinfo is None:
+                start_window_end = start_window_end.replace(
+                    tzinfo=dt_util.DEFAULT_TIME_ZONE
+                )
+
+            retryable_fragments = (
+                "Externe modus werd niet tijdig beschikbaar",
+                "control_sources_missing",
+                "not_in_external_mode",
+                "observation_sources_missing",
+                "Batterij laadt momenteel; ontladen wordt niet gestart",
+                "Batterij ontlaadt momenteel; laden wordt niet gestart",
+                "Action Controller niet gereed",
+            )
+
             try:
-                _LOGGER.info(
-                    "Automatically starting scheduled Dummy OS EMS plan %s",
-                    slot,
-                )
-                await execution.async_execute_selected_plan()
-            except HomeAssistantError as err:
-                _LOGGER.warning(
-                    "Scheduled Dummy OS EMS plan %s could not start: %s",
-                    slot,
-                    err,
-                )
-            except Exception:
-                _LOGGER.exception(
-                    "Unexpected error while automatically starting scheduled Dummy OS EMS plan %s",
-                    slot,
-                )
+                while True:
+                    try:
+                        _LOGGER.info(
+                            "Automatically starting scheduled Dummy OS EMS plan %s",
+                            slot,
+                        )
+                        await execution.async_execute_selected_plan()
+                        return
+                    except HomeAssistantError as err:
+                        message = str(err)
+                        retryable = any(
+                            fragment in message for fragment in retryable_fragments
+                        )
+                        now = dt_util.now()
+                        within_window = (
+                            start_window_end is not None and now < start_window_end
+                        )
+
+                        if not retryable or not within_window:
+                            _LOGGER.warning(
+                                "Scheduled Dummy OS EMS plan %s could not start: %s",
+                                slot,
+                                err,
+                            )
+                            return
+
+                        # Execution may already have performed its safe-stop and
+                        # marked the plan as fout. Re-arm only this scheduled plan
+                        # while its user-configured start window is still open.
+                        await coordinator.plan_store.async_mark_lifecycle(
+                            int(slot),
+                            "pending",
+                            f"retry_wait: {message}",
+                        )
+                        await coordinator.async_refresh()
+
+                        remaining = max(
+                            0.0,
+                            (start_window_end - dt_util.now()).total_seconds(),
+                        )
+                        delay = min(float(_SCHEDULED_RETRY_SECONDS), remaining)
+                        if delay <= 0:
+                            return
+
+                        _LOGGER.info(
+                            "Retrying scheduled Dummy OS EMS plan %s in %.0f seconds",
+                            slot,
+                            delay,
+                        )
+                        await asyncio.sleep(delay)
+                        await coordinator.async_refresh()
+
+                        current = coordinator.data or {}
+                        if (
+                            current.get("scheduler_selected_slot") != slot
+                            or not current.get("scheduler_ready")
+                            or current.get("scheduler_selected_execution_mode") != "gepland"
+                        ):
+                            return
+                    except Exception:
+                        _LOGGER.exception(
+                            "Unexpected error while automatically starting scheduled Dummy OS EMS plan %s",
+                            slot,
+                        )
+                        return
             finally:
                 scheduled_autostart_task = None
 
