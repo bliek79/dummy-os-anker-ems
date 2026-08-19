@@ -139,9 +139,41 @@ def build_72h_plan_preview(
     min_soc_seen = start_soc
     max_soc_seen = start_soc
 
-    trade_charge_stored = 0.0
+    # Reserve a future high-value discharge opportunity. This prevents battery
+    # energy from being consumed too early by low-value home deficits.
+    best_discharge_price = _as_float(planner_preview.get("planner_preview_best_discharge_price"))
+    best_charge_price = _as_float(planner_preview.get("planner_preview_best_charge_price"))
+    minimum_trade_margin = _as_float(planner_preview.get("planner_preview_minimum_trade_margin")) or 0.0
 
-    for row in rows:
+    # Estimate how much future solar surplus can still charge the battery
+    # between a candidate charge hour and the selected trade discharge hour.
+    def future_solar_charge_potential(from_index: int, until_time: datetime | None) -> float:
+        potential_input = 0.0
+        for future in rows[from_index + 1:]:
+            if until_time is not None and future["time"] > until_time:
+                break
+            future_solar = future["solar_kwh"]
+            future_home = future["home_kwh"]
+            potential_input += max(0.0, future_solar - future_home)
+        return potential_input * charge_eff
+
+    # Estimate the future home deficit before the best trade discharge hour.
+    # Only deficits in more expensive hours than the candidate charge price
+    # are allowed to use trade-reserved energy.
+    def future_high_value_home_need(from_index: int, until_time: datetime | None, reference_price: float | None) -> float:
+        need_output = 0.0
+        for future in rows[from_index + 1:]:
+            if until_time is not None and future["time"] > until_time:
+                break
+            future_price = future["price"]
+            if reference_price is not None and future_price is not None and future_price <= reference_price:
+                continue
+            need_output += max(0.0, future["home_kwh"] - future["solar_kwh"])
+        return need_output
+
+    trade_energy_reserved_kwh = 0.0
+
+    for index, row in enumerate(rows):
         hour = row["time"]
         fraction = _hour_fraction(hour, now_utc)
         charge_input_limit = MAX_CHARGE_POWER_W / 1000.0 * fraction
@@ -162,8 +194,9 @@ def build_72h_plan_preview(
         grid_home = 0.0
         solar_export = 0.0
 
-        # 1) Solar surplus charges first.
         available_charge_input = charge_input_limit
+
+        # 1) Solar surplus charges first.
         if solar_surplus > _MIN_ENERGY_KWH and stored_kwh < capacity - _MIN_ENERGY_KWH:
             max_input_by_capacity = (capacity - stored_kwh) / charge_eff
             solar_charge_input = min(solar_surplus, available_charge_input, max_input_by_capacity)
@@ -174,7 +207,7 @@ def build_72h_plan_preview(
 
         solar_export = max(0.0, solar_surplus)
 
-        # 2) Required safety grid charge has priority over trade.
+        # 2) Required safety grid charge always has priority.
         safety_target_stored = safety_by_time.get(hour.isoformat(), 0.0)
         if safety_target_stored > _MIN_ENERGY_KWH and stored_kwh < capacity - _MIN_ENERGY_KWH:
             max_input_by_capacity = (capacity - stored_kwh) / charge_eff
@@ -183,7 +216,8 @@ def build_72h_plan_preview(
             stored_kwh += grid_safety_input * charge_eff
             available_charge_input -= grid_safety_input
 
-        # 3) One observer-only trade charge at alpha23's best buy hour.
+        # 3) Trade charging is blocked when expected solar can fill the same
+        # free capacity before the selected sell hour (Solar Charge Delay).
         if (
             trade_profitable
             and best_charge_time is not None
@@ -191,23 +225,89 @@ def build_72h_plan_preview(
             and available_charge_input > _MIN_ENERGY_KWH
             and stored_kwh < capacity - _MIN_ENERGY_KWH
         ):
-            max_input_by_capacity = (capacity - stored_kwh) / charge_eff
-            grid_trade_input = min(available_charge_input, max_input_by_capacity)
-            stored_added = grid_trade_input * charge_eff
-            stored_kwh += stored_added
-            trade_charge_stored += stored_added
+            free_capacity_stored = max(0.0, capacity - stored_kwh)
+            solar_fill_stored = future_solar_charge_potential(index, best_discharge_time)
+            solar_charge_delay_active = solar_fill_stored >= max(0.0, free_capacity_stored - _MIN_ENERGY_KWH)
 
-        # 4) Home deficit can use battery only above operational reserve.
-        available_stored_above_reserve = max(0.0, stored_kwh - reserve_floor_kwh)
-        max_output_from_storage = available_stored_above_reserve * discharge_eff
-        discharge_to_home = min(home_deficit, discharge_output_limit, max_output_from_storage)
-        if discharge_to_home > _MIN_ENERGY_KWH:
-            stored_kwh -= discharge_to_home / discharge_eff
-            home_deficit -= discharge_to_home
+            if not solar_charge_delay_active:
+                # Only buy the capacity that is not expected to be filled by
+                # free solar before the sell hour.
+                required_trade_stored = max(0.0, free_capacity_stored - solar_fill_stored)
+
+                # Keep trade charging economically meaningful. If the expected
+                # sell price no longer clears the required margin, do not charge.
+                effective_charge_cost = (
+                    row["price"] / (charge_eff * discharge_eff)
+                    if row["price"] is not None
+                    else None
+                )
+                expected_margin = (
+                    best_discharge_price - effective_charge_cost
+                    if best_discharge_price is not None and effective_charge_cost is not None
+                    else None
+                )
+                trade_allowed = expected_margin is not None and expected_margin >= minimum_trade_margin
+
+                if trade_allowed and required_trade_stored > _MIN_ENERGY_KWH:
+                    max_input_by_capacity = free_capacity_stored / charge_eff
+                    requested_input = required_trade_stored / charge_eff
+                    grid_trade_input = min(
+                        available_charge_input,
+                        max_input_by_capacity,
+                        requested_input,
+                    )
+                    stored_added = grid_trade_input * charge_eff
+                    stored_kwh += stored_added
+                    trade_energy_reserved_kwh += stored_added
+
+        # 4) Home deficit uses battery only when doing so does not consume
+        # energy reserved for a later, more valuable trade discharge.
+        operational_floor = reserve_floor_kwh + trade_energy_reserved_kwh
+        operational_floor = min(capacity, max(reserve_floor_kwh, operational_floor))
+
+        available_stored_above_floor = max(0.0, stored_kwh - operational_floor)
+        max_output_from_storage = available_stored_above_floor * discharge_eff
+
+        # Prefer battery for home use when the current price is at least as high
+        # as the best buy price plus the requested trade margin, or when there is
+        # no active future trade reservation.
+        current_price = row["price"]
+        threshold_price = None
+        if best_charge_price is not None:
+            threshold_price = best_charge_price / (charge_eff * discharge_eff) + minimum_trade_margin
+
+        allow_home_discharge = trade_energy_reserved_kwh <= _MIN_ENERGY_KWH
+        if (
+            current_price is not None
+            and threshold_price is not None
+            and current_price >= threshold_price
+        ):
+            allow_home_discharge = True
+
+        if allow_home_discharge:
+            discharge_to_home = min(
+                home_deficit,
+                discharge_output_limit,
+                max_output_from_storage,
+            )
+            if discharge_to_home > _MIN_ENERGY_KWH:
+                stored_used = discharge_to_home / discharge_eff
+                stored_kwh -= stored_used
+                home_deficit -= discharge_to_home
+
+                # If high-value home use happens before the selected trade hour,
+                # it can consume part of the trade reservation because it creates
+                # equal or better economic value than later grid export.
+                if trade_energy_reserved_kwh > _MIN_ENERGY_KWH and current_price is not None:
+                    trade_energy_reserved_kwh = max(
+                        0.0,
+                        trade_energy_reserved_kwh - stored_used,
+                    )
 
         grid_home = max(0.0, home_deficit)
 
-        # 5) Observer-only trade discharge at alpha23's best sell hour.
+        # 5) At the selected best sell hour, discharge only energy above the
+        # operational reserve. Home has priority, remainder may go to the grid.
         if (
             trade_profitable
             and best_discharge_time is not None
@@ -215,13 +315,20 @@ def build_72h_plan_preview(
         ):
             remaining_output_limit = max(0.0, discharge_output_limit - discharge_to_home)
             available_stored_above_reserve = max(0.0, stored_kwh - reserve_floor_kwh)
-            # Only energy that is genuinely above the reserve can be traded.
             max_trade_output = available_stored_above_reserve * discharge_eff
             discharge_to_grid = min(remaining_output_limit, max_trade_output)
             if discharge_to_grid > _MIN_ENERGY_KWH:
-                stored_kwh -= discharge_to_grid / discharge_eff
+                stored_used = discharge_to_grid / discharge_eff
+                stored_kwh -= stored_used
+                trade_energy_reserved_kwh = max(
+                    0.0,
+                    trade_energy_reserved_kwh - stored_used,
+                )
 
-        stored_kwh = max(capacity * float(MIN_SOC_PERCENT) / 100.0, min(capacity, stored_kwh))
+        stored_kwh = max(
+            capacity * float(MIN_SOC_PERCENT) / 100.0,
+            min(capacity, stored_kwh),
+        )
         soc_start = plan[-1]["soc_end"] if plan else start_soc
         soc_end = stored_kwh / capacity * 100.0
         min_soc_seen = min(min_soc_seen, soc_end)
@@ -268,6 +375,7 @@ def build_72h_plan_preview(
                 "soc_start": round(float(soc_start), 1),
                 "soc_end": round(soc_end, 1),
                 "reserve_floor_soc": round(reserve_floor_kwh / capacity * 100.0, 1),
+                "trade_reserved_kwh": round(trade_energy_reserved_kwh, 3),
                 "action": "+".join(action_parts),
                 "observational_only": True,
             }
@@ -304,7 +412,8 @@ def build_72h_plan_preview(
         "auto_plan_72h_observational_only": True,
         "auto_plan_72h_execution_enabled": False,
         "auto_plan_72h_note": (
-            "Alpha24 publiceert één doorlopende 72-uurs preview. Er worden geen "
+            "Alpha24.1 corrigeert handelsladen met Solar Charge Delay en reserveert "
+            "handelsenergie voor financieel waardevollere uren. Er worden geen "
             "planslots gevuld en geen fysieke commando's uitgevoerd."
         ),
     }

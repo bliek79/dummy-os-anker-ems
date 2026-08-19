@@ -1,3 +1,36 @@
+# 0.0.1-alpha.24.1
+
+## Correctie op alpha24
+- Solar Charge Delay nu daadwerkelijk toegepast op handelsladen.
+- Geen handelslading uit het net wanneer verwacht solaroverschot vóór het
+  geselecteerde handelsontlaaduur de benodigde batterijruimte kan vullen.
+- Handelsladen wordt beperkt tot de vrije capaciteit die naar verwachting niet
+  door gratis zonne-energie wordt gevuld.
+- Handelsenergie wordt als tijdelijke reserve bijgehouden.
+- Woningontlading mag deze handelsreserve niet meer automatisch in
+  financieel minder interessante uren opmaken.
+- De handelsreserve mag wel voor de woning worden gebruikt wanneer het actuele
+  tarief minimaal gelijkwaardig is aan de effectieve laadkost plus de ingestelde
+  minimum handelsmarge.
+- Op het gekozen handelsontlaaduur heeft woningverbruik eerst prioriteit; alleen
+  resterend ontlaadvermogen/energie wordt naar het net gestuurd.
+- Per planuur nieuw attribuut `trade_reserved_kwh` voor diagnose.
+
+## Veiligheid
+- Nog steeds uitsluitend observerend.
+- Geen automatische planslot-creatie.
+- Geen Scheduler-aanroep.
+- Geen fysieke batterijaansturing.
+
+## Te valideren
+- Het eerder waargenomen handelsladen vlak vóór een grote zonnepiek moet
+  verdwijnen of sterk afnemen.
+- Solar Charge Delay moet voorkomen dat netgeladen energie kort daarna vrije
+  zonnelading verdringt.
+- Handelsenergie mag niet in goedkope tussenuren voor woningverbruik verdwijnen.
+- SOC-keten moet 72 uur aaneengesloten blijven.
+- Reservevloer moet intact blijven.
+
 # 0.0.1-alpha.24
 
 ## Toegevoegd

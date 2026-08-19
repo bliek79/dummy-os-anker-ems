@@ -7,7 +7,7 @@ Het project wordt ontwikkeld als een lokale, modulaire EMS-laag bovenop Home Ass
 > **Status:** experimentele alpha  
 > **Domein:** `anker_ems`  
 > **Minimale Home Assistant-versie:** 2026.7.0  
-> **Huidige ontwikkelversie:** `0.0.1-alpha.24`
+> **Huidige ontwikkelversie:** `0.0.1-alpha.24.1`
 
 ---
 
@@ -910,4 +910,21 @@ De volledige reeks wordt gepubliceerd als `plan`-attribuut van
 Alpha24 is uitsluitend een preview. De drie handmatige planslots, Scheduler,
 Safety Guard, Action Controller en Execution Controller worden nog niet
 automatisch door deze planner aangestuurd.
+
+
+
+### Alpha24.1-correctie
+
+De 72-uurs preview is aangescherpt op twee punten die in de eerste alpha24-live
+planning zichtbaar werden:
+
+- Handelsladen uit het net wordt uitgesteld wanneer verwacht solaroverschot vóór
+  het gekozen ontlaaduur dezelfde vrije batterijcapaciteit kan vullen.
+- Handelsenergie wordt tijdelijk als gereserveerde energie beschouwd zodat deze
+  niet automatisch in eerdere, financieel minder interessante woninguren wordt
+  opgebruikt.
+
+De planner kan gereserveerde handelsenergie wel eerder voor de woning gebruiken
+wanneer het actuele stroomtarief minstens gelijkwaardig is aan de effectieve
+laadkost plus de ingestelde minimum handelsmarge.
 
