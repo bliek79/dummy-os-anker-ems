@@ -7,7 +7,7 @@ Het project wordt ontwikkeld als een lokale, modulaire EMS-laag bovenop Home Ass
 > **Status:** experimentele alpha  
 > **Domein:** `anker_ems`  
 > **Minimale Home Assistant-versie:** 2026.7.0  
-> **Huidige ontwikkelversie:** `0.0.1-alpha.24.1`
+> **Huidige ontwikkelversie:** `0.0.1-alpha.24.2`
 
 ---
 
@@ -928,3 +928,14 @@ De planner kan gereserveerde handelsenergie wel eerder voor de woning gebruiken
 wanneer het actuele stroomtarief minstens gelijkwaardig is aan de effectieve
 laadkost plus de ingestelde minimum handelsmarge.
 
+
+
+### Alpha24.2 hotfix
+
+Alpha24.2 herstelt een runtimefout in alpha24.1 waarbij de 72-uurs planner
+een verwijderde variabelenaam (`trade_charge_stored`) nog gebruikte in de
+samenvattende uitvoer. Daardoor kon de coordinator niet vernieuwen en werden
+Dummy OS EMS-entiteiten onbeschikbaar.
+
+De samenvatting gebruikt nu rechtstreeks de werkelijk geplande
+handelsnetlading maal het ingestelde laadrendement.

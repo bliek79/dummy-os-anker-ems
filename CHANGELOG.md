@@ -1,3 +1,19 @@
+# 0.0.1-alpha.24.2
+
+## Hotfix
+- Runtime `NameError` in `planner_72h.py` opgelost.
+- Verwijderde variabele `trade_charge_stored` werd nog gebruikt in de
+  samenvattende uitvoer van de 72-uurs planner.
+- `auto_plan_72h_trade_charge_stored_kwh` wordt nu berekend als:
+  geplande handelsnetlading × laadrendement.
+- Hierdoor kan de coordinator weer normaal vernieuwen en worden de
+  Dummy OS EMS-entiteiten opnieuw beschikbaar.
+
+## Functioneel
+- De Solar Charge Delay- en handelsreservecorrecties uit alpha24.1 blijven
+  ongewijzigd.
+- Geen wijziging aan fysieke besturing of Scheduler.
+
 # 0.0.1-alpha.24.1
 
 ## Correctie op alpha24

@@ -406,7 +406,7 @@ def build_72h_plan_preview(
         "auto_plan_72h_grid_trade_discharge_kwh": round(total_grid_trade_discharge, 3),
         "auto_plan_72h_grid_import_for_home_kwh": round(total_grid_import_for_home, 3),
         "auto_plan_72h_solar_export_kwh": round(total_solar_export, 3),
-        "auto_plan_72h_trade_charge_stored_kwh": round(trade_charge_stored, 3),
+        "auto_plan_72h_trade_charge_stored_kwh": round(total_grid_trade_charge * charge_eff, 3),
         "auto_plan_72h_charge_efficiency_percent": round(charge_eff * 100.0, 1),
         "auto_plan_72h_discharge_efficiency_percent": round(discharge_eff * 100.0, 1),
         "auto_plan_72h_observational_only": True,
