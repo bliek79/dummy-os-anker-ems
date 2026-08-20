@@ -12,10 +12,10 @@ from .const import MAX_SOC_PERCENT, MIN_SOC_PERCENT
 class AnkerEmsPreStartValidator:
     """Validate and diagnose automatic plans immediately before execution.
 
-    Alpha33 remains non-executing. Besides the real Scheduler-ready pre-start
-    gate, it continuously performs a dry-run diagnostic on the nearest future
-    planner-owned pending plan. This makes every individual gate visible before
-    the actual start window is reached.
+    Alpha34 keeps physical automatic execution disabled. It separates the
+    continuous early diagnostic from the authoritative Scheduler-ready pre-start
+    gate. Live-SOC direction and execution-reserve checks are informative while
+    a plan is still far away and become hard blockers only close to start.
     """
 
     @staticmethod
@@ -60,6 +60,7 @@ class AnkerEmsPreStartValidator:
         detail: dict[str, Any],
         *,
         require_identity: bool = True,
+        enforce_live_soc: bool = True,
     ) -> dict[str, Any]:
         reasons: list[str] = []
         warnings: list[str] = []
@@ -151,12 +152,31 @@ class AnkerEmsPreStartValidator:
             elif action == "ontladen" and soc <= target_soc:
                 target_direction_ok = False
                 target_blocker = "discharge_target_already_reached"
-        add_check(
-            "target_direction_valid",
-            target_direction_ok,
-            "Current SOC still requires the planned action" if target_direction_ok else "Target SOC already reached/passed",
-            target_blocker,
-        )
+        if target_direction_ok:
+            checks.append({
+                "check": "target_direction_valid",
+                "passed": True,
+                "severity": "ok",
+                "detail": "Current SOC still requires the planned action",
+            })
+        elif enforce_live_soc:
+            checks.append({
+                "check": "target_direction_valid",
+                "passed": False,
+                "severity": "blocker",
+                "detail": "Target SOC already reached/passed",
+            })
+            if target_blocker:
+                reasons.append(target_blocker)
+        else:
+            checks.append({
+                "check": "target_direction_valid",
+                "passed": False,
+                "severity": "warning",
+                "detail": "Current SOC would block this action now, but the plan is still outside the live pre-start decision window",
+            })
+            if target_blocker:
+                warnings.append(target_blocker)
 
         reserve_soc = self._number(current.get("execution_reserve_start_soc")) if current else None
         reserve_ok = True
@@ -169,12 +189,16 @@ class AnkerEmsPreStartValidator:
             {
                 "check": "execution_reserve_available",
                 "passed": reserve_ok,
-                "severity": "ok" if reserve_ok else "blocker",
-                "detail": f"Execution reserve: {reserve_soc}%" if action == "ontladen" else "Not applicable to charge action",
+                "severity": "ok" if reserve_ok else ("blocker" if enforce_live_soc else "warning"),
+                "detail": (
+                    f"Execution reserve: {reserve_soc}%"
+                    if reserve_ok or enforce_live_soc
+                    else f"Execution reserve: {reserve_soc}%; current SOC is informational until the live pre-start window"
+                ) if action == "ontladen" else "Not applicable to charge action",
             }
         )
         if not reserve_ok and reserve_blocker:
-            reasons.append(reserve_blocker)
+            (reasons if enforce_live_soc else warnings).append(reserve_blocker)
 
         return {
             "safe": not reasons,
@@ -229,6 +253,10 @@ class AnkerEmsPreStartValidator:
             "auto_prestart_diagnostic_planner_identity": None,
             "auto_prestart_diagnostic_start_time": None,
             "auto_prestart_diagnostic_minutes_to_start": None,
+            "auto_prestart_diagnostic_phase": "no_plan",
+            "auto_prestart_diagnostic_authoritative": False,
+            "auto_prestart_diagnostic_live_soc_enforced": False,
+            "auto_prestart_diagnostic_decision_window_min": None,
             "auto_prestart_diagnostic_action": None,
             "auto_prestart_diagnostic_power_w": None,
             "auto_prestart_diagnostic_current_soc": self._number(data.get("soc")),
@@ -244,13 +272,26 @@ class AnkerEmsPreStartValidator:
         if slot is None:
             return base
 
-        result = self._checks(data, detail)
         start = self._parse_datetime(detail.get("start_time"))
         minutes = None
         if start is not None:
             minutes = round((start - dt_util.utcnow()).total_seconds() / 60.0, 1)
 
-        # Dry-run matrix proves that the gate can distinguish common blockers.
+        # Early diagnostics are intentionally non-authoritative. Current SOC can
+        # change substantially before the plan starts, so SOC direction/reserve
+        # become hard blockers only inside a small live decision window.
+        start_delay = self._number(detail.get("max_start_delay_min")) or 10.0
+        decision_window_min = max(15.0, start_delay)
+        live_soc_enforced = minutes is not None and minutes <= decision_window_min
+        phase = (
+            "due" if minutes is not None and minutes <= 0
+            else "near_start" if live_soc_enforced
+            else "early"
+        )
+        result = self._checks(data, detail, enforce_live_soc=live_soc_enforced)
+
+        # Dry-run matrix proves that the gate can distinguish common hard blockers.
+        # It uses the same time relevance as the live diagnostic. 
         # These are pure in-memory evaluations and never alter Home Assistant state.
         matrix: list[dict[str, Any]] = []
         for name, overrides in (
@@ -261,7 +302,7 @@ class AnkerEmsPreStartValidator:
         ):
             test_data = dict(data)
             test_data.update(overrides)
-            test_result = self._checks(test_data, detail)
+            test_result = self._checks(test_data, detail, enforce_live_soc=live_soc_enforced)
             matrix.append(
                 {
                     "case": name,
@@ -272,12 +313,18 @@ class AnkerEmsPreStartValidator:
 
         base.update(
             {
-                "auto_prestart_diagnostic_status": "pass" if result["safe"] else "blocked",
+                "auto_prestart_diagnostic_status": (
+                    f"{phase}_pass" if result["safe"] else f"{phase}_blocked"
+                ),
                 "auto_prestart_diagnostic_safe": result["safe"],
                 "auto_prestart_diagnostic_slot": slot,
                 "auto_prestart_diagnostic_planner_identity": detail.get("planner_identity"),
                 "auto_prestart_diagnostic_start_time": start.isoformat() if start else None,
                 "auto_prestart_diagnostic_minutes_to_start": minutes,
+                "auto_prestart_diagnostic_phase": phase,
+                "auto_prestart_diagnostic_authoritative": False,
+                "auto_prestart_diagnostic_live_soc_enforced": live_soc_enforced,
+                "auto_prestart_diagnostic_decision_window_min": decision_window_min,
                 "auto_prestart_diagnostic_action": result["action"],
                 "auto_prestart_diagnostic_power_w": result["power_w"],
                 "auto_prestart_diagnostic_current_soc": result["soc"],

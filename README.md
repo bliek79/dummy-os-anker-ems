@@ -1,1198 +1,233 @@
 # Dummy OS EMS
 
-**Dummy OS EMS** is een Home Assistant Energy Management System voor de **Anker SOLIX Solarbank Max AC**.
+**Dummy OS EMS** is a Home Assistant Energy Management System for the **Anker SOLIX Solarbank Max AC**.
 
-Het project wordt ontwikkeld als een lokale, modulaire EMS-laag bovenop Home Assistant. Het doel is niet alleen om de batterij te bedienen, maar om uiteindelijk batterijstatus, stroomprijzen, zonneprognose, woningverbruik, veiligheidsgrenzen en handmatige keuzes samen te brengen in één begrijpelijk en onderhoudbaar systeem.
+> **Status:** experimental alpha  
+> **Domain:** `anker_ems`  
+> **Minimum Home Assistant:** 2026.7.0  
+> **Current version:** `0.0.1-alpha.34`
 
-> **Status:** experimentele alpha  
-> **Domein:** `anker_ems`  
-> **Minimale Home Assistant-versie:** 2026.7.0  
-> **Huidige ontwikkelversie:** `0.0.1-alpha.32`
+The integration combines battery status, electricity prices, solar forecast, home-consumption forecast, safety limits and user choices into one local EMS layer. The architecture is deliberately split into planning, persistent plan storage, scheduling, safety validation and physical execution.
 
-### Alpha32 - Pre-Start Safety Validation
+## Control philosophy
 
-Alpha32 adds a dedicated observational safety gate immediately before an automatic Scheduler-ready plan could proceed to execution. The gate rechecks planner validity, forecast readiness, the 2% execution buffer, Action Bridge validity, current SOC, target SOC, execution reserve and stable `planner_identity`. A changed planner revision is reported as a warning. Automatic physical execution remains disabled.
+Dummy OS EMS follows this order of priority:
 
-> **Alpha32:** pre-start veiligheidsvalidatie is actief; Scheduler-handoff blijft actief en automatische fysieke uitvoering blijft uitgeschakeld.
+1. Solar production serves the home first.
+2. Remaining solar can charge the battery.
+3. If own production is insufficient, only the necessary deficit may be charged from the grid at suitable cheap moments.
+4. Stored energy is used later to avoid expensive grid import.
+5. Only battery energy above home need, dynamic reserve and expected near-term need may be used for trading.
+6. Genuine excess may be exported when this is financially worthwhile.
+7. Charging/discharging losses, Solar Charge Delay, the 5% hardware minimum SOC and a minimum profitability threshold are respected.
 
----
+The objective is **maximum self-consumption / as close to zero on the meter as practical**, not trading for its own sake.
 
-## Doel van Dummy OS EMS
+## Current functionality
 
-Dummy OS EMS wordt opgebouwd rond vier hoofdfuncties:
+The current alpha supports:
 
-1. **Observeren**  
-   De relevante batterij-, net-, prijs-, solar- en verbruiksbronnen uitlezen en normaliseren.
+- Config Flow based source/control mapping without hardcoded local Anker entity IDs;
+- normalized battery, grid, price, solar and home-consumption data;
+- three persistent manual plan slots;
+- manual direct and scheduled charge/discharge control;
+- Scheduler, Safety Guard and Execution Controller;
+- safe stop and return to `self_consumption`;
+- 72-hour automatic planning;
+- dynamic reserve and 5% hardware SOC floor;
+- 2 percentage-point execution reserve buffer;
+- deficit-driven grid charging and cheapest required charging hours;
+- separate safety charging and trading charging;
+- Solar Charge Delay;
+- financial trade-margin logic with charge/discharge efficiency;
+- Forward Reserve Precharge;
+- Action Bridge from planner actions to plan slots;
+- controlled automatic Plan Store writes;
+- controlled Scheduler handoff;
+- rolling pending-plan reconciliation using stable `planner_identity`;
+- stale automatic-plan cleanup;
+- pre-start safety validation;
+- time-aware pre-start diagnostics and dry-run blocker tests.
 
-2. **Plannen**  
-   Bepalen wanneer laden, ontladen of niets doen logisch is.
+**Automatic physical execution is still disabled.** Automatic plans may reach the Scheduler, but the current development phase stops before unattended battery commands are issued.
 
-3. **Uitvoeren**  
-   Een goedgekeurd plan veilig vertalen naar Anker-besturing.
+## Pre-start safety model
 
-4. **Evalueren**  
-   Vergelijken wat gepland was met wat werkelijk is gebeurd en die informatie later gebruiken om de planner te verbeteren.
+The pre-start layer has two intentionally separate modes.
 
-Het einddoel is één centrale **72-uursplanning** die grotendeels automatisch wordt opgebouwd, terwijl de gebruiker de planning altijd kan bekijken, aanpassen of handmatig overrulen.
+### Early diagnostic
 
----
+The nearest future automatic pending plan is continuously inspected. This diagnostic is **informational and non-authoritative**.
 
-# Benodigde software en integraties
+Hard structural checks such as planner validity, forecast readiness, execution-buffer safety, Action Bridge validity, action validity, power limits and planner identity remain meaningful at all times.
 
-Dummy OS EMS maakt gebruik van bestaande Home Assistant-integraties als bron- en besturingslaag. De integratie zelf bevat bewust geen hardcoded lokale entity-id's: tijdens de config flow worden de juiste Home Assistant-entiteiten per functie geselecteerd.
+Current SOC can change substantially before a future plan starts. Therefore, outside the live decision window, SOC direction and execution-reserve checks are exposed as **warnings**, not final blockers.
 
-## Verplicht voor de huidige handmatige EMS-functies
+The current live-decision window is at least 15 minutes before the planned start, or wider when the plan start-delay setting requires it.
 
-### 1. Home Assistant
+### Real pre-start gate
 
-Dummy OS EMS draait als custom integration binnen Home Assistant.
+When the Scheduler actually selects an automatic plan as ready to start, the authoritative pre-start gate rechecks current conditions. At that point SOC direction and execution reserve are hard safety conditions.
 
-- Minimale ondersteunde versie: **Home Assistant Core 2026.7.0**
-- Website: https://www.home-assistant.io/
+The gate verifies at least:
 
-### 2. HACS
+- valid current 72-hour plan;
+- ready forecast sources;
+- safe execution buffer;
+- valid Action Bridge candidates;
+- stable planner identity;
+- valid action and power;
+- valid current SOC and target SOC;
+- correct SOC direction for the requested charge/discharge action;
+- sufficient reserve for discharge.
 
-HACS is de aanbevolen manier om Dummy OS EMS en andere benodigde custom integrations te installeren en bij te werken.
+A changed planner revision can be reported as a warning while stable `planner_identity` remains the continuity key.
 
-- Documentatie: https://www.hacs.xyz/docs/use/
+## Planner identity and revisions
 
-HACS is technisch niet verplicht wanneer custom integrations handmatig in `custom_components` worden geplaatst, maar is voor normaal gebruik de aanbevolen installatieroute.
+Automatic pending plans use two separate values:
 
-### 3. Anker Solix Integration for Home Assistant
+- `planner_identity`: stable identity of the planned action, based on action/purpose/start/end;
+- `planner_signature`: current calculated revision, including changing values such as target SOC and expected energy.
 
-Voor het uitlezen en fysiek aansturen van de Anker SOLIX Solarbank Max AC gebruikt Dummy OS EMS de bestaande **Anker Solix Integration for Home Assistant** van `thomluther`.
+This allows rolling forecasts to revise a future automatic plan without creating duplicate slots or falsely treating the planner's own plan as a manual conflict.
 
-- GitHub: https://github.com/thomluther/ha-anker-solix
+## Battery assumptions
 
-Deze integratie levert onder andere de bron- en bedieningseenheden die Dummy OS EMS tijdens de config flow kan koppelen voor:
+Current default technical assumptions:
 
-- batterij-SOC;
-- apparaatstatus;
-- laadvermogen;
-- ontlaadvermogen;
-- bedrijfsmodus;
-- laad-/ontlaadrichting;
-- vermogenssetpoint.
+- battery capacity: **7.2 kWh**;
+- hardware minimum SOC: **5%**;
+- maximum charging power: **3500 W**;
+- maximum discharging power: **3000 W**;
+- charge efficiency: **92%**;
+- discharge efficiency: **92%**;
+- round-trip efficiency: **84.64%**;
+- automatic execution reserve buffer: **2 percentage points**;
+- manual plan slots: **3**.
 
-**Dummy OS EMS vervangt deze Anker-integratie niet.** De Anker-integratie blijft verantwoordelijk voor de communicatie met het fysieke Anker-systeem; Dummy OS EMS vormt de plannings-, veiligheids- en besturingslaag daarboven.
+These are integration defaults/project assumptions where applicable; configurable inputs remain selectable through the integration where implemented.
 
----
+## Required and supported sources
 
-## Benodigd voor de forecast- en toekomstige automatische plannerlaag
+### Home Assistant
 
-De huidige handmatige planfunctie kan zonder volledige forecastset functioneren. Voor de forecastlaag en de toekomstige automatische planner zijn aanvullende databronnen nodig.
+Minimum supported version: **Home Assistant Core 2026.7.0**.
 
-### 4. Solcast PV Forecast
+### Anker Solix integration
 
-Voor de zonneprognose ondersteunt de huidige forecast-normalisatie de Home Assistant custom integration **Solcast PV Forecast**.
+Dummy OS EMS uses the existing Anker Solix Home Assistant integration as the device communication layer. Dummy OS EMS does not replace that integration; it adds planning, safety and control logic above it.
 
-- GitHub: https://github.com/BJReplay/ha-solcast-solar
+During Config Flow the user maps functions such as:
 
-Dummy OS EMS kan onder andere de `detailedHourly`-gegevens voor vandaag, morgen en dag 3 normaliseren naar `solar_kwh` per uur.
-
-Solcast is nodig wanneer de automatische planner rekening moet houden met verwachte zonneproductie.
-
-### 5. EnergyZero
-
-Voor bekende dynamische elektriciteitsprijzen kan de officiële Home Assistant **EnergyZero**-integratie worden gebruikt.
-
-- Home Assistant-integratie: https://www.home-assistant.io/integrations/energyzero/
-
-De EnergyZero-integratie kan dynamische elektriciteitsprijzen ophalen en ondersteunt ook aanbieders die het EnergyZero-platform gebruiken, waaronder ANWB Energie.
-
-Dummy OS EMS gebruikt prijsdata als bron voor bekende prijsuren. De exacte bronentiteit wordt via de integratieconfiguratie gekoppeld; Dummy OS EMS is dus niet op één vaste entity-id gebaseerd.
-
-### 6. Prijsprognose na de bekende day-ahead uren
-
-Voor uren waarvoor nog geen officiële day-ahead prijs beschikbaar is, kan Dummy OS EMS een afzonderlijke **prijsprognosebron** gebruiken.
-
-De huidige ontwikkelinstallatie gebruikt hiervoor een bestaande Home Assistant-bron die als forecast-entiteit aan Dummy OS EMS wordt gekoppeld.
-
-Deze bron is op dit moment **geen harde externe integratie-afhankelijkheid van Dummy OS EMS**. De architectuur is bewust zo opgezet dat later iedere compatibele prijsprognosebron geselecteerd kan worden.
-
-De huidige forecast-normalisatie kent hiervoor onder andere het interne veld:
-
-`price_source`
-
-waardoor bekende prijs en prognose van elkaar onderscheiden blijven.
-
-### 7. Woningverbruiksprognose
-
-Voor een volledige automatische planner is ook een uurprognose van het verwachte woningverbruik nodig.
-
-De huidige ontwikkelomgeving gebruikt hiervoor een Home Assistant-bron die aan Dummy OS EMS wordt gekoppeld. Ook deze bron is bewust **niet hardcoded** en is nog geen verplichte externe integratie voor de handmatige functies.
-
-De toekomstige planner gebruikt deze prognose om onder andere te bepalen:
-
-- hoeveel energie voor eigen verbruik moet worden gereserveerd;
-- hoeveel batterijcapaciteit beschikbaar is voor handel;
-- hoeveel energie nodig is tot bruikbare zonneproductie;
-- of goedkoop netladen werkelijk nodig is.
-
----
-
-## Netvermogen en woningvermogen
-
-Dummy OS EMS heeft voor planning en veiligheid betrouwbare informatie nodig over netimport en netexport.
-
-De gebruiker kan hiervoor bestaande Home Assistant-vermogenssensoren selecteren. Dummy OS EMS schrijft geen specifieke slimme meter-, P1- of omvormerintegratie voor.
-
-In de huidige ontwikkelarchitectuur worden onder andere canonieke Home Assistant-projectsensoren gebruikt voor:
-
-- netimportvermogen;
-- netexportvermogen;
-- woningvermogen.
-
-De integratie moet uiteindelijk met verschillende bronintegraties kunnen werken zolang de gekozen entiteiten de juiste functie en eenheid hebben.
-
----
-
-# Huidige functionaliteit
-
-## Config Flow en bronmapping
-
-Dummy OS EMS hardcodet geen specifieke lokale Anker- of energiemeter-entity-id's.
-
-Tijdens de config flow selecteert de gebruiker de Home Assistant-entiteiten die de benodigde functies leveren, waaronder:
-
-- batterij-SOC;
-- apparaatstatus;
-- laadvermogen;
-- ontlaadvermogen;
-- netimport;
-- netexport;
-- bedrijfsmodus;
-- laad-/ontlaadrichting;
-- vermogensinstelling.
-
-Forecastbronnen kunnen via de opties van de integratie worden gekoppeld.
-
-Hierdoor kan dezelfde integratie ook worden gebruikt wanneer apparaatnamen, talen, serienummers of entity-id's verschillen.
-
----
-
-## Batterij-observatie
-
-De integratie exposeert een genormaliseerde Dummy OS EMS-laag voor belangrijke live batterijwaarden, waaronder:
-
-- EMS-status;
 - SOC;
-- laadvermogen;
-- ontlaadvermogen;
-- bedrijfsmodus;
-- beschikbaarheid van bronnen;
-- beschikbaarheid van besturing.
+- device status;
+- charge power;
+- discharge power;
+- grid import/export power;
+- operating mode;
+- charge/discharge direction;
+- power setpoint.
 
-De originele Anker-entiteiten blijven de fysieke bron.
+### Forecast sources
 
----
+The 72-hour planner can use selectable Home Assistant sources for:
 
-## Drie persistente handmatige planplaatsen
+- known electricity prices;
+- price forecast beyond known day-ahead hours;
+- home-consumption forecast;
+- solar forecast for today, tomorrow and day 3.
 
-De huidige handmatige bedieningslaag bevat precies **drie onafhankelijke planplaatsen**.
+The current project uses EnergyZero-compatible price data and Solcast-compatible solar data, but local entity IDs are not hardcoded into the integration architecture.
 
-Elke planplaats bevat:
+## Architecture
 
-| Instelling | Bereik / opties |
-|---|---|
-| Actie | geen / laden / ontladen |
-| Uitvoering | direct / gepland |
-| Starttijd | datum en tijd |
-| Vermogen | 100–3500 W |
-| Doel-SOC | 5–100% |
-| Maximale looptijd | 0,25–12 uur (15 min–12 uur) |
-| Maximale startvertraging | 1–120 minuten |
+The integration is split into the following functional layers:
 
-Planinstellingen worden persistent opgeslagen en blijven behouden na een Home Assistant-herstart.
+`Config Flow -> Coordinator -> Planner -> Action Bridge -> Plan Store -> Scheduler -> Pre-Start/Safety -> Execution Controller -> Anker control entities`
 
-Het wijzigen van een plan zet het plan eerst in een conceptstatus. Pas via **Inplannen** of **Nu starten** wordt het plan expliciet vrijgegeven.
+Supporting modules include source monitoring, energy-need calculation, physical test tooling and Home Assistant entity platforms.
 
-### Plan-lifecycle
+### Plan Store
 
-Een plan kan onder andere door deze statussen lopen:
+Exactly three persistent plan slots are maintained. Manual actionable plans always have priority over automatic writes.
 
-`leeg → concept → wachtend → startklaar → actief → voltooid`
-
-Daarnaast bestaan uitzonderings- en eindstatussen zoals:
-
-- geannuleerd;
-- verlopen;
-- fout.
-
-Voltooide of geannuleerde plannen worden niet automatisch opnieuw geselecteerd.
-
----
-
-# Scheduler
-
-De Scheduler beoordeelt de drie planplaatsen en bepaalt welk plan uitgevoerd mag worden.
-
-Daarbij wordt rekening gehouden met:
-
-- planstatus;
-- starttijd;
-- maximale startvertraging;
-- conflicten tussen meerdere plannen;
-- reeds actieve fysieke uitvoering;
-- deterministische selectie wanneer meerdere plannen startklaar zijn.
-
-Er mag maximaal **één fysieke batterijactie tegelijk** actief zijn.
-
-### Startvenster en gecontroleerd opnieuw proberen
-
-Voor geplande acties gebruikt Dummy OS EMS de ingestelde **maximale startvertraging** als echt startvenster.
-
-Wanneer een plan op de geplande starttijd tijdelijk nog niet uitvoerbaar is, bijvoorbeeld omdat:
-
-- `third_party_control` nog niet volledig beschikbaar is;
-- de Anker-richting- of vermogensentiteit nog kort `unavailable` is;
-- een tegengestelde batterijflow nog actief is;
-- een tijdelijke Safety Guard-bronstatus nog niet gereed is;
-
-dan wordt het plan niet direct definitief afgekeurd.
-
-Zolang het ingestelde `max_start_delay`-venster nog open is, probeert Dummy OS EMS de geplande actie gecontroleerd opnieuw met een korte wachttijd tussen pogingen. Voor iedere mislukte poging wordt eerst de bestaande safe-stop uitgevoerd.
-
-Zodra de voorwaarden geldig zijn, wordt het plan alsnog normaal gestart. Wanneer het startvenster verstrijkt, stopt de retry-logica en wordt de actie niet meer automatisch gestart.
-
-Sinds alpha17 wordt een ingepland laadplan dat `startklaar` wordt automatisch overgedragen aan de Execution Controller.
-
----
-
-# Safety Guard
-
-De Safety Guard vormt de verplichte veiligheidsgrens tussen planning en fysieke batterijbediening.
-
-Er wordt onder andere gecontroleerd op:
-
-- bronbeschikbaarheid;
-- beschikbaarheid van besturing;
-- SOC;
-- doel-SOC;
-- gevraagd vermogen;
-- tegengestelde laad- of ontlaadstromen;
-- bedrijfsmodus;
-- geldigheid van de geselecteerde actie.
-
-Een plan mag alleen fysiek worden uitgevoerd wanneer de veiligheidsketen dit toestaat.
-
----
-
-# Action Controller
-
-De Action Controller vertaalt een geselecteerd EMS-plan naar een semantische batterijopdracht.
-
-De controller bepaalt onder andere:
-
-- laden of ontladen;
-- gevraagd vermogen;
-- geldigheid van de opdracht;
-- status van de Safety Guard.
-
-Hierdoor blijft planningslogica gescheiden van de daadwerkelijke Anker-aansturing.
-
----
-
-# Execution Controller
-
-De Execution Controller verzorgt de gecontroleerde fysieke uitvoering.
-
-Voor een gevalideerde laadactie kan de integratie:
-
-1. van `self_consumption` naar `third_party_control` schakelen;
-2. wachten tot de Anker-bedieningsentiteiten beschikbaar zijn;
-3. de veiligheidscontrole opnieuw uitvoeren;
-4. richting en vermogen instellen;
-5. de uitvoering bewaken;
-6. stoppen op doel-SOC, maximale looptijd, handmatige stop of fout;
-7. het vermogenssetpoint terugzetten naar 0 W;
-8. terugschakelen naar `self_consumption`.
-
-De uitvoeringsstatus wordt persistent bijgehouden zodat na een Home Assistant-herstart veilig kan worden gereageerd op een onderbroken actie.
-
-## Fysiek gevalideerde werking
-
-**Laden is fysiek gevalideerd.**
-
-Bevestigde onderdelen:
-
-- automatische overgang naar `third_party_control`;
-- werkelijk laden;
-- ingesteld laadvermogen;
-- automatische stop;
-- setpoint terug naar 0 W;
-- terugkeer naar `self_consumption`;
-- correcte afronding van de plan-lifecycle.
-
-**Fysiek laden én ontladen zijn gecontroleerd gevalideerd.**
-
-Alpha19 geeft daarom ook ontladen vrij via de normale Execution Controller. Zowel directe als geplande ontlaadplannen gebruiken dezelfde keten als laden: Scheduler → Safety Guard → Action Controller → Execution Controller → safe-stop → `self_consumption`.
-
----
-
-# Handmatige services
-
-De integratie bevat onder andere de volgende Home Assistant-services:
-
-| Service | Functie |
-|---|---|
-| `anker_ems.schedule_plan` | Een planplaats inplannen |
-| `anker_ems.start_plan_now` | Een specifieke planplaats direct starten |
-| `anker_ems.cancel_plan` | Een plan annuleren |
-| `anker_ems.stop_all` | Actieve EMS-besturing veilig stoppen |
-| `anker_ems.execute_selected_plan` | Het geselecteerde Scheduler-plan uitvoeren |
-| `anker_ems.stop_execution` | Een actieve uitvoering stoppen |
-| `anker_ems.start_charge_test` | Beperkte fysieke laadtest |
-| `anker_ems.start_discharge_test` | Beperkte fysieke ontlaadtest (alpha18 validatiepad) |
-| `anker_ems.stop_physical_test` | De fysieke test veilig stoppen |
-
-De normale gebruikersworkflow is bedoeld om via de planplaatsen te werken. De fysieke testservices zijn uitsluitend bedoeld voor gecontroleerde ontwikkeling en validatie.
-
----
-
-# Forecastlaag
-
-Dummy OS EMS bevat inmiddels een eerste Python-gebaseerde forecast-normalisatielaag.
-
-Bestaande Home Assistant-bronnen worden genormaliseerd naar één uurmodel met maximaal ongeveer 72 toekomstige uren.
-
-Het interne uurmodel bevat:
-
-- `time`;
-- `price`;
-- `price_min`;
-- `price_max`;
-- `price_source`;
-- `solar_kwh`;
-- `home_consumption_kwh`.
-
-Voor hetzelfde uur heeft een bekende prijs voorrang op een prijsprognose.
-
-De forecastlaag **normaliseert bestaande databronnen; zij maakt op dit moment niet alle prognoses zelf**.
-
----
-
-# Observatieve energiebalans
-
-Alpha21 voegt de eerste rekenlaag toe die later als input voor de automatische 72-uursplanner wordt gebruikt. Deze laag **maakt nog geen plannen aan en stuurt de batterij niet aan**.
-
-De berekening bepaalt onder andere:
-
-- de netto woningenergiebehoefte vanaf nu tot bruikbare zonneproductie;
-- de beschikbare batterij-energie boven de absolute 5% SOC-ondergrens;
-- een softwarematige veiligheidsreserve bovenop die energiebehoefte;
-- eventueel benodigde aanvullende netlading;
-- vrije/verhandelbare batterij-energie boven behoefte en reserve;
-- het eerste verwachte bruikbare solar-uur;
-- een leesbare beslis-/diagnosereden.
-
-Voor deze eerste observatieve versie geldt een uur als **bruikbaar solar-uur** wanneer solarforecast minimaal gelijk is aan de woningverbruiksforecast. Om een losse forecastpiek niet direct als omslagpunt te gebruiken, moeten **twee opeenvolgende uren** aan die voorwaarde voldoen.
-
-Voor het lopende uur wordt alleen het resterende deel van het uur meegeteld. Voor uren vóór het bruikbare solar-uur wordt de netto behoefte berekend als woningverbruik minus beschikbare solar, met minimaal 0 kWh per uur.
-
-De batterijcapaciteit is momenteel 7,2 kWh en de absolute ondergrens blijft 5% SOC. De extra softwarematige veiligheidsreserve is via de integratie-opties instelbaar van **0 tot 30%**, met **7% als standaardwaarde**. De 7% is dus geen vaste plannerregel.
-
-Deze laag is bewust observerend. Eerst worden de uitkomsten in de praktijk beoordeeld voordat deze waarden automatische laad- of ontlaadplannen mogen veroorzaken.
-
----
-
-# Planner Decision Preview
-
-Alpha22 voegt bovenop de alpha21-energiebalans een tweede, volledig observerende beslislaag toe. Deze laag maakt nog geen automatische plannen aan en stuurt de batterij niet fysiek aan.
-
-De preview bepaalt onder andere:
-
-- `Planner beslissing`;
-- `Planner reden`;
-- vereiste minimum-SOC op basis van behoefte, 5% absolute ondergrens en softwarematige reserve;
-- energie boven de vereiste reserve;
-- of veiligheidslading nodig is;
-- hoeveel aanvullende veiligheidslading nodig is;
-- de goedkoopste kandidaat-laaduren voor dat tekort;
-- of de beschikbare uren voor bruikbare zon voldoende lijken om het tekort te laden;
-- of ontladen energetisch mogelijk is zonder de berekende reserve aan te tasten;
-- een voorlopige handelslading-kandidaat op basis van vrije capaciteit en prijsverschil;
-- `Solar Charge Delay` wanneer de batterij voldoende energie heeft om bruikbare zon te bereiken zonder netlading;
-- prijsverschil binnen de beschikbare forecast;
-- een observerende herplanreden.
-
-Voor het selecteren van kandidaat-uren voor **veiligheidslading** worden de beschikbare uren tot bruikbare zon op prijs gerangschikt. Alpha22 gebruikt daarbij maximaal 3500 W laadvermogen uitsluitend om te schatten hoeveel uurblokken nodig zouden zijn. Deze uren zijn nog geen uitvoeringscommando's.
-
-De handelslaag blijft bewust beperkt tot een **kandidaatstatus**. Laadverlies, ontlaadverlies en een minimale netto handelsmarge zijn nog niet definitief gemodelleerd. Dummy OS EMS zal daarom in alpha22 niet automatisch voor handelswinst laden of ontladen.
-
-De beslisvolgorde is voorlopig:
-
-1. ongeldige/onvolledige energiebalans -> `wachten`;
-2. energietekort tot bruikbare zon -> `veiligheidsladen`;
-3. voldoende energie tot toekomstige bruikbare zon -> `wachten` met Solar Charge Delay;
-4. anders -> `geen_actie` totdat de financiële handelslaag is gevalideerd.
-
-Deze aanpak volgt de eerder vastgelegde principes uit de praktische vergelijking met de automatisering van de collega en OmniBattery: eerst tekort en reserve bepalen, veiligheidslading scheiden van handelslading, alleen benodigde goedkope laaduren selecteren en pas daarna handelsoptimalisatie toevoegen.
-
----
-
-# Source Monitor
-
-De Source Monitor registreert wanneer belangrijke brondata opnieuw wordt gerapporteerd en wanneer de inhoud werkelijk verandert.
-
-De huidige monitor observeert onder andere:
-
-- Solcast;
-- bekende prijsdata;
-- prijsprognose;
-- de huidige Stroomvoorspeller-bron in de ontwikkelomgeving.
-
-De historie wordt begrensd opgeslagen voor diagnose.
-
-Het doel hiervan is om de toekomstige planner **event-driven** te laten herberekenen: alleen wanneer relevante broninformatie daadwerkelijk verandert, in plaats van zware forecast- en planningslogica voortdurend opnieuw uit te voeren.
-
-De Source Monitor is momenteel observerend en start de automatische planner nog niet.
-
----
-
-# Diagnostiek
-
-Dummy OS EMS exposeert diagnose-entiteiten voor de verschillende interne lagen.
-
-Belangrijke groepen zijn:
-
-### Core
-- `Dummy OS EMS Status`
-- `Dummy OS EMS SOC`
-- `Dummy OS EMS Laadvermogen`
-- `Dummy OS EMS Ontlaadvermogen`
-- `Dummy OS EMS Bedrijfsmodus`
-- `Dummy OS EMS Bronnen beschikbaar`
-- `Dummy OS EMS Besturing beschikbaar`
-
-### Forecast
-- `Dummy OS EMS Forecast status`
-- `Dummy OS EMS Forecast complete uren`
-- `Dummy OS EMS Forecast bronnen beschikbaar`
-- `Dummy OS EMS Bronmonitor`
-
-### Observatieve energiebalans
-- `Dummy OS EMS Energiebehoefte status`
-- `Dummy OS EMS Energiebehoefte tot bruikbare zon`
-- `Dummy OS EMS Beschikbare batterij-energie`
-- `Dummy OS EMS Veiligheidsreserve`
-- `Dummy OS EMS Benodigde aanvullende netlading`
-- `Dummy OS EMS Vrije verhandelbare batterij-energie`
-- `Dummy OS EMS Eerste bruikbare solar`
-- `Dummy OS EMS Energiebehoefte reden`
+Automatic planner-owned plans can be reconciled while still safely in the future. Cancelled, completed, failed or empty slots can be reused. Due/start-ready automatic plans are protected from rolling forecast rewrites.
 
 ### Scheduler
-- `Dummy OS EMS Scheduler status`
-- `Dummy OS EMS Scheduler geselecteerd plan`
-- `Dummy OS EMS Scheduler startklaar`
 
-### Safety en Action
-- `Dummy OS EMS Safety Guard status`
-- `Dummy OS EMS Safety Guard reden`
-- `Dummy OS EMS Safety Guard veilig`
-- `Dummy OS EMS Action Controller status`
-- `Dummy OS EMS Action Controller actie`
-- `Dummy OS EMS Action Controller gereed`
+The Scheduler manages lifecycle timing, start windows and selection of plans. Automatic planner plans can currently be handed to the Scheduler, but unattended physical execution is not yet enabled.
 
-### Execution
-- `Dummy OS EMS Uitvoering status`
-- `Dummy OS EMS Uitvoering resterend`
-- `Dummy OS EMS Uitvoering actief`
+### Safety Guard and Execution Controller
 
-### Planplaatsen
-Iedere planplaats exposeert eigen entiteiten voor:
+The existing manual execution path has been physically validated for controlled charge/discharge, safe stop and return to `self_consumption`. The automatic planner path is being connected to this layer incrementally and only after each preceding safety stage is live-validated.
 
-- actie;
-- uitvoeringsmodus;
-- starttijd;
-- vermogen;
-- doel-SOC;
-- maximale looptijd;
-- maximale startvertraging;
-- planstatus.
+## Home Assistant entities
 
-De uiteindelijke entity-id's worden door Home Assistant gegenereerd op basis van deze namen.
+The integration currently creates **105 entities** across sensor, binary sensor, select, number and datetime platforms.
 
----
+Technical entity IDs and friendly names use English naming. Dashboard labels may remain Dutch. Newly created visible integration names begin with **Dummy OS EMS**.
 
-# Architectuur
+For planner/scheduler development, `sensor.dummy_os_ems_bridge_candidates` exposes the most detailed bridge, Plan Store, Scheduler and pre-start diagnostics as attributes.
 
-```text
-Externe Home Assistant-bronnen
-        │
-        ▼
-Config Flow / Options
-        │
-        ▼
-Integration Coordinator
-        │
-        ├── Forecast normalisatie
-        ├── Source Monitor
-        │
-        ▼
-Persistent Plan Store
-        │
-        ▼
-Scheduler
-        │
-        ▼
-Safety Guard
-        │
-        ▼
-Action Controller
-        │
-        ▼
-Execution Controller
-        │
-        ▼
-Anker Solix Integration
-        │
-        ▼
-Anker SOLIX Solarbank Max AC
-```
+## Services
 
-Forecasting, planning, veiligheid en fysieke aansturing blijven hierdoor afzonderlijk testbaar.
+The integration contains services for manual plan management, direct controlled execution, stopping execution and physical test functions. Service definitions are documented by Home Assistant from `services.yaml` after installation.
 
----
+Automatic planner execution does **not** currently call the physical execution path unattended.
 
-# Veiligheidsprincipes
+## Installation
 
-Dummy OS EMS moet altijd veilig falen.
+For local development/testing:
 
-Belangrijke ontwerpprincipes zijn:
+1. Copy `custom_components/anker_ems/` to `/config/custom_components/anker_ems/`.
+2. Restart Home Assistant.
+3. Add **Dummy OS EMS** through Settings -> Devices & services.
+4. Map the required source and control entities in Config Flow.
+5. Validate entity availability before enabling any physical test or manual execution.
 
-- maximaal één fysieke actie tegelijk;
-- Safety Guard vóór fysieke uitvoering;
-- persistent uitvoeringsstate;
-- veilige afhandeling na herstart;
-- 0 W setpoint bij safe-stop;
-- terugkeer naar `self_consumption`;
-- hardwaregrenzen altijd respecteren;
-- geen stille fallback naar onveilige bediening;
-- laden en ontladen afzonderlijk fysiek valideren.
+The GitHub repository is intended to be HACS-compatible. During alpha development, GitHub Releases are used for explicit versioned test packages.
 
-De Anker-batterij hanteert standaard een minimale SOC van **5%**. Dummy OS EMS mag geen lagere SOC-doelen plannen.
+## Safety rules
 
----
+- Never run two physical battery controllers at the same time.
+- Manual/user-modified plans override automatic planner plans.
+- The Anker 5% minimum SOC is never planned below.
+- Invalid or unavailable critical sources must block automatic progress.
+- Automatic planner writes, Scheduler handoff and physical execution are separate gates.
+- A future forecast is not treated as proof that a battery action is safe at execution time.
+- Live conditions are revalidated immediately before execution.
+- Any future automatic execution must fail safe and return the battery to `self_consumption` when control cannot be proven safe.
 
-# Roadmap
+## Roadmap
 
-## 1. Handmatige bediening volledig afronden
+Current priorities are:
 
-De kern van de handmatige uitvoeringsketen is inmiddels fysiek gevalideerd voor gepland laden en ontladen. Alpha20 heeft daarnaast het startvenster voor tijdelijk geblokkeerde plannen toegevoegd en de praktische overdracht na een tijdelijke blokkade is succesvol getest.
+- live-validation of the real Scheduler-ready pre-start gate;
+- automatic Scheduler -> Safety Guard handoff;
+- automatic Safety Guard -> Execution Controller handoff;
+- one-controller-at-a-time enforcement;
+- safe abort/recovery during execution;
+- first limited automatic physical charge/discharge tests;
+- event-driven replanning;
+- Afwezigheidsmodus;
+- plan-versus-actual evaluation;
+- daily plan notification;
+- analysis of Anker connection drops and slow charging;
+- eventual removal of temporary YAML/Jinja planner layers after functional parity.
 
-Nog te valideren wanneer relevant:
+A later evaluation will also determine whether extra battery capacity is financially worthwhile using real EMS history, utilization, avoided expensive import, trading value, losses and payback period.
 
-- alle drie planplaatsen in complexere combinaties;
-- aanvullende edge-cases rond herstart, annuleren en stoppen;
-- geïsoleerde retry na een daadwerkelijk mislukte fysieke startpoging.
+## Development history
 
----
+Release-specific development history is intentionally **not kept in this README**.
 
-## 2. Automatische 72-uursplanner
+Use:
 
-De planner berekent inmiddels één volledige 72-uursstrategie. De action bridge
-vertaalt de eerstvolgende geforceerde netlaad- en netontlaadacties naar een
-rolling preview van maximaal drie uitvoerbare planslots. Alpha29 voegde de
-gecontroleerde Plan Store-write toe; alpha30 voegt de afzonderlijk bewaakte
-Scheduler-handoff naar `pending` toe. Automatische fysieke uitvoering blijft
-bewust uitgeschakeld.
+- `CHANGELOG.md` for version-by-version changes;
+- GitHub Releases for release notes and downloadable test builds;
+- the project handover documentation for full technical history and design decisions.
 
-De dashboardlaag kan daarna kiezen tussen:
+## License and disclaimer
 
-- alleen de eerste 24 uur;
-- de volledige 72 uur.
-
-Er komen dus niet twee aparte planningsstrategieën.
-
-De planner zal uiteindelijk rekening houden met:
-
-- actuele SOC;
-- bruikbare batterijcapaciteit;
-- verwachte woningafname;
-- zonneprognose;
-- bekende stroomprijzen;
-- prijsprognose;
-- laad- en ontlaadverliezen;
-- minimale SOC en softwarematige reserve;
-- energiebehoefte tot bruikbare zon;
-- laad- en ontlaadlimieten;
-- handmatige acties;
-- veiligheidsgrenzen.
-
----
-
-## 3. Slim netladen
-
-Wanneer zonneproductie ontbreekt of onvoldoende is, moet Dummy OS EMS tijdens voldoende goedkope uren vanaf het net kunnen laden en die energie later tijdens duurdere uren gebruiken.
-
-De planner beoordeelt de **netto financiële meerwaarde** en niet uitsluitend het goedkoopste prijsuur.
-
-Daarbij worden onder andere meegenomen:
-
-- prijsverschil;
-- laadverlies;
-- ontlaadverlies;
-- woningverbruik;
-- verwacht zonneoverschot;
-- SOC-reserve;
-- beschikbare batterijcapaciteit;
-- veiligheidsmarges.
-
----
-
-## 4. Veiligheidslading versus handelslading
-
-De automatische planner moet onderscheid maken tussen:
-
-### Veiligheidslading
-Energie die nodig is om voldoende reserve beschikbaar te houden tot bruikbare zonneproductie of een andere betrouwbare energiebron beschikbaar is.
-
-### Handelslading
-Extra energie die uitsluitend wordt geladen omdat het verwachte prijsverschil na verliezen financieel aantrekkelijk is.
-
-Veiligheid en beschikbaarheid blijven altijd belangrijker dan handelsoptimalisatie.
-
----
-
-## 5. Solar Charge Delay
-
-De planner moet zonneladen kunnen uitstellen wanneer het verstandiger is batterijcapaciteit beschikbaar te houden voor een later en waardevoller zonneoverschot.
-
-Dit wordt gecombineerd met:
-
-- zonneprognose;
-- woningverbruik;
-- SOC;
-- vrije batterijcapaciteit;
-- prijsvensters.
-
----
-
-## 6. Event-driven herplanning
-
-De automatische planner moet niet continu opnieuw rekenen.
-
-Toekomstige triggers voor herplanning zijn betekenisvolle wijzigingen in:
-
-- Solcast;
-- bekende stroomprijzen;
-- prijsprognose;
-- woningverbruiksprognose;
-- SOC;
-- handmatige overrides;
-- planwijzigingen.
-
-De bestaande Source Monitor vormt hiervoor de eerste basis.
-
----
-
-## 7. Afwezigheidsmodus
-
-Er komt een expliciete **Afwezigheidsmodus**.
-
-Minimaal geplande entiteit:
-
-`switch.anker_ems_absence_mode`
-
-Tijdens afwezigheid:
-
-- wordt uitgegaan van lager huishoudelijk verbruik;
-- hoeft minder batterijcapaciteit voor normaal eigen verbruik gereserveerd te worden;
-- kan meer capaciteit beschikbaar komen voor prijsgebaseerde handel;
-- blijven veiligheidsgrenzen en minimale SOC leidend;
-- blijft handmatige noodbediening mogelijk;
-- volgen automatische en geplande acties een expliciet afwezigheidsprofiel.
-
----
-
-## 8. Canoniek woningvermogen
-
-Een toekomstige integratiesensor is gepland:
-
-`sensor.anker_ems_home_power`
-
-Zichtbare naam:
-
-**Woningverbruik actueel**
-
-De config flow moet hiervoor twee bronmodi ondersteunen:
-
-1. een bestaande directe woningvermogenssensor selecteren;
-2. woningvermogen laten berekenen uit geselecteerde sensoren voor net, solar en batterij.
-
-De integratie gebruikt daarbij één vaste tekenconventie en voorkomt dubbele telling.
-
----
-
-## 9. Plan versus werkelijkheid
-
-Er komt een afzonderlijke historische evaluatielaag voor laad- en ontlaadacties.
-
-Deze vergelijkt geplande en werkelijke uitvoering voor zowel automatische als handmatige plannen.
-
-Onder andere:
-
-- geplande versus werkelijke starttijd;
-- geplande versus werkelijke eindtijd;
-- duur;
-- gevraagd versus werkelijk vermogen;
-- energie;
-- doel-SOC;
-- bereikte SOC;
-- reden van afwijkingen.
-
-Deze evaluatie staat los van de vooruitkijkende 72-uursplanning.
-
----
-
-## 10. Meldingen
-
-Een toekomstige notificatielaag kan een dagelijkse EMS-samenvatting geven, bijvoorbeeld rond het avondmoment waarop de volgende planning beschikbaar is.
-
-De melding kan bevatten:
-
-- actuele SOC;
-- verwachte zonneproductie;
-- verwacht woningverbruik;
-- geplande laad- en ontlaadacties;
-- belangrijke prijsvensters;
-- reservebeslissing;
-- reden achter het plan;
-- eventuele noodzaak voor handmatige controle.
-
----
-
-## 11. Financiële beoordeling extra batterijcapaciteit
-
-Wanneer de EMS-strategie stabiel draait en voldoende praktijkhistorie beschikbaar
-is, wordt beoordeeld of uitbreiding van de huidige 7,2 kWh batterij financieel
-interessant is.
-
-De analyse gebruikt werkelijke EMS-data, waaronder:
-- benuttingsgraad van de huidige batterij;
-- momenten waarop opslagcapaciteit tekortkomt;
-- gemiste mogelijkheid om goedkope netenergie op te slaan;
-- extra vermeden dure netafname;
-- extra verkoopmogelijkheden op hoge prijsuren;
-- laad- en ontlaadverliezen;
-- extra cycli en werkelijk bruikbare capaciteit;
-- jaarlijkse extra besparing/opbrengst en terugverdientijd.
-
-Als aankoopreferentie worden minimaal circa **€1.999 normaal**, **€1.699 met
-korting** en eventueel lagere Duitse marktprijzen doorgerekend. Het doel is ook
-een maximale economisch verantwoorde aankoopprijs voor extra capaciteit te
-bepalen.
-
----
-
-## 12. Minder afhankelijkheid van YAML/Jinja
-
-Een belangrijk langetermijndoel is om EMS-specifieke logica uit zware Home Assistant YAML/Jinja-packages naar de Python-integratie te verplaatsen.
-
-Migratie gebeurt gecontroleerd:
-
-1. equivalente integratiefunctie bouwen;
-2. waar nodig oud en nieuw tijdelijk parallel laten draaien;
-3. resultaten vergelijken;
-4. dashboards en automatiseringen omzetten;
-5. oude package-logica pas daarna verwijderen.
-
-Externe databronnen zoals Solcast blijven externe integraties waar dat logisch is.
-
----
-
-# Wat Dummy OS EMS bewust nog niet is
-
-Dummy OS EMS is momenteel **niet**:
-
-- een volledig afgeronde automatische batterijoptimizer;
-- een generieke EMS-integratie voor ieder batterijmerk;
-- een vervanger voor de Anker Solix Home Assistant-integratie;
-- een garantie op financieel rendement;
-- een manier om hardware- of fabrikantveiligheidslimieten te omzeilen.
-
-De eerste ontwikkelfase richt zich bewust op betrouwbare werking met de **Anker SOLIX Solarbank Max AC**.
-
----
-
-# Installatie
-
-Dummy OS EMS is bedoeld voor installatie via HACS als custom repository.
-
-Voor de huidige alpha is de aanbevolen volgorde:
-
-1. Installeer en configureer Home Assistant 2026.7.0 of nieuwer.
-2. Installeer HACS.
-3. Installeer en configureer de Anker Solix Integration for Home Assistant.
-4. Controleer of de benodigde Anker bron- en bedieningsentiteiten beschikbaar zijn.
-5. Installeer Dummy OS EMS via HACS.
-6. Herstart Home Assistant.
-7. Voeg **Dummy OS EMS** toe via **Instellingen → Apparaten & diensten**.
-8. Selecteer de juiste Anker-, net- en overige bronentiteiten.
-9. Voeg voor de forecastlaag desgewenst Solcast, EnergyZero en overige forecastbronnen toe.
-10. Controleer eerst de diagnose-entiteiten voordat fysieke besturing wordt getest.
-
-Omdat het project nog alpha-software is, moeten fysieke laad- en ontlaadacties zorgvuldig en gecontroleerd worden getest.
-
----
-
-# Ontwikkelmodel
-
-```text
-Bronnen uitlezen
-    ↓
-Data normaliseren
-    ↓
-Persistente handmatige plannen
-    ↓
-Scheduler
-    ↓
-Safety Guard
-    ↓
-Action Controller
-    ↓
-Gecontroleerde fysieke uitvoering
-    ↓
-Automatische planner
-    ↓
-Historische evaluatie en optimalisatie
-```
-
-Een nieuwe laag wordt pas als betrouwbaar beschouwd wanneer de voorgaande laag functioneel is gevalideerd.
-
-Release-specifieke wijzigingen, bugfixes en versiehistorie horen in **CHANGELOG.md** en in de **GitHub Release notes**.
-
-De README is bewust bedoeld als actueel overzicht van:
-
-- wat Dummy OS EMS is;
-- welke integraties en databronnen nodig of ondersteund zijn;
-- wat de integratie momenteel bevat;
-- hoe de architectuur is opgebouwd;
-- wat nog ontwikkeld moet worden.
-
----
-
-# Onafhankelijkheid en aansprakelijkheid
-
-Dummy OS EMS is een onafhankelijk opensource-communityproject.
-
-Het project is niet gelieerd aan of goedgekeurd door:
-
-- Anker Innovations;
-- Home Assistant;
-- Nabu Casa;
-- andere genoemde hardware- of softwarefabrikanten.
-
-Productnamen en merknamen blijven eigendom van hun rechthebbenden.
-
-Batterijbesturing betreft fysieke elektrische apparatuur. Gebruik van deze software is op eigen risico. Respecteer altijd de veiligheidsgrenzen en voorschriften van batterij, omvormer, elektrische installatie en fabrikant.
-
-
-## Financiële handelslaag
-
-Alpha23 voegt een observerende financiële handelslaag toe aan de Planner Decision Preview.
-
-De integratie gebruikt hierbij dezelfde uitgangspunten als de bestaande YAML-referentie:
-- laadrendement standaard 92%;
-- ontlaadrendement standaard 92%;
-- minimale netto handelsmarge standaard € 0,10/kWh.
-
-Deze drie waarden zijn via de integratie-opties instelbaar.
-
-Voor iedere mogelijke combinatie van een eerder goedkoop laad-uur en een later duurder ontlaad-/besparingsuur berekent Dummy OS EMS:
-- roundtrip-rendement;
-- effectieve laadkost per later geleverde kWh;
-- verwachte netto handelsmarge;
-- beste handelslaaduur;
-- beste handelsontlaaduur;
-- of de combinatie de minimale handelsmarge haalt.
-
-Veiligheidslading heeft altijd voorrang op handelslogica. De handelslaag blijft in alpha23 volledig observerend: er worden nog geen automatische plannen aangemaakt of uitgevoerd.
-
-
-
-## EMS-besturingsfilosofie
-
-Dummy OS EMS gebruikt een vaste prioriteitsvolgorde voor energie. Het primaire
-doel is **nul op de meter / maximaal eigenverbruik**. Zonne-energie gaat eerst
-naar de woning en daarna naar de batterij.
-
-Wanneer eigen productie onvoldoende is, wordt alleen het werkelijk benodigde
-tekort uit het net geladen en bij voorkeur op de goedkoopste geschikte uren
-voordat die energie nodig is. Opgeslagen energie wordt vervolgens gebruikt om
-dure netafname te voorkomen.
-
-Alleen energie die aantoonbaar vrij is boven de verwachte woningbehoefte, de
-dynamische reserve en komende noodzakelijke behoefte mag voor handel worden
-gebruikt. Echt overschot mag tegen een zo hoog mogelijke financieel zinvolle
-prijs worden verkocht.
-
-De planner houdt daarbij rekening met laad- en ontlaadverliezen, Solar Charge
-Delay, de harde 5% minimum-SOC van de Anker-batterij en een minimale
-rendements-/winstdrempel. Het EMS handelt dus niet om het handelen: extra
-batterijcycli zijn alleen zinvol wanneer het verwachte financiële voordeel na
-verliezen voldoende groot is.
-
-## Automatische 72-uurs planpreview
-
-Alpha24 voegt de eerste doorlopende automatische 72-uurs planpreview toe.
-
-De preview rekent sequentieel uur voor uur met:
-- actuele SOC als startpunt;
-- batterijcapaciteit 7,2 kWh;
-- minimale apparaatgrens 5%;
-- softwarematige veiligheidsreserve;
-- woningverbruikforecast;
-- zonneforecast;
-- bekende en voorspelde energieprijzen;
-- maximaal 3,5 kW laden;
-- maximaal 3,0 kW ontladen;
-- laad- en ontlaadrendement uit de integratie-opties;
-- veiligheidslading uit de alpha21/22 energiebalans;
-- observerende handelskans uit alpha23.
-
-Prioriteit per uur:
-1. solar dekt eerst het woningverbruik;
-2. solaroverschot laadt de batterij;
-3. noodzakelijke veiligheidslading uit het net;
-4. observerende handelslading op het financieel beste laaduur;
-5. batterij dekt woningtekort boven de reserve;
-6. observerend ontladen naar het net op het beste handelsontlaaduur.
-
-De volledige reeks wordt gepubliceerd als `plan`-attribuut van
-`Dummy OS EMS Automatisch plan 72u`.
-
-Alpha24 is uitsluitend een preview. De drie handmatige planslots, Scheduler,
-Safety Guard, Action Controller en Execution Controller worden nog niet
-automatisch door deze planner aangestuurd.
-
-
-
-### Alpha24.1-correctie
-
-De 72-uurs preview is aangescherpt op twee punten die in de eerste alpha24-live
-planning zichtbaar werden:
-
-- Handelsladen uit het net wordt uitgesteld wanneer verwacht solaroverschot vóór
-  het gekozen ontlaaduur dezelfde vrije batterijcapaciteit kan vullen.
-- Handelsenergie wordt tijdelijk als gereserveerde energie beschouwd zodat deze
-  niet automatisch in eerdere, financieel minder interessante woninguren wordt
-  opgebruikt.
-
-De planner kan gereserveerde handelsenergie wel eerder voor de woning gebruiken
-wanneer het actuele stroomtarief minstens gelijkwaardig is aan de effectieve
-laadkost plus de ingestelde minimum handelsmarge.
-
-
-
-### Alpha24.2 hotfix
-
-Alpha24.2 herstelt een runtimefout in alpha24.1 waarbij de 72-uurs planner
-een verwijderde variabelenaam (`trade_charge_stored`) nog gebruikte in de
-samenvattende uitvoer. Daardoor kon de coordinator niet vernieuwen en werden
-Dummy OS EMS-entiteiten onbeschikbaar.
-
-De samenvatting gebruikt nu rechtstreeks de werkelijk geplande
-handelsnetlading maal het ingestelde laadrendement.
-
-
-### Alpha24.3 - dynamische reserve over 72 uur
-
-De reservevloer is niet langer één vaste SOC-waarde voor de hele horizon.
-
-Voor ieder forecastuur bepaalt de planner opnieuw:
-- de volgende bruikbare zonneperiode;
-- de verwachte netto woningbehoefte tot die zonneperiode;
-- de daarvoor benodigde opgeslagen batterij-energie, inclusief
-  ontlaadrendement;
-- de vaste 5% apparaatgrens;
-- de ingestelde softwarematige veiligheidsreserve.
-
-De resulterende reservevloer kan daardoor gedurende de 72 uur stijgen en
-dalen. Ontladen voor woning of handel mag deze dynamische reserve niet
-onderschrijden.
-
-Wanneer de actuele opgeslagen energie na zonnelading toch onder de dynamische
-reservebehoefte ligt, kan de preview een observerende veiligheidslading
-opnemen. Fysieke uitvoering blijft uitgeschakeld.
-
-Per planuur zijn toegevoegd:
-- `reserve_floor_start_soc`
-- `reserve_floor_soc`
-- `dynamic_need_until_solar_kwh`
-- `dynamic_need_after_hour_kwh`
-- `next_usable_solar`
-
-
-
-### Alpha24.4 - horizon fallback en goedkoopste veiligheidsuren
-
-Wanneer binnen de resterende forecast geen volgende bruikbare zonneperiode
-meer aantoonbaar is, wordt dat niet langer geïnterpreteerd als "er komt geen
-zon meer". De planner valt dan terug op de normale 5% apparaatgrens plus de
-softwarematige veiligheidsreserve.
-
-Daardoor kan een onvolledige solarhorizon de reserve niet kunstmatig naar
-100% trekken.
-
-Daarnaast wordt dynamische veiligheidslading niet meer automatisch geplaatst
-op het eerste uur waarop een toekomstig tekort zichtbaar wordt. Voor elk
-reservepiekmoment selecteert de preview de goedkoopste nog haalbare uren vóór
-dat moment en verdeelt alleen de werkelijk benodigde opgeslagen energie over
-die uren.
-
-Nieuwe diagnose:
-- `solar_horizon_complete`
-- `solar_horizon_incomplete_hours`
-- per planuur `solar_horizon_complete`
-
-
-
-### Alpha25 - uitvoeringsbuffer vóór automatische koppeling
-
-Alpha25 blijft observerend, maar voegt de eerste expliciete veiligheidslaag toe
-voor de toekomstige koppeling van de 72-uurs planner aan de fysieke uitvoering.
-
-Boven de berekende dynamische reserve wordt standaard **2 procentpunt SOC**
-operationele buffer aangehouden. Deze buffer wordt gebruikt bij:
-- het vooraf plannen van noodzakelijke veiligheidslading;
-- woningontlading;
-- handelsontlading;
-- de berekening van beschikbare energie boven de operationele reserve.
-
-De oorspronkelijke dynamische reserve blijft afzonderlijk zichtbaar. Daardoor
-kan worden gecontroleerd hoeveel marge de planner werkelijk boven de inhoudelijk
-berekende reserve bewaart.
-
-Nieuwe diagnosevelden per planuur:
-- `execution_reserve_floor_start_soc`
-- `execution_reserve_floor_soc`
-- `execution_buffer_percent`
-- `execution_headroom_soc`
-
-Nieuwe samenvattende diagnose:
-- actuele uitvoeringsreserve;
-- minimale uitvoeringsmarge over 72 uur;
-- aantal uren waarin de uitvoeringsbuffer wordt onderschreden;
-- binaire status of de volledige planhorizon de buffer respecteert.
-
-Automatische planslot-creatie, Scheduler-aanroep en fysieke planneruitvoering
-blijven in alpha25 bewust uitgeschakeld.
-
-
-## Alpha30 — Controlled Scheduler Handoff
-
-Alpha30 start de fase **veilig automatisch uitvoeren** door de grens tussen de
-Plan Store en de Scheduler gecontroleerd te openen, zonder fysieke batterijcommando's
-automatisch te activeren. Een planner-owned plan mag alleen van `concept` naar
-`pending` wanneer het actuele 72-uursplan geldig is, de 2%-uitvoeringsbuffer veilig
-is, forecastbronnen gereed zijn, alle bridge-kandidaten technisch geldig zijn en
-de persistente `planner_signature` exact overeenkomt met het actuele voorstel.
-
-Planner-owned `pending` slots worden bij volgende coordinator-refreshes op signature
-teruggekoppeld aan dezelfde kandidaat. Daardoor verschijnen ze niet ten onrechte als
-handmatig slotconflict. Een wijziging door de gebruiker maakt het slot opnieuw
-`manual` en blokkeert automatische promotie.
-
-Alpha30 stopt bewust bij de Scheduler: `execution_enabled` blijft `false` en er
-wordt geen automatisch commando naar de Anker-batterij gestuurd. Dit maakt het
-mogelijk om eerst live te valideren dat plannen correct `pending`, `wachtend`,
-`startklaar` of `verlopen` worden voordat automatische uitvoering wordt geopend.
-
-## Alpha29 — Controlled Automatic Plan Store Write
-
-Alpha29 is the first version in which validated automatic planner proposals are persisted into the three existing Plan Store slots. This is intentionally only a persistence step: generated plans are stored as `concept` and therefore are not start-ready for the Scheduler.
-
-The write gate opens only when the 72-hour plan is valid, the 2% execution buffer is safe, forecast sources are ready and all candidates are technically valid. Manual active/actionable plans always retain priority. Terminal or empty slots may be reused, and planner-owned concept slots may be refreshed by the rolling preview.
-
-Each generated plan is marked with `origin: automatic_72h_planner`, its planner purpose, generation timestamp and a stable planner signature. The signature prevents writes to Home Assistant storage on every coordinator poll. A direct user edit changes the origin back to `manual`, ensuring the automatic planner cannot silently overwrite that user change.
-
-Scheduler handoff and physical execution remain disabled for this path. Alpha29 does not automatically mark generated plans `pending` and does not issue battery commands.
-
-## Alpha27 - Forward Reserve Precharge
-
-Alpha27 corrigeert de timing van dynamische veiligheidslading. In alpha26 kon een
-scherpe stijging van de uitvoeringsreserve pas zichtbaar worden in de overgang
-naar het volgende uur. Daardoor kon de planner op het einde van het voorafgaande
-uur tijdelijk onder de vereiste 2%-uitvoeringsbuffer uitkomen, terwijl een uur
-later de reserve weer precies werd gehaald.
-
-De planner behandelt de **uitvoeringsreserve na ieder planuur** nu als een echte
-deadline. Voor toekomstige lokale reservepieken wordt vooraf bepaald hoeveel
-opgeslagen energie op dat moment beschikbaar zal zijn uit:
-- de actuele start-SOC;
-- gratis verwacht zonne-overschot;
-- eerder toegewezen noodzakelijke veiligheidslading.
-
-Alleen wanneer dat samen onvoldoende is, plant de planner extra netlading. De
-benodigde opgeslagen energie wordt dan over de goedkoopste technisch haalbare
-uren vóór of op de deadline verdeeld. Hiermee blijft het uitgangspunt behouden:
-**geen netladen omdat een uur goedkoop is, maar alleen netladen wanneer een
-toekomstige noodzakelijke reserve anders niet tijdig haalbaar is.**
-
-De horizon-fallback uit alpha24.4 blijft gelden: wanneer binnen de resterende
-forecast geen volgende bruikbare zonneperiode aantoonbaar is, ontstaat daaruit
-geen kunstmatige volledige-horizon reserve of extra voorlading.
-
-De actiebrug uit alpha26 blijft observerend en blijft blokkeren wanneer de
-uitvoeringsbuffer niet veilig is. Plan Store-write, Scheduler-handoff en fysieke
-uitvoering blijven in alpha27 uitgeschakeld.
-
-
-### Alpha26 - observerende planner-naar-planslot brug
-
-Alpha26 voegt de eerste expliciete vertaalbrug toe tussen het observerende
-72-uursplan en de bestaande drie planslots. De brug schrijft nog niets naar
-Plan Store en kan dus geen Scheduler- of fysieke actie starten.
-
-De vertaling maakt alleen expliciete third-party-control acties van:
-- veiligheidsladen uit het net;
-- handelsladen uit het net;
-- handelsontladen naar het net.
-
-Zonneladen en ontladen naar de woning worden bewust **niet** omgezet naar
-planslots. Deze stromen horen bij de normale `self_consumption`-werking en
-hoeven niet als geforceerde batterijactie te worden uitgevoerd.
-
-Opeenvolgende uren met dezelfde geforceerde actie en hetzelfde doel worden
-samengevoegd tot één uitvoerbaar voorstel met:
-- actie `laden` of `ontladen`;
-- doel van de actie;
-- geplande starttijd;
-- verwacht eindtijdstip;
-- berekend gemiddeld vermogen, naar boven afgerond op 10 W;
-- doel-SOC;
-- maximale looptijd;
-- maximale startvertraging;
-- verwachte energie;
-- bijbehorende prijs- en reserve-informatie.
-
-De eerstvolgende maximaal drie voorstellen vormen een **rolling 3-slot preview**.
-Wanneer later meer acties nodig zijn, blijven die als overflow-kandidaten zichtbaar
-en kunnen ze in een volgende fase worden doorgeschoven zodra een planslot vrijkomt.
-
-Bestaande handmatige planslots worden nooit automatisch als vrij beschouwd zolang
-er een gebruikersactie in staat. Alpha26 toont daarom per voorgesteld slot of het
-overeenkomstige handmatige slot beschikbaar zou zijn, maar overschrijft het niet.
-
-Nieuwe diagnose bevat onder andere:
-- status en geldigheid van de automatische actiebrug;
-- totaal aantal geforceerde actiekandidaten;
-- aantal voorstellen in het rolling 3-slot venster;
-- overflow-aantal;
-- conflicten met bestaande handmatige planslots;
-- drie afzonderlijke automatische planvoorstellen.
-
-In alpha26 blijven expliciet uitgeschakeld:
-- Plan Store-write;
-- Scheduler-handoff;
-- automatische fysieke uitvoering.
-
-### Alpha33 - Pre-Start Diagnostics & Testability
-
-Alpha33 makes the pre-start safety gate inspectable before a real plan reaches its start window. The nearest future planner-owned pending plan is continuously evaluated in dry-run mode and the individual checks are published as attributes of the existing `sensor.dummy_os_ems_bridge_candidates` entity.
-
-Diagnostic attributes include the selected diagnostic slot, planned start, minutes until start, action, power, current and target SOC, applicable execution reserve, planner identity/signature continuity, blockers, warnings and a structured check list. A small in-memory test matrix also verifies that forecast loss, an unsafe execution buffer and an invalid planner would each block the gate. These tests never alter Home Assistant state and never issue physical battery commands.
-
-Automatic execution remains disabled in alpha33.
+See `LICENSE` and `NOTICE.md` in this repository. Dummy OS EMS is experimental software. Battery control can affect energy costs and equipment behaviour; validate configuration and safety limits before using physical control functions.

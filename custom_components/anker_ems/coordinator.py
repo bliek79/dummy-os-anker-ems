@@ -462,7 +462,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "auto_bridge_observational_only",
             }:
                 data[key] = value
-        # Alpha33: diagnostic + observational pre-start gate for automatic Scheduler-ready plans.
+        # Alpha34: time-aware diagnostics + observational pre-start gate for automatic Scheduler-ready plans.
         # This is intentionally evaluated before the legacy physical Safety Guard and
         # never calls the Execution Controller.
         data.update(AnkerEmsPreStartValidator().evaluate(data))

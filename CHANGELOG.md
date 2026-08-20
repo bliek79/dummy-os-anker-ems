@@ -712,3 +712,15 @@ Still disabled in alpha29:
 - Keeps the actual Scheduler-ready pre-start gate unchanged in safety intent.
 - No physical battery commands are enabled; automatic execution remains disabled.
 - No new Home Assistant entities; entity count remains 105.
+
+## 0.0.1-alpha.34 - Time-Aware Pre-Start Diagnostics
+
+- Separated continuous early diagnostics from the authoritative Scheduler-ready pre-start gate.
+- Added explicit diagnostic phase (`early`, `near_start`, `due`) and non-authoritative status metadata.
+- Current SOC direction and execution-reserve failures are warnings while a plan is outside the live pre-start decision window.
+- The same SOC checks become hard blockers inside the decision window and remain hard blockers for the real Scheduler-ready pre-start gate.
+- Added diagnostic metadata for whether live SOC is currently enforced and the active decision-window duration.
+- Dry-run safety tests now respect the same time relevance as the continuous diagnostic.
+- Automatic physical execution remains disabled.
+- Entity count remains unchanged at 105.
+- Reworked README into a compact current-state guide; alpha-by-alpha history now remains in CHANGELOG and GitHub Releases only.
