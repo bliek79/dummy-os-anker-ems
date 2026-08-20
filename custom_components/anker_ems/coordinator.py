@@ -337,8 +337,10 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
 
     async def _async_update_data(self) -> dict[str, Any]:
+        control_ids = self.control_entity_ids
         data = {
             "simulation_mode": self.simulation_mode,
+            "control_path_configured": all(bool(control_ids.get(key)) for key in ("operating_mode", "action_direction", "power_setpoint")),
             "soc": self._number(CONF_SOC_ENTITY),
             "device_status": self._state(CONF_DEVICE_STATUS_ENTITY),
             "charge_power_w": self._number(CONF_CHARGE_POWER_ENTITY),
@@ -462,10 +464,17 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "auto_bridge_observational_only",
             }:
                 data[key] = value
-        # Alpha34: time-aware diagnostics + observational pre-start gate for automatic Scheduler-ready plans.
-        # This is intentionally evaluated before the legacy physical Safety Guard and
-        # never calls the Execution Controller.
+        # Time-aware diagnostics + authoritative pre-start gate for automatic
+        # Scheduler-ready plans. Alpha35 then hands the approved automatic plan
+        # to a non-actuating Safety Guard stage. Physical execution remains off.
         data.update(AnkerEmsPreStartValidator().evaluate(data))
+        data["physical_test_active"] = bool(self.physical_test.data.get("active"))
+        data["execution_active"] = bool(self.execution.data.get("active"))
+        data.update(self.safety_guard.evaluate_automatic_handoff(data))
+
+        # Legacy Safety Guard / Action Controller remain available for the
+        # existing manual execution path. The automatic Alpha35 handoff stops
+        # before the Execution Controller and does not call services.
         data.update(self.safety_guard.evaluate(data))
         data.update(self.action_controller.evaluate(data))
         test_data = self.physical_test.data

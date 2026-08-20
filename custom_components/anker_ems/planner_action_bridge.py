@@ -430,8 +430,8 @@ def build_planner_action_bridge(
         "auto_bridge_manual_slot_conflict": preview_conflicts > 0,
         "auto_bridge_manual_slot_conflict_count": preview_conflicts,
         "auto_bridge_note": (
-            "Alpha31 reconcileert planner-owned pending plannen op stabiele planner identity, werkt toekomstige "
-            "pending revisies gecontroleerd bij en ruimt vervallen automatische pending plannen op. "
-            "Fysieke automatische uitvoering blijft uitgeschakeld."
+            "Planner-owned pending plannen worden op stabiele planner identity gereconcilieerd. "
+            "Plan Store-write, Scheduler-handoff en pre-start veiligheidsvalidatie zijn actief; "
+            "fysieke automatische uitvoering blijft uitgeschakeld."
         ),
     }

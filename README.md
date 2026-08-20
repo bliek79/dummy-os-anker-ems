@@ -47,7 +47,8 @@ The current alpha supports:
 - rolling pending-plan reconciliation using stable `planner_identity`;
 - stale automatic-plan cleanup;
 - pre-start safety validation;
-- time-aware pre-start diagnostics and dry-run blocker tests.
+- time-aware pre-start diagnostics and dry-run blocker tests;
+- non-actuating Scheduler -> Safety Guard handoff for automatic start-ready plans.
 
 **Automatic physical execution is still disabled.** Automatic plans may reach the Scheduler, but the current development phase stops before unattended battery commands are issued.
 
@@ -160,7 +161,7 @@ The Scheduler manages lifecycle timing, start windows and selection of plans. Au
 
 ### Safety Guard and Execution Controller
 
-The existing manual execution path has been physically validated for controlled charge/discharge, safe stop and return to `self_consumption`. The automatic planner path is being connected to this layer incrementally and only after each preceding safety stage is live-validated.
+The existing manual execution path has been physically validated for controlled charge/discharge, safe stop and return to `self_consumption`. The automatic planner path now reaches a dedicated non-actuating Safety Guard handoff after the authoritative pre-start gate. This stage validates the selected automatic plan and future control path but deliberately stops before the Execution Controller.
 
 ## Home Assistant entities
 
@@ -204,7 +205,7 @@ The GitHub repository is intended to be HACS-compatible. During alpha developmen
 Current priorities are:
 
 - live-validation of the real Scheduler-ready pre-start gate;
-- automatic Scheduler -> Safety Guard handoff;
+- live-validation of the automatic Scheduler -> Safety Guard handoff;
 - automatic Safety Guard -> Execution Controller handoff;
 - one-controller-at-a-time enforcement;
 - safe abort/recovery during execution;

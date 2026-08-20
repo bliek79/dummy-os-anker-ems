@@ -12,7 +12,7 @@ from .const import MAX_SOC_PERCENT, MIN_SOC_PERCENT
 class AnkerEmsPreStartValidator:
     """Validate and diagnose automatic plans immediately before execution.
 
-    Alpha34 keeps physical automatic execution disabled. It separates the
+    Physical automatic execution remains disabled. This validator separates the
     continuous early diagnostic from the authoritative Scheduler-ready pre-start
     gate. Live-SOC direction and execution-reserve checks are informative while
     a plan is still far away and become hard blockers only close to start.

@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.0.1-alpha.35 - Scheduler to Safety Guard Handoff
+
+- Adds the first automatic, non-actuating handoff from a Scheduler-ready planner-owned plan to the Safety Guard layer.
+- Requires the authoritative pre-start gate to be active and safe before Safety Guard handoff can pass.
+- Revalidates planner identity continuity, Action Bridge validity, forecast readiness, execution-buffer safety, action, power, SOC, target SOC and conflicting battery power.
+- Verifies that all three configured control-path entities exist in the integration configuration without requiring `third_party_control` to be active yet.
+- Blocks handoff while a physical test or another execution is active, preserving the one-controller-at-a-time principle before physical automation is enabled.
+- Exposes handoff status, reasons, warnings, selected slot, identity and control-path readiness through the existing Action Candidates attributes.
+- A changed planner signature remains a warning when stable planner identity still matches.
+- Automatic Execution Controller handoff and physical battery commands remain disabled.
+- Runtime bridge note is now version-neutral instead of carrying an old alpha number.
+- Entity count remains unchanged at 105.
+
+## 0.0.1-alpha.34 - Time-Aware Pre-Start Diagnostics
+
+- Separated continuous early diagnostics from the authoritative Scheduler-ready pre-start gate.
+- Added explicit diagnostic phase (`early`, `near_start`, `due`) and non-authoritative status metadata.
+- Current SOC direction and execution-reserve failures are warnings while a plan is outside the live pre-start decision window.
+- The same SOC checks become hard blockers inside the decision window and remain hard blockers for the real Scheduler-ready pre-start gate.
+- Added diagnostic metadata for whether live SOC is currently enforced and the active decision-window duration.
+- Dry-run safety tests now respect the same time relevance as the continuous diagnostic.
+- Automatic physical execution remains disabled.
+- Entity count remains unchanged at 105.
+- Reworked README into a compact current-state guide; alpha-by-alpha history now remains in CHANGELOG and GitHub Releases only.
+
+## 0.0.1-alpha.33 - Pre-Start Diagnostics & Testability
+
+- Adds continuous dry-run pre-start diagnostics for the nearest future planner-owned pending plan.
+- Exposes every individual pre-start check as structured attributes on the existing Action Candidates sensor.
+- Adds diagnostic slot, start time, minutes-to-start, SOC, target SOC, execution reserve, identity/signature match, blockers and warnings.
+- Adds an in-memory dry-run test matrix for current conditions plus forecast-not-ready, unsafe execution-buffer and invalid-planner scenarios.
+- Keeps the actual Scheduler-ready pre-start gate unchanged in safety intent.
+- No physical battery commands are enabled; automatic execution remains disabled.
+- No new Home Assistant entities; entity count remains 105.
+
 ## 0.0.1-alpha.32 - Pre-Start Safety Validation
 
 - Adds a dedicated observational pre-start safety gate for automatic Scheduler-ready plans.
@@ -702,25 +737,3 @@ Still disabled in alpha29:
 - Eerste config flow.
 - Eerste coordinator.
 - Eerste read-only sensoren.
-
-## 0.0.1-alpha.33 - Pre-Start Diagnostics & Testability
-
-- Adds continuous dry-run pre-start diagnostics for the nearest future planner-owned pending plan.
-- Exposes every individual pre-start check as structured attributes on the existing Action Candidates sensor.
-- Adds diagnostic slot, start time, minutes-to-start, SOC, target SOC, execution reserve, identity/signature match, blockers and warnings.
-- Adds an in-memory dry-run test matrix for current conditions plus forecast-not-ready, unsafe execution-buffer and invalid-planner scenarios.
-- Keeps the actual Scheduler-ready pre-start gate unchanged in safety intent.
-- No physical battery commands are enabled; automatic execution remains disabled.
-- No new Home Assistant entities; entity count remains 105.
-
-## 0.0.1-alpha.34 - Time-Aware Pre-Start Diagnostics
-
-- Separated continuous early diagnostics from the authoritative Scheduler-ready pre-start gate.
-- Added explicit diagnostic phase (`early`, `near_start`, `due`) and non-authoritative status metadata.
-- Current SOC direction and execution-reserve failures are warnings while a plan is outside the live pre-start decision window.
-- The same SOC checks become hard blockers inside the decision window and remain hard blockers for the real Scheduler-ready pre-start gate.
-- Added diagnostic metadata for whether live SOC is currently enforced and the active decision-window duration.
-- Dry-run safety tests now respect the same time relevance as the continuous diagnostic.
-- Automatic physical execution remains disabled.
-- Entity count remains unchanged at 105.
-- Reworked README into a compact current-state guide; alpha-by-alpha history now remains in CHANGELOG and GitHub Releases only.
