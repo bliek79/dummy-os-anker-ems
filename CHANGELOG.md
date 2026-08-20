@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.0.1-alpha.36.3 - Correct Release Packaging
+
+- Repackages the alpha36.2 Options Flow compatibility fix from the verified corrected source tree.
+- Ensures `manifest.json` and `const.py` both report `0.0.1-alpha.36.3`.
+- Ensures `async_get_options_flow()` returns `AnkerEmsOptionsFlow()` without passing the config entry constructor argument.
+- Ensures there is no manual `self.config_entry = config_entry` assignment in the options-flow handler.
+- Keeps the v1 -> v2 config-entry migration and central electrical profile / power-limit behavior unchanged.
+- Automatic planner-owned physical execution remains disabled.
+- Entity count remains 105.
+
 ## 0.0.1-alpha.36.2 - Options Flow Compatibility Fix
 
 - Fixes the Home Assistant Options Flow 500 error when opening **Configure**.
