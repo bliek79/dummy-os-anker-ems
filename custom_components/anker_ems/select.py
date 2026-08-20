@@ -25,7 +25,7 @@ async def async_setup_entry(
                     entry,
                     slot,
                     "action",
-                    "Actie",
+                    "Action",
                     ["geen", "laden", "ontladen"],
                 ),
                 AnkerEmsPlanSelect(
@@ -33,7 +33,7 @@ async def async_setup_entry(
                     entry,
                     slot,
                     "execution_mode",
-                    "Uitvoering",
+                    "Mode",
                     ["direct", "gepland"],
                 ),
             ]

@@ -38,6 +38,7 @@ from .action_controller import AnkerEmsActionController
 from .physical_test import AnkerEmsPhysicalTestController
 from .execution import AnkerEmsExecutionController
 from .source_monitor import AnkerEmsSourceMonitor
+from .entity_naming import async_migrate_entity_ids
 
 _LOGGER = logging.getLogger(__name__)
 _SCHEDULED_RETRY_SECONDS = 10
@@ -448,6 +449,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     entry.async_on_unload(hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _shutdown))
 
+    await async_migrate_entity_ids(hass, entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     _LOGGER.info(
         "Dummy OS EMS loaded in %s mode",

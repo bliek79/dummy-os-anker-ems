@@ -54,7 +54,7 @@ class _AnkerEmsBinarySensorBase(
 
 
 class AnkerEmsSourcesAvailable(_AnkerEmsBinarySensorBase):
-    _attr_name = "Dummy OS EMS Bronnen beschikbaar"
+    _attr_name = "Dummy OS EMS Sources Available"
 
     def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
@@ -74,7 +74,7 @@ class AnkerEmsSourcesAvailable(_AnkerEmsBinarySensorBase):
 
 
 class AnkerEmsControlAvailable(_AnkerEmsBinarySensorBase):
-    _attr_name = "Dummy OS EMS Besturing beschikbaar"
+    _attr_name = "Dummy OS EMS Control Available"
 
     def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
@@ -92,7 +92,7 @@ class AnkerEmsControlAvailable(_AnkerEmsBinarySensorBase):
 
 
 class AnkerEmsForecastSourcesAvailable(_AnkerEmsBinarySensorBase):
-    _attr_name = "Dummy OS EMS Forecast bronnen beschikbaar"
+    _attr_name = "Dummy OS EMS Forecast Sources Available"
 
     def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
@@ -115,7 +115,7 @@ class AnkerEmsForecastSourcesAvailable(_AnkerEmsBinarySensorBase):
 
 
 class AnkerEmsSchedulerReady(_AnkerEmsBinarySensorBase):
-    _attr_name = "Dummy OS EMS Scheduler startklaar"
+    _attr_name = "Dummy OS EMS Scheduler Ready"
 
     def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
@@ -138,7 +138,7 @@ class AnkerEmsSchedulerReady(_AnkerEmsBinarySensorBase):
 
 
 class AnkerEmsSafetySafe(_AnkerEmsBinarySensorBase):
-    _attr_name = "Dummy OS EMS Safety Guard veilig"
+    _attr_name = "Dummy OS EMS Safety Safe"
 
     def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
@@ -162,7 +162,7 @@ class AnkerEmsSafetySafe(_AnkerEmsBinarySensorBase):
 
 
 class AnkerEmsControllerReady(_AnkerEmsBinarySensorBase):
-    _attr_name = "Dummy OS EMS Action Controller gereed"
+    _attr_name = "Dummy OS EMS Controller Ready"
 
     def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
@@ -187,7 +187,7 @@ class AnkerEmsControllerReady(_AnkerEmsBinarySensorBase):
 
 
 class AnkerEmsPhysicalTestActive(_AnkerEmsBinarySensorBase):
-    _attr_name = "Dummy OS EMS Fysieke test actief"
+    _attr_name = "Dummy OS EMS Physical Test Active"
 
     def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
@@ -213,7 +213,7 @@ class AnkerEmsPhysicalTestActive(_AnkerEmsBinarySensorBase):
 
 
 class AnkerEmsExecutionActive(_AnkerEmsBinarySensorBase):
-    _attr_name = "Dummy OS EMS Uitvoering actief"
+    _attr_name = "Dummy OS EMS Execution Active"
 
     def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
@@ -252,7 +252,7 @@ class _AnkerEmsPlannerBinaryBase(_AnkerEmsBinarySensorBase):
 
 
 class AnkerEmsPlannerSafetyChargeNeeded(_AnkerEmsPlannerBinaryBase):
-    _attr_name = "Dummy OS EMS Planner veiligheidslading nodig"
+    _attr_name = "Dummy OS EMS Safety Charge Needed"
 
     def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
@@ -264,7 +264,7 @@ class AnkerEmsPlannerSafetyChargeNeeded(_AnkerEmsPlannerBinaryBase):
 
 
 class AnkerEmsPlannerTradeChargeCandidate(_AnkerEmsPlannerBinaryBase):
-    _attr_name = "Dummy OS EMS Planner handelslading kandidaat"
+    _attr_name = "Dummy OS EMS Trade Charge Candidate"
 
     def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
@@ -276,7 +276,7 @@ class AnkerEmsPlannerTradeChargeCandidate(_AnkerEmsPlannerBinaryBase):
 
 
 class AnkerEmsPlannerDischargePossible(_AnkerEmsPlannerBinaryBase):
-    _attr_name = "Dummy OS EMS Planner ontladen mogelijk"
+    _attr_name = "Dummy OS EMS Discharge Possible"
 
     def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
@@ -300,7 +300,7 @@ class AnkerEmsPlannerSolarChargeDelay(_AnkerEmsPlannerBinaryBase):
 
 
 class AnkerEmsPlannerTradeProfitable(_AnkerEmsBinarySensorBase):
-    _attr_name = "Dummy OS EMS Handel rendabel"
+    _attr_name = "Dummy OS EMS Trade Profitable"
 
     def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
@@ -327,7 +327,7 @@ class AnkerEmsPlannerTradeProfitable(_AnkerEmsBinarySensorBase):
 
 
 class AnkerEmsAutoPlan72hValid(_AnkerEmsBinarySensorBase):
-    _attr_name = "Dummy OS EMS Automatisch plan 72u geldig"
+    _attr_name = "Dummy OS EMS Plan72 Valid"
 
     def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
@@ -352,7 +352,7 @@ class AnkerEmsAutoPlan72hValid(_AnkerEmsBinarySensorBase):
 
 
 class AnkerEmsAutoPlan72hExecutionBufferSafe(_AnkerEmsBinarySensorBase):
-    _attr_name = "Dummy OS EMS Automatisch plan uitvoeringsbuffer veilig"
+    _attr_name = "Dummy OS EMS Plan72 Execution Buffer Safe"
 
     def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)
@@ -376,7 +376,7 @@ class AnkerEmsAutoPlan72hExecutionBufferSafe(_AnkerEmsBinarySensorBase):
 
 
 class AnkerEmsAutoBridgeValid(_AnkerEmsBinarySensorBase):
-    _attr_name = "Dummy OS EMS Automatische actiebrug geldig"
+    _attr_name = "Dummy OS EMS Action Bridge Valid"
 
     def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry)

@@ -1,3 +1,30 @@
+# 0.0.1-alpha.28
+
+## English entity naming cleanup
+- All 105 Dummy OS EMS entities now use English technical display names.
+- Entity IDs are shortened to consistent English object IDs such as `plan72_exec_margin`, `bridge_candidates` and `plan_1_power`.
+- Existing unique IDs are intentionally unchanged. Alpha28 migrates registered entity IDs during config-entry setup so the same registry entities are retained.
+- Internal planner/store field names and existing plan option/state values are not migrated in this alpha; this avoids mixing a naming cleanup with behavioural state migration.
+
+## Manual plan-slot lifecycle fix
+- Cancelled (`geannuleerd`), completed (`voltooid`) and failed (`fout`) plans no longer keep a manual planslot permanently occupied for the automatic bridge preview.
+- Empty/no-action slots remain reusable.
+- Active or still actionable manual plans remain protected and are never considered available for automatic overwrite.
+- With two cancelled slots and one empty slot, `available_manual_slots` should now become 3 and `manual_slot_conflict_count` should become 0.
+
+## Safety unchanged
+- Automatic Plan Store writes remain disabled.
+- Scheduler handoff remains disabled.
+- Automatic execution remains disabled.
+- The alpha27 Forward Reserve Precharge and 2% execution buffer remain unchanged.
+
+## Validation
+- Confirm Home Assistant still exposes exactly 105 Dummy OS EMS entities.
+- Confirm technical entity IDs are English and shortened.
+- Confirm the action bridge reports cancelled/completed slots as available.
+- Confirm `available_manual_slots: 3`, `manual_slot_conflict: false` and `manual_slot_conflict_count: 0` in the current validation scenario.
+- Confirm planner buffer remains safe with zero breach hours before any later Plan Store-write work.
+
 # 0.0.1-alpha.27
 
 ## Forward Reserve Precharge

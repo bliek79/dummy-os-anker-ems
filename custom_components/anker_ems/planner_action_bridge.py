@@ -46,8 +46,23 @@ def _round_power_up(power_w: float, max_power_w: int) -> int:
 
 
 def _manual_slot_available(detail: dict[str, Any]) -> bool:
-    """Never assume an existing user plan may be overwritten automatically."""
-    return detail.get("action") in (None, "geen")
+    """Return True only when an existing manual slot is safe to reuse.
+
+    Alpha28 treats terminal lifecycle states as reusable. A cancelled, completed
+    or failed plan must never remain a permanent slot lock. Active and still
+    actionable manual plans remain protected from automatic overwrite.
+    """
+    action = detail.get("action")
+    status = str(detail.get("status") or "").lower()
+    lifecycle = str(detail.get("lifecycle_status") or "").lower()
+
+    if action in (None, "geen"):
+        return True
+    if lifecycle in {"geannuleerd", "voltooid", "fout"}:
+        return True
+    if status in {"geannuleerd", "voltooid", "fout", "leeg"}:
+        return True
+    return False
 
 
 def _forced_row_action(row: dict[str, Any]) -> tuple[str, str, float] | None:
@@ -146,7 +161,7 @@ def build_planner_action_bridge(
 ) -> dict[str, Any]:
     """Translate the observer 72h plan to a rolling three-slot execution preview.
 
-    Alpha26 deliberately does not write to Plan Store, does not call Scheduler and
+    Alpha28 deliberately does not write to Plan Store, does not call Scheduler and
     does not start the Execution Controller. It only shows which explicit battery
     actions would be handed over next.
     """

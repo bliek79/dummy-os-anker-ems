@@ -37,7 +37,7 @@ class AnkerEmsPlanStartTime(DateTimeEntity):
         self.coordinator = coordinator
         self.plan_store = coordinator.plan_store
         self.slot = slot
-        self._attr_name = f"Dummy OS EMS Plan {slot} Starttijd"
+        self._attr_name = f"Dummy OS EMS Plan {slot} Start"
         self._attr_unique_id = f"{entry.entry_id}_plan_{slot}_start_time"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
