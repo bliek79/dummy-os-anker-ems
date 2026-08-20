@@ -1188,3 +1188,11 @@ In alpha26 blijven expliciet uitgeschakeld:
 - Plan Store-write;
 - Scheduler-handoff;
 - automatische fysieke uitvoering.
+
+### Alpha33 - Pre-Start Diagnostics & Testability
+
+Alpha33 makes the pre-start safety gate inspectable before a real plan reaches its start window. The nearest future planner-owned pending plan is continuously evaluated in dry-run mode and the individual checks are published as attributes of the existing `sensor.dummy_os_ems_bridge_candidates` entity.
+
+Diagnostic attributes include the selected diagnostic slot, planned start, minutes until start, action, power, current and target SOC, applicable execution reserve, planner identity/signature continuity, blockers, warnings and a structured check list. A small in-memory test matrix also verifies that forecast loss, an unsafe execution buffer and an invalid planner would each block the gate. These tests never alter Home Assistant state and never issue physical battery commands.
+
+Automatic execution remains disabled in alpha33.

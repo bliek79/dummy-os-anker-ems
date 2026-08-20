@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+from copy import deepcopy
+from datetime import datetime
 from typing import Any
+
+from homeassistant.util import dt as dt_util
 
 from .const import MAX_SOC_PERCENT, MIN_SOC_PERCENT
 
 
 class AnkerEmsPreStartValidator:
-    """Validate an automatic Scheduler-ready plan immediately before execution.
+    """Validate and diagnose automatic plans immediately before execution.
 
-    Alpha32 is observational only. It evaluates whether the currently selected
-    planner-owned plan would be allowed to proceed to the execution stage, but
-    it never calls the Execution Controller or any physical battery service.
+    Alpha33 remains non-executing. Besides the real Scheduler-ready pre-start
+    gate, it continuously performs a dry-run diagnostic on the nearest future
+    planner-owned pending plan. This makes every individual gate visible before
+    the actual start window is reached.
     """
 
     @staticmethod
@@ -21,6 +26,272 @@ class AnkerEmsPreStartValidator:
             return float(value)
         except (TypeError, ValueError):
             return None
+
+    @staticmethod
+    def _parse_datetime(value: Any) -> datetime | None:
+        if value in (None, ""):
+            return None
+        if isinstance(value, datetime):
+            parsed = value
+        else:
+            parsed = dt_util.parse_datetime(str(value))
+        if parsed is None:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+        return parsed.astimezone(dt_util.UTC)
+
+    def _find_current_candidate(
+        self, data: dict[str, Any], planner_identity: str | None
+    ) -> dict[str, Any] | None:
+        if not planner_identity:
+            return None
+        for candidate in data.get("auto_bridge_candidates") or []:
+            if candidate.get("planner_identity") == planner_identity:
+                return candidate
+        for proposal in data.get("auto_bridge_slot_preview") or []:
+            if proposal.get("planner_identity") == planner_identity:
+                return proposal
+        return None
+
+    def _checks(
+        self,
+        data: dict[str, Any],
+        detail: dict[str, Any],
+        *,
+        require_identity: bool = True,
+    ) -> dict[str, Any]:
+        reasons: list[str] = []
+        warnings: list[str] = []
+        checks: list[dict[str, Any]] = []
+
+        def add_check(name: str, passed: bool, detail_text: str, blocker: str | None = None) -> None:
+            checks.append(
+                {
+                    "check": name,
+                    "passed": bool(passed),
+                    "severity": "ok" if passed else "blocker",
+                    "detail": detail_text,
+                }
+            )
+            if not passed and blocker:
+                reasons.append(blocker)
+
+        planner_valid = data.get("auto_plan_72h_valid") is True
+        add_check("planner_valid", planner_valid, "72-hour planner valid", "planner_invalid")
+
+        forecast_ready = data.get("forecast_ready") is True
+        add_check("forecast_ready", forecast_ready, "Forecast sources ready", "forecast_not_ready")
+
+        buffer_safe = data.get("auto_plan_72h_execution_buffer_safe") is True
+        add_check("execution_buffer_safe", buffer_safe, "Execution buffer safe", "execution_buffer_unsafe")
+
+        invalid_candidates = int(data.get("auto_bridge_invalid_candidate_count") or 0)
+        add_check(
+            "bridge_candidates_valid",
+            invalid_candidates == 0,
+            f"Invalid bridge candidates: {invalid_candidates}",
+            "invalid_bridge_candidates",
+        )
+
+        bridge_valid = data.get("auto_bridge_valid") is True
+        add_check("bridge_valid", bridge_valid, "Action Bridge valid", "bridge_invalid")
+
+        planner_identity = detail.get("planner_identity")
+        current = self._find_current_candidate(data, planner_identity)
+        identity_match = current is not None
+        if require_identity:
+            add_check(
+                "planner_identity_match",
+                identity_match,
+                "Stored plan identity exists in current planner preview",
+                "planner_identity_missing",
+            )
+
+        stored_signature = detail.get("planner_signature")
+        current_signature = current.get("planner_signature") if current else None
+        signature_match = bool(
+            stored_signature and current_signature and stored_signature == current_signature
+        )
+        checks.append(
+            {
+                "check": "planner_signature_match",
+                "passed": signature_match,
+                "severity": "ok" if signature_match else "warning",
+                "detail": "Current planner revision matches stored plan" if signature_match else "Planner revision changed; stable identity remains authoritative",
+            }
+        )
+        if identity_match and not signature_match:
+            warnings.append("planner_revision_changed_after_due")
+
+        action = detail.get("action")
+        power = self._number(detail.get("power_w"))
+        target_soc = self._number(detail.get("target_soc"))
+        soc = self._number(data.get("soc"))
+
+        valid_action = action in {"laden", "ontladen"}
+        add_check("action_valid", valid_action, f"Action: {action}", "invalid_action")
+
+        max_power = 3000 if action == "ontladen" else 3500
+        power_valid = power is not None and 100 <= power <= max_power
+        add_check("power_valid", power_valid, f"Power: {power} W; allowed 100-{max_power} W", "invalid_power")
+
+        soc_valid = soc is not None and MIN_SOC_PERCENT <= soc <= MAX_SOC_PERCENT
+        add_check("soc_valid", soc_valid, f"Current SOC: {soc}%", "invalid_soc")
+
+        target_valid = target_soc is not None and MIN_SOC_PERCENT <= target_soc <= MAX_SOC_PERCENT
+        add_check("target_soc_valid", target_valid, f"Target SOC: {target_soc}%", "invalid_target_soc")
+
+        target_direction_ok = True
+        target_blocker = None
+        if soc is not None and target_soc is not None:
+            if action == "laden" and soc >= target_soc:
+                target_direction_ok = False
+                target_blocker = "charge_target_already_reached"
+            elif action == "ontladen" and soc <= target_soc:
+                target_direction_ok = False
+                target_blocker = "discharge_target_already_reached"
+        add_check(
+            "target_direction_valid",
+            target_direction_ok,
+            "Current SOC still requires the planned action" if target_direction_ok else "Target SOC already reached/passed",
+            target_blocker,
+        )
+
+        reserve_soc = self._number(current.get("execution_reserve_start_soc")) if current else None
+        reserve_ok = True
+        reserve_blocker = None
+        if action == "ontladen":
+            reserve_ok = soc is not None and reserve_soc is not None and soc > reserve_soc
+            if not reserve_ok:
+                reserve_blocker = "execution_reserve_reached"
+        checks.append(
+            {
+                "check": "execution_reserve_available",
+                "passed": reserve_ok,
+                "severity": "ok" if reserve_ok else "blocker",
+                "detail": f"Execution reserve: {reserve_soc}%" if action == "ontladen" else "Not applicable to charge action",
+            }
+        )
+        if not reserve_ok and reserve_blocker:
+            reasons.append(reserve_blocker)
+
+        return {
+            "safe": not reasons,
+            "reasons": reasons,
+            "warnings": warnings,
+            "checks": checks,
+            "current": current,
+            "identity_match": identity_match,
+            "signature_match": signature_match,
+            "soc": soc,
+            "target_soc": target_soc,
+            "reserve_soc": reserve_soc,
+            "power_w": power,
+            "action": action,
+        }
+
+    def _nearest_automatic_pending(self, data: dict[str, Any]) -> tuple[int | None, dict[str, Any]]:
+        slots = data.get("scheduler_slots", {}) or {}
+        now = dt_util.utcnow()
+        choices: list[tuple[datetime, int, dict[str, Any]]] = []
+        for raw_slot, raw_detail in slots.items():
+            detail = raw_detail or {}
+            if str(detail.get("origin") or "manual") != "automatic_72h_planner":
+                continue
+            if str(detail.get("lifecycle_status") or "").lower() != "pending":
+                continue
+            if not detail.get("planner_identity"):
+                continue
+            start = self._parse_datetime(detail.get("start_time"))
+            if start is None:
+                continue
+            try:
+                slot = int(raw_slot)
+            except (TypeError, ValueError):
+                continue
+            # Due plans are also useful for diagnostics; sort them first.
+            sort_start = start if start >= now else now
+            choices.append((sort_start, slot, detail))
+        if not choices:
+            return None, {}
+        choices.sort(key=lambda item: (item[0], item[1]))
+        _, slot, detail = choices[0]
+        return slot, detail
+
+    def _diagnose(self, data: dict[str, Any]) -> dict[str, Any]:
+        slot, detail = self._nearest_automatic_pending(data)
+        base: dict[str, Any] = {
+            "auto_prestart_diagnostic_enabled": True,
+            "auto_prestart_diagnostic_status": "no_plan",
+            "auto_prestart_diagnostic_safe": False,
+            "auto_prestart_diagnostic_slot": None,
+            "auto_prestart_diagnostic_planner_identity": None,
+            "auto_prestart_diagnostic_start_time": None,
+            "auto_prestart_diagnostic_minutes_to_start": None,
+            "auto_prestart_diagnostic_action": None,
+            "auto_prestart_diagnostic_power_w": None,
+            "auto_prestart_diagnostic_current_soc": self._number(data.get("soc")),
+            "auto_prestart_diagnostic_target_soc": None,
+            "auto_prestart_diagnostic_execution_reserve_soc": None,
+            "auto_prestart_diagnostic_identity_match": False,
+            "auto_prestart_diagnostic_signature_match": False,
+            "auto_prestart_diagnostic_blockers": [],
+            "auto_prestart_diagnostic_warnings": [],
+            "auto_prestart_diagnostic_checks": [],
+            "auto_prestart_test_matrix": [],
+        }
+        if slot is None:
+            return base
+
+        result = self._checks(data, detail)
+        start = self._parse_datetime(detail.get("start_time"))
+        minutes = None
+        if start is not None:
+            minutes = round((start - dt_util.utcnow()).total_seconds() / 60.0, 1)
+
+        # Dry-run matrix proves that the gate can distinguish common blockers.
+        # These are pure in-memory evaluations and never alter Home Assistant state.
+        matrix: list[dict[str, Any]] = []
+        for name, overrides in (
+            ("current_conditions", {}),
+            ("forecast_not_ready", {"forecast_ready": False}),
+            ("execution_buffer_unsafe", {"auto_plan_72h_execution_buffer_safe": False}),
+            ("planner_invalid", {"auto_plan_72h_valid": False}),
+        ):
+            test_data = dict(data)
+            test_data.update(overrides)
+            test_result = self._checks(test_data, detail)
+            matrix.append(
+                {
+                    "case": name,
+                    "safe": test_result["safe"],
+                    "blockers": test_result["reasons"],
+                }
+            )
+
+        base.update(
+            {
+                "auto_prestart_diagnostic_status": "pass" if result["safe"] else "blocked",
+                "auto_prestart_diagnostic_safe": result["safe"],
+                "auto_prestart_diagnostic_slot": slot,
+                "auto_prestart_diagnostic_planner_identity": detail.get("planner_identity"),
+                "auto_prestart_diagnostic_start_time": start.isoformat() if start else None,
+                "auto_prestart_diagnostic_minutes_to_start": minutes,
+                "auto_prestart_diagnostic_action": result["action"],
+                "auto_prestart_diagnostic_power_w": result["power_w"],
+                "auto_prestart_diagnostic_current_soc": result["soc"],
+                "auto_prestart_diagnostic_target_soc": result["target_soc"],
+                "auto_prestart_diagnostic_execution_reserve_soc": result["reserve_soc"],
+                "auto_prestart_diagnostic_identity_match": result["identity_match"],
+                "auto_prestart_diagnostic_signature_match": result["signature_match"],
+                "auto_prestart_diagnostic_blockers": result["reasons"],
+                "auto_prestart_diagnostic_warnings": result["warnings"],
+                "auto_prestart_diagnostic_checks": result["checks"],
+                "auto_prestart_test_matrix": matrix,
+            }
+        )
+        return base
 
     def evaluate(self, data: dict[str, Any]) -> dict[str, Any]:
         slot = data.get("scheduler_selected_slot")
@@ -45,6 +316,7 @@ class AnkerEmsPreStartValidator:
             "auto_prestart_execution_enabled": False,
             "auto_prestart_physical_control": False,
         }
+        result.update(self._diagnose(data))
 
         if slot is None or not data.get("scheduler_ready"):
             return result
@@ -65,97 +337,23 @@ class AnkerEmsPreStartValidator:
         result["auto_prestart_selected_slot"] = slot
         result["auto_prestart_planner_identity"] = planner_identity
 
-        reasons: list[str] = []
-        warnings: list[str] = []
-
-        if data.get("auto_plan_72h_valid") is not True:
-            reasons.append("planner_invalid")
-        if data.get("forecast_ready") is not True:
-            reasons.append("forecast_not_ready")
-        if data.get("auto_plan_72h_execution_buffer_safe") is not True:
-            reasons.append("execution_buffer_unsafe")
-        if int(data.get("auto_bridge_invalid_candidate_count") or 0) > 0:
-            reasons.append("invalid_bridge_candidates")
-        if data.get("auto_bridge_valid") is not True:
-            reasons.append("bridge_invalid")
-
-        candidates = data.get("auto_bridge_candidates") or []
-        current = next(
-            (
-                candidate
-                for candidate in candidates
-                if candidate.get("planner_identity") == planner_identity
-            ),
-            None,
-        )
-        # build_planner_action_bridge exposes planner_identity on slot preview,
-        # but older candidate dictionaries may not carry it. Fall back to the
-        # current preview so alpha32 remains compatible with alpha31 data flow.
-        if current is None:
-            current = next(
-                (
-                    proposal
-                    for proposal in (data.get("auto_bridge_slot_preview") or [])
-                    if proposal.get("planner_identity") == planner_identity
-                ),
-                None,
-            )
-
-        identity_match = current is not None
-        result["auto_prestart_current_identity_match"] = identity_match
-        if not identity_match:
-            reasons.append("planner_identity_missing")
-
-        stored_signature = detail.get("planner_signature")
-        current_signature = current.get("planner_signature") if current else None
-        signature_match = bool(
-            stored_signature and current_signature and stored_signature == current_signature
-        )
-        result["auto_prestart_current_signature_match"] = signature_match
-        if identity_match and not signature_match:
-            warnings.append("planner_revision_changed_after_due")
-
-        action = detail.get("action")
-        power = self._number(detail.get("power_w"))
-        target_soc = self._number(detail.get("target_soc"))
-        soc = self._number(data.get("soc"))
-        result["auto_prestart_target_soc"] = target_soc
-
-        if action not in {"laden", "ontladen"}:
-            reasons.append("invalid_action")
-        max_power = 3000 if action == "ontladen" else 3500
-        if power is None or not 100 <= power <= max_power:
-            reasons.append("invalid_power")
-        if soc is None or not MIN_SOC_PERCENT <= soc <= MAX_SOC_PERCENT:
-            reasons.append("invalid_soc")
-        if target_soc is None or not MIN_SOC_PERCENT <= target_soc <= MAX_SOC_PERCENT:
-            reasons.append("invalid_target_soc")
-
-        if soc is not None and target_soc is not None:
-            if action == "laden" and soc >= target_soc:
-                reasons.append("charge_target_already_reached")
-            if action == "ontladen" and soc <= target_soc:
-                reasons.append("discharge_target_already_reached")
-
-        reserve_soc = None
-        if current is not None:
-            reserve_soc = self._number(current.get("execution_reserve_start_soc"))
-        result["auto_prestart_execution_reserve_soc"] = reserve_soc
-        if action == "ontladen" and soc is not None and reserve_soc is not None and soc <= reserve_soc:
-            reasons.append("execution_reserve_reached")
-
-        safe = not reasons
+        checked = self._checks(data, detail)
         result.update(
             {
-                "auto_prestart_safe": safe,
-                "auto_prestart_status": "safe_observe" if safe else "blocked",
+                "auto_prestart_safe": checked["safe"],
+                "auto_prestart_status": "safe_observe" if checked["safe"] else "blocked",
                 "auto_prestart_reason": (
                     "Pre-start veiligheidscontrole akkoord; automatische fysieke uitvoering blijft uitgeschakeld"
-                    if safe
-                    else ", ".join(reasons)
+                    if checked["safe"]
+                    else ", ".join(checked["reasons"])
                 ),
-                "auto_prestart_reasons": reasons,
-                "auto_prestart_warnings": warnings,
+                "auto_prestart_reasons": checked["reasons"],
+                "auto_prestart_warnings": checked["warnings"],
+                "auto_prestart_current_identity_match": checked["identity_match"],
+                "auto_prestart_current_signature_match": checked["signature_match"],
+                "auto_prestart_current_soc": checked["soc"],
+                "auto_prestart_target_soc": checked["target_soc"],
+                "auto_prestart_execution_reserve_soc": checked["reserve_soc"],
             }
         )
         return result

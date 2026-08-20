@@ -702,3 +702,13 @@ Still disabled in alpha29:
 - Eerste config flow.
 - Eerste coordinator.
 - Eerste read-only sensoren.
+
+## 0.0.1-alpha.33 - Pre-Start Diagnostics & Testability
+
+- Adds continuous dry-run pre-start diagnostics for the nearest future planner-owned pending plan.
+- Exposes every individual pre-start check as structured attributes on the existing Action Candidates sensor.
+- Adds diagnostic slot, start time, minutes-to-start, SOC, target SOC, execution reserve, identity/signature match, blockers and warnings.
+- Adds an in-memory dry-run test matrix for current conditions plus forecast-not-ready, unsafe execution-buffer and invalid-planner scenarios.
+- Keeps the actual Scheduler-ready pre-start gate unchanged in safety intent.
+- No physical battery commands are enabled; automatic execution remains disabled.
+- No new Home Assistant entities; entity count remains 105.
