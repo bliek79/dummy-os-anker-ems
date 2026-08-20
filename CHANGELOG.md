@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.0.1-alpha.36.2 - Options Flow Compatibility Fix
+
+- Fixes the Home Assistant Options Flow 500 error when opening **Configure**.
+- Stops passing the config entry into the options-flow handler constructor.
+- Removes the unsupported manual assignment to `self.config_entry`; Home Assistant now provides the config entry to the options flow.
+- Keeps the v1 -> v2 migration from alpha36.1 unchanged.
+- Keeps the central electrical profile and charge/discharge power-limit behavior from alpha36 unchanged.
+- Automatic planner-owned physical execution remains disabled.
+- No Home Assistant entities are added or removed; entity count remains 105.
+
 ## 0.0.1-alpha.36.1 - Config Entry Migration Fix
 
 - Adds the missing Home Assistant `async_migrate_entry()` path for existing version 1 config entries.
