@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.0.1-alpha.40 - Controlled Physical Mode Switch
+
+- Enables the first narrowly scoped physical step in the automatic planner chain.
+- Requires the existing start-ready Scheduler selection, authoritative Pre-Start gate, Safety Guard, Execution Controller handoff, Final Live Revalidation and Mode Switch Preview to all be ready.
+- Applies a 0 W zero-power guard before changing operating mode.
+- Physically switches to `third_party_control`, waits for external controls, and revalidates the complete live chain.
+- Never selects charge/discharge direction and never applies a non-zero automatic power setpoint.
+- Immediately returns to `self_consumption` after a successful validation, and also attempts zero-power + `self_consumption` on any failure.
+- Persists the last handled `planner_identity` so the same automatic plan is not mode-switched repeatedly, including after Home Assistant restart.
+- Blocks concurrent manual execution and physical tests while the mode-switch transaction is active.
+- Adds live mode-switch transaction status attributes to the existing Action Candidates sensor; entity count remains 105.
+
 ## 0.0.1-alpha.39
 
 ### Mode Switch Transaction Preview

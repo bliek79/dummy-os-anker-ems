@@ -1,0 +1,174 @@
+start_charge_test:
+  name: Start fysieke laadtest
+  description: >-
+    Start een expliciete, begrensde fysieke laadtest. Alleen laden is toegestaan.
+    De normale EMS-besturing blijft in simulatiemodus. De test stopt automatisch
+    en probeert daarna terug te keren naar self_consumption.
+  fields:
+    confirm:
+      name: Bevestigen
+      description: Moet expliciet op true staan om de fysieke test te starten.
+      required: true
+      example: true
+      selector:
+        boolean:
+    power_w:
+      name: Testvermogen
+      description: Laadvermogen voor de test, begrensd op 100 tot 500 W.
+      required: false
+      default: 300
+      example: 300
+      selector:
+        number:
+          min: 100
+          max: 500
+          step: 100
+          unit_of_measurement: W
+          mode: box
+    duration_s:
+      name: Testduur
+      description: Maximale testduur, begrensd op 10 tot 120 seconden.
+      required: false
+      default: 120
+      example: 120
+      selector:
+        number:
+          min: 10
+          max: 120
+          step: 10
+          unit_of_measurement: s
+          mode: box
+
+
+start_discharge_test:
+  name: Start fysieke ontlaadtest
+  description: >-
+    Start een expliciete, begrensde fysieke ontlaadtest. Hiervoor moet een
+    ontlaadplan startklaar staan en de batterij vooraf op third_party_control
+    staan. De test stopt automatisch en keert daarna terug naar self_consumption.
+    Normale automatische ontlaaduitvoering blijft nog geblokkeerd.
+  fields:
+    confirm:
+      name: Bevestigen
+      description: Moet expliciet op true staan om de fysieke ontlaadtest te starten.
+      required: true
+      example: true
+      selector:
+        boolean:
+    power_w:
+      name: Testvermogen
+      description: Ontlaadvermogen voor de test, begrensd op 100 tot 500 W.
+      required: false
+      default: 300
+      example: 300
+      selector:
+        number:
+          min: 100
+          max: 500
+          step: 100
+          unit_of_measurement: W
+          mode: box
+    duration_s:
+      name: Testduur
+      description: Maximale testduur, begrensd op 10 tot 120 seconden.
+      required: false
+      default: 120
+      example: 120
+      selector:
+        number:
+          min: 10
+          max: 120
+          step: 10
+          unit_of_measurement: s
+          mode: box
+
+stop_physical_test:
+  name: Stop fysieke test
+  description: >-
+    Stop de fysieke test direct, zet het vermogenssetpoint op 0 W en probeert
+    terug te keren naar self_consumption.
+
+execute_selected_plan:
+  name: Voer geselecteerd plan uit
+  description: >-
+    Start het door de Scheduler geselecteerde laad- of ontlaadplan. Dummy OS EMS
+    schakelt zelfstandig naar third_party_control, wacht tot de besturingsentiteiten
+    beschikbaar zijn, voert de gekozen batterijactie uit en keert na doel-SOC,
+    maximale looptijd, fout of handmatige stop terug naar self_consumption.
+  fields:
+    confirm:
+      name: Bevestigen
+      description: Moet expliciet op true staan om de fysieke uitvoering te starten.
+      required: true
+      example: true
+      selector:
+        boolean:
+
+stop_execution:
+  name: Stop EMS-uitvoering
+  description: >-
+    Stop een actieve EMS-uitvoering direct, zet het vermogenssetpoint op 0 W
+    en keert terug naar self_consumption.
+
+schedule_plan:
+  name: Plan inplannen
+  description: >-
+    Zet de gekozen planplaats expliciet op gepland en maakt het plan beschikbaar
+    voor de Scheduler. De starttijd moet geldig en in de toekomst zijn.
+  fields:
+    slot:
+      name: Planplaats
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 1
+          max: 3
+          step: 1
+          mode: box
+
+start_plan_now:
+  name: Plan nu starten
+  description: >-
+    Zet de gekozen planplaats op direct, maakt hem startklaar en start de fysieke
+    uitvoering via de bestaande Safety Guard en Action Controller.
+  fields:
+    slot:
+      name: Planplaats
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 1
+          max: 3
+          step: 1
+          mode: box
+    confirm:
+      name: Bevestigen
+      required: true
+      example: true
+      selector:
+        boolean:
+
+cancel_plan:
+  name: Plan annuleren
+  description: >-
+    Annuleer de gekozen planplaats. Als precies deze planplaats actief wordt
+    uitgevoerd, wordt de uitvoering veilig gestopt en als geannuleerd gemarkeerd.
+  fields:
+    slot:
+      name: Planplaats
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 1
+          max: 3
+          step: 1
+          mode: box
+
+stop_all:
+  name: Alles stoppen
+  description: >-
+    Stop een actieve fysieke test of EMS-uitvoering, zet waar mogelijk het
+    vermogenssetpoint op 0 W en keer terug naar self_consumption.
