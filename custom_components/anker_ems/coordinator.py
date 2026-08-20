@@ -386,7 +386,56 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         data.update(await self.source_monitor.async_observe(self._source_monitor_specs()))
         data.update(self.scheduler.evaluate())
-        data.update(build_planner_action_bridge(data))
+        bridge = build_planner_action_bridge(data)
+        data.update(bridge)
+
+        # Alpha29: controlled automatic Plan Store write. Only bridge-approved
+        # candidates with a reusable slot are persisted, and always as concept.
+        # Therefore the Scheduler cannot hand them to Execution automatically.
+        desired_auto_plans: dict[int, dict[str, Any]] = {}
+        write_gate_open = (
+            bool(data.get("auto_bridge_valid"))
+            and bool(data.get("auto_plan_72h_execution_buffer_safe"))
+            and bool(data.get("forecast_ready"))
+            and not int(data.get("auto_bridge_invalid_candidate_count") or 0)
+        )
+        if write_gate_open:
+            for proposal in data.get("auto_bridge_slot_preview") or []:
+                if not proposal.get("plan_store_write_permitted"):
+                    continue
+                slot = proposal.get("suggested_slot")
+                if isinstance(slot, int):
+                    desired_auto_plans[slot] = proposal
+
+        write_result = await self.plan_store.async_sync_automatic_plans(
+            desired_auto_plans if write_gate_open else {}
+        )
+        data.update(
+            {
+                "auto_bridge_plan_store_write_enabled": True,
+                "auto_bridge_plan_store_write_gate_open": write_gate_open,
+                "auto_bridge_plan_store_write_changed": write_result.get("changed", False),
+                "auto_bridge_plan_store_written_slots": write_result.get("written_slots", []),
+                "auto_bridge_plan_store_cleared_slots": write_result.get("cleared_slots", []),
+                "auto_bridge_plan_store_skipped_slots": write_result.get("skipped_slots", []),
+                "auto_bridge_scheduler_handoff_enabled": False,
+                "auto_bridge_execution_enabled": False,
+                "auto_bridge_observational_only": False,
+            }
+        )
+
+        # Refresh scheduler details from the just-synchronized persistent store.
+        data.update(self.scheduler.evaluate())
+        refreshed_bridge = build_planner_action_bridge(data)
+        # Keep writer result flags from above while refreshing candidate/slot data.
+        for key, value in refreshed_bridge.items():
+            if key not in {
+                "auto_bridge_plan_store_write_enabled",
+                "auto_bridge_scheduler_handoff_enabled",
+                "auto_bridge_execution_enabled",
+                "auto_bridge_observational_only",
+            }:
+                data[key] = value
         data.update(self.safety_guard.evaluate(data))
         data.update(self.action_controller.evaluate(data))
         test_data = self.physical_test.data

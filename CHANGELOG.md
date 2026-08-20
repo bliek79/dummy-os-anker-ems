@@ -1,3 +1,33 @@
+# 0.0.1-alpha.29
+
+## Controlled Automatic Plan Store Write
+
+- The validated 72-hour Action Bridge can now persist automatic proposals into reusable Plan Store slots.
+- Automatic plans are always stored with lifecycle `concept`; Scheduler handoff remains disabled and no physical execution can start from this automatic write path.
+- Existing active/actionable manual plans keep priority and are never overwritten.
+- Cancelled, completed, failed and empty slots remain reusable as established in alpha28.
+- Planner-owned concept slots can be refreshed by the rolling automatic preview. A user edit immediately claims that slot back as `manual`.
+- Stale planner-owned slots are cleared when the rolling preview no longer needs them.
+- Writes are idempotent through a planner signature to avoid persistent-storage writes on every 10-second coordinator refresh.
+- Existing bridge entities expose write-gate state plus written, cleared and skipped slot diagnostics; no new entities are added. Entity count remains 105.
+- Alpha27 Forward Reserve Precharge and the 2% execution buffer remain required gates before automatic Plan Store write is allowed.
+
+## Safety gates
+
+Automatic Plan Store write requires:
+
+- valid 72-hour plan;
+- safe execution buffer;
+- ready forecast sources;
+- zero invalid action candidates;
+- a reusable slot for the candidate.
+
+Still disabled in alpha29:
+
+- Scheduler handoff;
+- automatic lifecycle promotion to `pending`;
+- automatic physical charge/discharge execution.
+
 # 0.0.1-alpha.28
 
 ## English entity naming cleanup

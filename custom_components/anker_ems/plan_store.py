@@ -34,6 +34,10 @@ DEFAULT_PLAN: dict[str, Any] = {
     "lifecycle_status": "concept",
     "lifecycle_reason": None,
     "lifecycle_updated_at": None,
+    "origin": "manual",
+    "purpose": None,
+    "planner_generated_at": None,
+    "planner_signature": None,
 }
 
 
@@ -98,6 +102,13 @@ class AnkerEmsPlanStore:
             value = value.isoformat()
 
         self._plans[slot][key] = value
+        # Entity edits are explicit user edits. They immediately claim the slot
+        # from the automatic planner so a later rolling refresh cannot overwrite
+        # a value the user has just changed.
+        self._plans[slot]["origin"] = "manual"
+        self._plans[slot]["purpose"] = None
+        self._plans[slot]["planner_generated_at"] = None
+        self._plans[slot]["planner_signature"] = None
         # Any user edit makes a terminal/active plan eligible for a fresh
         # lifecycle. This prevents completed plans from silently becoming
         # start-ready again until the user actually changes the plan.
@@ -106,6 +117,111 @@ class AnkerEmsPlanStore:
         self._plans[slot]["lifecycle_updated_at"] = dt_util.now().isoformat()
         await self._async_save()
         self._notify_listeners()
+
+
+    async def async_sync_automatic_plans(
+        self, desired: dict[int, dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Atomically sync observer-approved planner proposals into free slots.
+
+        Alpha29 deliberately stores generated plans as ``concept``. The Scheduler
+        therefore cannot select or execute them. Existing non-terminal manual
+        plans are never overwritten. Automatic slots that are no longer part of
+        the rolling preview are cleared back to an empty concept slot.
+        """
+        changed_slots: list[int] = []
+        written_slots: list[int] = []
+        cleared_slots: list[int] = []
+        skipped_slots: list[int] = []
+        now_iso = dt_util.now().isoformat()
+
+        def terminal(plan: dict[str, Any]) -> bool:
+            action = plan.get("action")
+            status = str(plan.get("lifecycle_status") or "").lower()
+            return action in (None, "geen") or status in {"geannuleerd", "voltooid", "fout"}
+
+        for slot in range(1, PLAN_SLOT_COUNT + 1):
+            current = self._plans[slot]
+            proposal = desired.get(slot)
+            current_origin = str(current.get("origin") or "manual")
+            current_lifecycle = str(current.get("lifecycle_status") or "").lower()
+            reusable = (
+                (current_origin == "automatic_72h_planner" and current_lifecycle == "concept")
+                or terminal(current)
+            )
+
+            if proposal is not None:
+                if not reusable:
+                    skipped_slots.append(slot)
+                    continue
+
+                new_plan = deepcopy(DEFAULT_PLAN)
+                for key in CONTROL_FIELDS:
+                    if key in proposal:
+                        new_plan[key] = proposal[key]
+                new_plan["lifecycle_status"] = "concept"
+                new_plan["lifecycle_reason"] = "automatic_preview_written_no_handoff"
+                new_plan["lifecycle_updated_at"] = now_iso
+                new_plan["origin"] = "automatic_72h_planner"
+                new_plan["purpose"] = proposal.get("purpose")
+                new_plan["planner_generated_at"] = now_iso
+                new_plan["planner_signature"] = proposal.get("planner_signature")
+
+                # Do not write persistent storage every coordinator poll. The
+                # bridge signature changes only when the actual planner proposal
+                # changes materially (source hours, purpose, target or energy).
+                if (
+                    current_origin == "automatic_72h_planner"
+                    and current.get("planner_signature") == new_plan.get("planner_signature")
+                ):
+                    continue
+
+                comparable_current = deepcopy(current)
+                # Generated-at/lifecycle timestamps are metadata, not plan identity.
+                for key in ("planner_generated_at", "lifecycle_updated_at"):
+                    comparable_current[key] = None
+                comparable_new = deepcopy(new_plan)
+                for key in ("planner_generated_at", "lifecycle_updated_at"):
+                    comparable_new[key] = None
+
+                if comparable_current != comparable_new:
+                    self._plans[slot] = new_plan
+                    changed_slots.append(slot)
+                    written_slots.append(slot)
+                continue
+
+            # Only clear stale planner-owned concepts. Manual slots are untouched.
+            if (
+                current_origin == "automatic_72h_planner"
+                and current_lifecycle == "concept"
+            ):
+                already_cleared = (
+                    current.get("action") in (None, "geen")
+                    and current.get("planner_signature") is None
+                    and current.get("purpose") is None
+                    and current.get("lifecycle_reason") == "automatic_preview_cleared"
+                )
+                if not already_cleared:
+                    empty = deepcopy(DEFAULT_PLAN)
+                    empty["origin"] = "automatic_72h_planner"
+                    empty["lifecycle_status"] = "concept"
+                    empty["lifecycle_reason"] = "automatic_preview_cleared"
+                    empty["lifecycle_updated_at"] = now_iso
+                    self._plans[slot] = empty
+                    changed_slots.append(slot)
+                    cleared_slots.append(slot)
+
+        if changed_slots:
+            await self._async_save()
+            self._notify_listeners()
+
+        return {
+            "changed": bool(changed_slots),
+            "changed_slots": changed_slots,
+            "written_slots": written_slots,
+            "cleared_slots": cleared_slots,
+            "skipped_slots": skipped_slots,
+        }
 
     async def async_mark_lifecycle(
         self, slot: int, status: str, reason: str | None = None

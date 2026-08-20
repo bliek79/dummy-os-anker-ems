@@ -7,7 +7,7 @@ Het project wordt ontwikkeld als een lokale, modulaire EMS-laag bovenop Home Ass
 > **Status:** experimentele alpha  
 > **Domein:** `anker_ems`  
 > **Minimale Home Assistant-versie:** 2026.7.0  
-> **Huidige ontwikkelversie:** `0.0.1-alpha.28`
+> **Huidige ontwikkelversie:** `0.0.1-alpha.29`
 
 ---
 
@@ -1073,7 +1073,17 @@ Automatische planslot-creatie, Scheduler-aanroep en fysieke planneruitvoering
 blijven in alpha25 bewust uitgeschakeld.
 
 
-### Alpha27 - Forward Reserve Precharge
+## Alpha29 — Controlled Automatic Plan Store Write
+
+Alpha29 is the first version in which validated automatic planner proposals are persisted into the three existing Plan Store slots. This is intentionally only a persistence step: generated plans are stored as `concept` and therefore are not start-ready for the Scheduler.
+
+The write gate opens only when the 72-hour plan is valid, the 2% execution buffer is safe, forecast sources are ready and all candidates are technically valid. Manual active/actionable plans always retain priority. Terminal or empty slots may be reused, and planner-owned concept slots may be refreshed by the rolling preview.
+
+Each generated plan is marked with `origin: automatic_72h_planner`, its planner purpose, generation timestamp and a stable planner signature. The signature prevents writes to Home Assistant storage on every coordinator poll. A direct user edit changes the origin back to `manual`, ensuring the automatic planner cannot silently overwrite that user change.
+
+Scheduler handoff and physical execution remain disabled for this path. Alpha29 does not automatically mark generated plans `pending` and does not issue battery commands.
+
+## Alpha27 - Forward Reserve Precharge
 
 Alpha27 corrigeert de timing van dynamische veiligheidslading. In alpha26 kon een
 scherpe stijging van de uitvoeringsreserve pas zichtbaar worden in de overgang

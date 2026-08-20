@@ -101,6 +101,10 @@ class AnkerEmsScheduler:
                 "lifecycle_status": lifecycle_status,
                 "lifecycle_reason": plan.get("lifecycle_reason"),
                 "lifecycle_updated_at": plan.get("lifecycle_updated_at"),
+                "origin": plan.get("origin", "manual"),
+                "purpose": plan.get("purpose"),
+                "planner_generated_at": plan.get("planner_generated_at"),
+                "planner_signature": plan.get("planner_signature"),
                 "selected": False,
                 "physical_control": False,
             }

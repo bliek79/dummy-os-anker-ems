@@ -55,7 +55,12 @@ def _manual_slot_available(detail: dict[str, Any]) -> bool:
     action = detail.get("action")
     status = str(detail.get("status") or "").lower()
     lifecycle = str(detail.get("lifecycle_status") or "").lower()
+    origin = str(detail.get("origin") or "manual")
 
+    # A planner-owned concept is safe for the next rolling planner refresh.
+    # Any user edit changes origin to manual in Plan Store.
+    if origin == "automatic_72h_planner" and lifecycle == "concept":
+        return True
     if action in (None, "geen"):
         return True
     if lifecycle in {"geannuleerd", "voltooid", "fout"}:
@@ -161,9 +166,9 @@ def build_planner_action_bridge(
 ) -> dict[str, Any]:
     """Translate the observer 72h plan to a rolling three-slot execution preview.
 
-    Alpha28 deliberately does not write to Plan Store, does not call Scheduler and
-    does not start the Execution Controller. It only shows which explicit battery
-    actions would be handed over next.
+    Alpha29 feeds this validated rolling preview to the controlled Plan Store
+    writer. Stored automatic plans remain lifecycle ``concept``: there is no
+    Scheduler handoff and no physical execution.
     """
     now_utc = (now or dt_util.utcnow()).astimezone(dt_util.UTC)
     auto_plan = data.get("auto_plan_72h_plan") or []
@@ -172,8 +177,8 @@ def build_planner_action_bridge(
     forecast_ready = bool(data.get("forecast_ready"))
 
     base = {
-        "auto_bridge_observational_only": True,
-        "auto_bridge_plan_store_write_enabled": False,
+        "auto_bridge_observational_only": False,
+        "auto_bridge_plan_store_write_enabled": True,
         "auto_bridge_scheduler_handoff_enabled": False,
         "auto_bridge_execution_enabled": False,
         "auto_bridge_rolling_window": True,
@@ -262,23 +267,39 @@ def build_planner_action_bridge(
                 "manual_action": detail.get("action"),
                 "manual_status": detail.get("status"),
                 "manual_lifecycle_status": detail.get("lifecycle_status"),
+                "manual_origin": detail.get("origin"),
             }
         )
 
+    # Assign candidates to actually reusable slots rather than blindly mapping
+    # candidate 1->slot 1 etc. Manual active slots always keep priority.
+    free_slots = [item for item in slot_statuses if item["available_for_automatic_write"]]
     preview = []
     for index, candidate in enumerate(candidates[:PLAN_SLOT_COUNT], start=1):
         enriched = dict(candidate)
-        enriched["suggested_slot"] = index
-        actual_slot = slot_statuses[index - 1]
-        enriched["manual_slot_available"] = actual_slot["available_for_automatic_write"]
-        enriched["manual_slot_status"] = actual_slot["manual_status"]
-        enriched["plan_store_write_permitted"] = False
+        actual_slot = free_slots[index - 1] if index <= len(free_slots) else None
+        enriched["suggested_slot"] = actual_slot["slot"] if actual_slot else None
+        enriched["manual_slot_available"] = actual_slot is not None
+        enriched["manual_slot_status"] = actual_slot["manual_status"] if actual_slot else None
+        enriched["plan_store_write_permitted"] = bool(candidate.get("valid") and actual_slot is not None)
         enriched["scheduler_handoff_permitted"] = False
+        # Stable identity for idempotent Plan Store synchronization.
+        signature_energy = round(float(enriched.get("expected_energy_kwh") or 0.0), 2)
+        enriched["planner_signature"] = "|".join(
+            [
+                str(enriched.get("action") or ""),
+                str(enriched.get("purpose") or ""),
+                ",".join(str(value) for value in enriched.get("source_hours") or []),
+                str(enriched.get("planned_end_time") or ""),
+                str(round(float(enriched.get("target_soc") or 0.0), 1)),
+                str(signature_energy),
+            ]
+        )
         preview.append(enriched)
 
     invalid_candidates = sum(1 for candidate in candidates if not candidate.get("valid"))
     preview_conflicts = sum(1 for item in preview if not item.get("manual_slot_available"))
-    overflow = max(0, len(candidates) - PLAN_SLOT_COUNT)
+    overflow = max(0, len(candidates) - len(free_slots))
 
     if not candidates:
         status = "idle_no_forced_actions"
@@ -298,13 +319,13 @@ def build_planner_action_bridge(
     elif preview_conflicts:
         status = "preview_manual_slots_in_use"
         reason = (
-            "Actiepreview gemaakt; bestaande handmatige planslots blijven leidend en worden niet overschreven"
+            "Actiepreview gemaakt; niet alle kandidaten passen naast bestaande handmatige planslots"
         )
         valid = True
     else:
         status = "ready_preview"
         reason = (
-            "Volgende expliciete planneracties zijn vertaald naar een observerende rolling 3-slot preview"
+            "Volgende expliciete planneracties zijn gevalideerd voor gecontroleerde Plan Store-write"
         )
         valid = True
 
@@ -324,8 +345,7 @@ def build_planner_action_bridge(
         "auto_bridge_manual_slot_conflict": preview_conflicts > 0,
         "auto_bridge_manual_slot_conflict_count": preview_conflicts,
         "auto_bridge_note": (
-            "Alpha26 vertaalt alleen geforceerd netladen en netontladen naar uitvoerbare voorstellen. "
-            "Zonneladen en woningontlading blijven self_consumption. Geen Plan Store-write, Scheduler-handoff "
-            "of fysieke uitvoering vindt plaats."
+            "Alpha29 schrijft alleen geldige geforceerde netlaad- en netontlaadvoorstellen naar vrije Plan Store-slots. "
+            "Automatische plannen blijven concept; Scheduler-handoff en fysieke uitvoering blijven uitgeschakeld."
         ),
     }
