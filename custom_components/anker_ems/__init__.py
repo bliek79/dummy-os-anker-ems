@@ -486,6 +486,55 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     entry.async_on_unload(coordinator.async_add_listener(_scheduler_execution_listener))
 
+    # Alpha40: when an automatic planner plan becomes fully start-ready and all
+    # observer gates are green, physically validate only the mode transition.
+    # The transaction applies a 0 W guard, switches to third_party_control,
+    # revalidates, and immediately returns to self_consumption. It never selects
+    # a charge/discharge direction or sends non-zero power.
+    automatic_mode_switch_task = None
+
+    @callback
+    def _automatic_mode_switch_listener() -> None:
+        nonlocal automatic_mode_switch_task
+        data = coordinator.data or {}
+        if data.get("auto_mode_switch_preview_ready") is not True:
+            return
+        if data.get("auto_final_revalidation_safe") is not True:
+            return
+        slot = data.get("auto_final_revalidation_selected_slot")
+        detail = ((data.get("scheduler_slots", {}) or {}).get(slot) or
+                  (data.get("scheduler_slots", {}) or {}).get(str(slot)) or {})
+        identity = detail.get("planner_identity")
+        if not identity or detail.get("origin") != "automatic_72h_planner":
+            return
+        execution_data = execution.data
+        if identity == execution_data.get("auto_mode_switch_last_identity"):
+            return
+        if execution_data.get("active") or execution_data.get("auto_mode_switch_active"):
+            return
+        if physical_test.data.get("active"):
+            return
+        if automatic_mode_switch_task is not None and not automatic_mode_switch_task.done():
+            return
+
+        async def _run() -> None:
+            nonlocal automatic_mode_switch_task
+            try:
+                _LOGGER.info("Starting controlled automatic mode-switch validation for %s", identity)
+                await execution.async_run_automatic_mode_switch_only()
+            except HomeAssistantError as err:
+                _LOGGER.warning("Automatic mode-switch validation blocked/failed: %s", err)
+            except Exception:
+                _LOGGER.exception("Unexpected automatic mode-switch validation error")
+            finally:
+                automatic_mode_switch_task = None
+
+        automatic_mode_switch_task = hass.async_create_task(
+            _run(), "Dummy OS EMS automatic mode-switch validation"
+        )
+
+    entry.async_on_unload(coordinator.async_add_listener(_automatic_mode_switch_listener))
+
     @callback
     def _shutdown(_event) -> None:
         hass.async_create_task(physical_test.async_shutdown_stop())

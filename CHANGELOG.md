@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.0.1-alpha.40.1 - Planner Outage Persistence Fix
+
+- Preserves existing planner-owned concept/pending plans when planner, forecast or execution-buffer gates are temporarily unavailable.
+- Prevents a transient startup/source outage from being interpreted as an authoritative empty planner result.
+- Stale automatic-plan cleanup still runs when the planner gate is open and a valid current planner result explicitly contains no matching action.
+- Adds `auto_bridge_plan_store_preserved_due_gate_closed` diagnostics to the existing Action Candidates sensor.
+- Keeps the Alpha40 controlled physical mode-switch scope unchanged: 0 W guard, `third_party_control`, post-mode revalidation and safe return only; no direction or non-zero automatic power command.
+- Entity count remains 105.
+
 ## 0.0.1-alpha.40 - Controlled Physical Mode Switch
 
 - Enables the first narrowly scoped physical step in the automatic planner chain.

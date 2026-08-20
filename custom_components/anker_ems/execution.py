@@ -54,6 +54,14 @@ class AnkerEmsExecutionController:
             "started_at": None,
             "stop_at": None,
             "last_result": None,
+            "auto_mode_switch_active": False,
+            "auto_mode_switch_status": "idle",
+            "auto_mode_switch_reason": "Geen automatische mode-switch actief",
+            "auto_mode_switch_identity": None,
+            "auto_mode_switch_started_at": None,
+            "auto_mode_switch_completed_at": None,
+            "auto_mode_switch_last_identity": None,
+            "auto_mode_switch_last_result": None,
         }
 
     def attach_coordinator(self, coordinator: Any) -> None:
@@ -460,6 +468,153 @@ class AnkerEmsExecutionController:
             "auto_mode_switch_preview_physical_control": False,
         }
 
+    async def async_run_automatic_mode_switch_only(self) -> bool:
+        """Physically validate only the guarded external-mode transaction.
+
+        Alpha40 is intentionally limited: it may set the configured power setpoint
+        to 0 W, switch to third_party_control, wait for the external controls,
+        revalidate the complete automatic safety chain, and immediately return to
+        self_consumption. It never selects charge/discharge direction and never
+        applies a non-zero power setpoint. A planner identity is handled at most
+        once, including across Home Assistant restarts.
+        """
+        if self._coordinator is None:
+            raise HomeAssistantError("Dummy OS EMS coordinator is niet beschikbaar")
+        if self._state.get("active") or self._state.get("auto_mode_switch_active"):
+            raise HomeAssistantError("Execution Controller is al bezig")
+        if self._coordinator.physical_test.data.get("active"):
+            raise HomeAssistantError("Er is nog een fysieke test actief")
+
+        await self._coordinator.async_refresh()
+        data = self._coordinator.data
+        if data.get("auto_mode_switch_preview_ready") is not True:
+            raise HomeAssistantError("Mode-switch preview is niet gereed")
+        if data.get("auto_final_revalidation_safe") is not True:
+            raise HomeAssistantError("Finale live revalidatie is niet veilig")
+
+        slot = data.get("auto_final_revalidation_selected_slot")
+        detail = ((data.get("scheduler_slots", {}) or {}).get(slot) or
+                  (data.get("scheduler_slots", {}) or {}).get(str(slot)) or {})
+        identity = detail.get("planner_identity")
+        if not identity or detail.get("origin") != "automatic_72h_planner":
+            raise HomeAssistantError("Geen geldige automatische planner identity geselecteerd")
+        if identity == self._state.get("auto_mode_switch_last_identity"):
+            return False
+
+        mode_entity, _direction_entity, power_entity = self._entity_ids()
+        now = dt_util.now()
+        self._state.update({
+            "auto_mode_switch_active": True,
+            "auto_mode_switch_status": "zero_power_guard",
+            "auto_mode_switch_reason": "Automatische mode-switch validatie gestart",
+            "auto_mode_switch_identity": identity,
+            "auto_mode_switch_started_at": now.isoformat(),
+            "auto_mode_switch_completed_at": None,
+            "auto_mode_switch_last_result": None,
+        })
+        await self._async_save()
+
+        try:
+            # Step 1: zero-power guard. Never issue a non-zero setpoint in alpha40.
+            await self.hass.services.async_call(
+                "number", "set_value", {"value": 0},
+                target={"entity_id": power_entity}, blocking=True,
+            )
+
+            self._state.update({
+                "auto_mode_switch_status": "switching_external_mode",
+                "auto_mode_switch_reason": "Zero-power guard actief; third_party_control wordt getest",
+            })
+            await self._async_save()
+
+            if data.get("operating_mode") != _EXTERNAL_MODE:
+                await self.hass.services.async_call(
+                    "select", "select_option", {"option": _EXTERNAL_MODE},
+                    target={"entity_id": mode_entity}, blocking=True,
+                )
+            await self._wait_for_external_controls()
+
+            self._state.update({
+                "auto_mode_switch_status": "post_mode_revalidation",
+                "auto_mode_switch_reason": "Externe modus actief; finale veiligheidsketen wordt opnieuw gevalideerd",
+            })
+            await self._async_save()
+
+            await self._coordinator.async_refresh()
+            armed = self._coordinator.data
+            armed_slot = armed.get("auto_final_revalidation_selected_slot")
+            armed_detail = ((armed.get("scheduler_slots", {}) or {}).get(armed_slot) or
+                            (armed.get("scheduler_slots", {}) or {}).get(str(armed_slot)) or {})
+            blockers=[]
+            if armed.get("operating_mode") != _EXTERNAL_MODE:
+                blockers.append("not_in_external_mode")
+            if armed.get("auto_final_revalidation_safe") is not True:
+                blockers.append("final_revalidation_not_safe")
+            if armed.get("auto_mode_switch_preview_ready") is not True:
+                blockers.append("mode_switch_preview_not_ready")
+            if armed_detail.get("planner_identity") != identity:
+                blockers.append("planner_identity_changed")
+            if armed.get("physical_test_active"):
+                blockers.append("physical_test_active")
+            if blockers:
+                raise HomeAssistantError(", ".join(blockers))
+
+            # Alpha40 deliberately stops here: no direction and no non-zero power.
+            self._state.update({
+                "auto_mode_switch_status": "safe_return",
+                "auto_mode_switch_reason": "Mode-switch gevalideerd; veilige terugkeer naar self_consumption",
+            })
+            await self._async_save()
+            await self.hass.services.async_call(
+                "number", "set_value", {"value": 0},
+                target={"entity_id": power_entity}, blocking=True,
+            )
+            await self.hass.services.async_call(
+                "select", "select_option", {"option": _SELF_MODE},
+                target={"entity_id": mode_entity}, blocking=True,
+            )
+
+            completed = dt_util.now().isoformat()
+            self._state.update({
+                "auto_mode_switch_active": False,
+                "auto_mode_switch_status": "completed",
+                "auto_mode_switch_reason": "Fysieke mode-switch en veilige terugkeer succesvol gevalideerd",
+                "auto_mode_switch_completed_at": completed,
+                "auto_mode_switch_last_identity": identity,
+                "auto_mode_switch_last_result": "success",
+            })
+            await self._async_save()
+            await self._coordinator.async_refresh()
+            return True
+        except Exception as err:
+            _LOGGER.exception("Automatic Dummy OS EMS mode-switch validation failed")
+            # Fail safe: zero power first, then self_consumption.
+            try:
+                await self.hass.services.async_call(
+                    "number", "set_value", {"value": 0},
+                    target={"entity_id": power_entity}, blocking=True,
+                )
+            except Exception:
+                _LOGGER.exception("Failed to apply zero-power guard during mode-switch abort")
+            try:
+                await self.hass.services.async_call(
+                    "select", "select_option", {"option": _SELF_MODE},
+                    target={"entity_id": mode_entity}, blocking=True,
+                )
+            except Exception:
+                _LOGGER.exception("Failed to return to self_consumption during mode-switch abort")
+            self._state.update({
+                "auto_mode_switch_active": False,
+                "auto_mode_switch_status": "failed",
+                "auto_mode_switch_reason": f"Mode-switch validatie mislukt: {err}",
+                "auto_mode_switch_completed_at": dt_util.now().isoformat(),
+                "auto_mode_switch_last_identity": identity,
+                "auto_mode_switch_last_result": f"failed: {err}",
+            })
+            await self._async_save()
+            await self._coordinator.async_refresh()
+            raise HomeAssistantError(f"Automatische mode-switch validatie mislukt: {err}") from err
+
     @staticmethod
     def _number_value(value: Any) -> float | None:
         try:
@@ -474,6 +629,8 @@ class AnkerEmsExecutionController:
             raise HomeAssistantError("Dummy OS EMS coordinator is niet beschikbaar")
         if self._state.get("active"):
             raise HomeAssistantError("Er is al een EMS-uitvoering actief")
+        if self._state.get("auto_mode_switch_active"):
+            raise HomeAssistantError("Automatische mode-switch validatie is actief")
         if self._coordinator.physical_test.data.get("active"):
             raise HomeAssistantError("Er is nog een fysieke test actief")
 

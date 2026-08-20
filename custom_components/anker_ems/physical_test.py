@@ -118,9 +118,12 @@ class AnkerEmsPhysicalTestController:
             raise HomeAssistantError("Er is al een fysieke test actief")
         if (
             getattr(self._coordinator, "execution", None) is not None
-            and self._coordinator.execution.data.get("active")
+            and (
+                self._coordinator.execution.data.get("active")
+                or self._coordinator.execution.data.get("auto_mode_switch_active")
+            )
         ):
-            raise HomeAssistantError("Er is al een EMS-uitvoering actief")
+            raise HomeAssistantError("Er is al een EMS-uitvoering of mode-switch validatie actief")
         if not TEST_MIN_POWER_W <= power_w <= TEST_MAX_POWER_W:
             raise HomeAssistantError(
                 f"Testvermogen moet tussen {TEST_MIN_POWER_W} en {TEST_MAX_POWER_W} W liggen"

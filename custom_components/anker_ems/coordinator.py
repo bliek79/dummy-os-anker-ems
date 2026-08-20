@@ -449,9 +449,24 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if isinstance(slot, int):
                     desired_auto_plans[slot] = proposal
 
-        write_result = await self.plan_store.async_sync_automatic_plans(
-            desired_auto_plans if write_gate_open else {}
-        )
+        # Alpha40.1: preserve existing planner-owned future plans while the
+        # planner/forecast gate is temporarily unavailable. An empty desired
+        # set is only authoritative when the write gate is open; otherwise
+        # syncing with {} would incorrectly clear valid pending plans during
+        # startup or a transient source outage.
+        if write_gate_open:
+            write_result = await self.plan_store.async_sync_automatic_plans(
+                desired_auto_plans
+            )
+        else:
+            write_result = {
+                "changed": False,
+                "changed_slots": [],
+                "written_slots": [],
+                "cleared_slots": [],
+                "skipped_slots": [],
+                "preserved_due_gate_closed": True,
+            }
         # Promote only the exact planner proposals that are currently approved
         # by the bridge. Matching signatures protect against stale data and
         # concurrent/manual edits between write and handoff.
@@ -474,6 +489,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             {
                 "auto_bridge_plan_store_write_enabled": True,
                 "auto_bridge_plan_store_write_gate_open": write_gate_open,
+                "auto_bridge_plan_store_preserved_due_gate_closed": write_result.get("preserved_due_gate_closed", False),
                 "auto_bridge_plan_store_write_changed": write_result.get("changed", False),
                 "auto_bridge_plan_store_written_slots": write_result.get("written_slots", []),
                 "auto_bridge_plan_store_cleared_slots": write_result.get("cleared_slots", []),
