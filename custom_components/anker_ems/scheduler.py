@@ -37,7 +37,7 @@ class AnkerEmsScheduler:
         return parsed
 
     @staticmethod
-    def _base_valid(plan: dict[str, Any]) -> bool:
+    def _base_valid(plan: dict[str, Any], max_charge_power_w: int, max_discharge_power_w: int) -> bool:
         action = plan.get("action")
         execution_mode = plan.get("execution_mode")
         power = plan.get("power_w")
@@ -51,7 +51,8 @@ class AnkerEmsScheduler:
             return False
         if execution_mode not in {"direct", "gepland"}:
             return False
-        if not isinstance(power, (int, float)) or not 100 <= float(power) <= 3500:
+        max_power_w = max_charge_power_w if action == "laden" else max_discharge_power_w
+        if not isinstance(power, (int, float)) or not 100 <= float(power) <= max_power_w:
             return False
         if not isinstance(target_soc, (int, float)) or not 5 <= float(target_soc) <= 100:
             return False
@@ -61,7 +62,7 @@ class AnkerEmsScheduler:
             return False
         return True
 
-    def evaluate(self, now: datetime | None = None) -> dict[str, Any]:
+    def evaluate(self, max_charge_power_w: int = 3500, max_discharge_power_w: int = 3500, now: datetime | None = None) -> dict[str, Any]:
         """Return deterministic scheduler state for all three slots.
 
         The Scheduler determines which plan is allowed to start and exposes the
@@ -116,7 +117,7 @@ class AnkerEmsScheduler:
                 detail["status"] = "leeg"
             elif lifecycle_status == "concept":
                 detail["status"] = "concept"
-            elif not self._base_valid(plan):
+            elif not self._base_valid(plan, max_charge_power_w, max_discharge_power_w):
                 detail["status"] = "ongeldig"
             elif execution_mode == "direct":
                 detail["status"] = "kandidaat"

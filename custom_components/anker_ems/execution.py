@@ -156,7 +156,7 @@ class AnkerEmsExecutionController:
 
         if action not in {"laden", "ontladen"}:
             raise HomeAssistantError("Geselecteerd plan bevat geen ondersteunde batterijactie")
-        max_power_w = 3000 if action == "ontladen" else 3500
+        max_power_w = int(data.get("max_discharge_power_w") or 800) if action == "ontladen" else int(data.get("max_charge_power_w") or 800)
         if not 100 <= power_w <= max_power_w:
             raise HomeAssistantError(
                 f"Planvermogen valt buiten 100-{max_power_w} W voor {action}"

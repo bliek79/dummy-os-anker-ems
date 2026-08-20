@@ -71,7 +71,7 @@ class AnkerEmsSafetyGuard:
         if action not in {"laden", "ontladen"}:
             reasons.append("invalid_action")
 
-        max_power = 3000 if action == "ontladen" else 3500
+        max_power = int(data.get("max_discharge_power_w") or 800) if action == "ontladen" else int(data.get("max_charge_power_w") or 800)
         if power is None or not 100 <= power <= max_power:
             reasons.append("invalid_power")
 
@@ -149,6 +149,8 @@ class AnkerEmsSafetyGuard:
             "auto_safety_handoff_control_path_configured": bool(data.get("control_path_configured")),
             "auto_safety_handoff_execution_permitted": False,
             "auto_safety_handoff_physical_control": False,
+            "auto_safety_handoff_max_charge_power_w": int(data.get("max_charge_power_w") or 800),
+            "auto_safety_handoff_max_discharge_power_w": int(data.get("max_discharge_power_w") or 800),
         }
 
         if slot is None or not data.get("scheduler_ready") or origin != "automatic_72h_planner":
@@ -185,7 +187,7 @@ class AnkerEmsSafetyGuard:
 
         if action not in {"laden", "ontladen"}:
             reasons.append("invalid_action")
-        max_power = 3000 if action == "ontladen" else 3500
+        max_power = int(data.get("max_discharge_power_w") or 800) if action == "ontladen" else int(data.get("max_charge_power_w") or 800)
         if power is None or not 100 <= power <= max_power:
             reasons.append("invalid_power")
         if soc is None or not MIN_SOC_PERCENT <= soc <= MAX_SOC_PERCENT:
@@ -232,4 +234,6 @@ class AnkerEmsSafetyGuard:
             "auto_safety_handoff_control_path_configured": bool(data.get("control_path_configured")),
             "auto_safety_handoff_execution_permitted": False,
             "auto_safety_handoff_physical_control": False,
+            "auto_safety_handoff_max_charge_power_w": int(data.get("max_charge_power_w") or 800),
+            "auto_safety_handoff_max_discharge_power_w": int(data.get("max_discharge_power_w") or 800),
         }

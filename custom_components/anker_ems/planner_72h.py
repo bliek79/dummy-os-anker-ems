@@ -11,8 +11,6 @@ from .const import (
     MIN_SOC_PERCENT,
 )
 
-MAX_CHARGE_POWER_W = 3500
-MAX_DISCHARGE_POWER_W = 3000
 _MIN_ENERGY_KWH = 0.01
 
 
@@ -55,6 +53,8 @@ def build_72h_plan_preview(
     charge_efficiency_percent: float,
     discharge_efficiency_percent: float,
     execution_buffer_percent: float = DEFAULT_AUTO_EXECUTION_BUFFER_PERCENT,
+    max_charge_power_w: int = 3500,
+    max_discharge_power_w: int = 3500,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Build a sequential 72-hour battery plan preview.
@@ -330,7 +330,7 @@ def build_72h_plan_preview(
                 if price is None:
                     continue
                 fraction = _hour_fraction(cand["time"], now_utc)
-                max_stored = MAX_CHARGE_POWER_W / 1000.0 * fraction * charge_eff
+                max_stored = max_charge_power_w / 1000.0 * fraction * charge_eff
                 if max_stored <= _MIN_ENERGY_KWH:
                     continue
                 candidates.append((price, cand["time"], max_stored))
@@ -367,8 +367,8 @@ def build_72h_plan_preview(
         dynamic_reserve_max_soc = max(dynamic_reserve_max_soc, reserve_floor_start_soc)
         execution_reserve_min_soc = min(execution_reserve_min_soc, execution_floor_end_soc)
         execution_reserve_max_soc = max(execution_reserve_max_soc, execution_floor_start_soc)
-        charge_input_limit = MAX_CHARGE_POWER_W / 1000.0 * fraction
-        discharge_output_limit = MAX_DISCHARGE_POWER_W / 1000.0 * fraction
+        charge_input_limit = max_charge_power_w / 1000.0 * fraction
+        discharge_output_limit = max_discharge_power_w / 1000.0 * fraction
 
         solar = row["solar_kwh"] * fraction
         home = row["home_kwh"] * fraction
@@ -632,6 +632,8 @@ def build_72h_plan_preview(
         "auto_plan_72h_dynamic_reserve_min_soc": round(dynamic_reserve_min_soc, 1),
         "auto_plan_72h_dynamic_reserve_max_soc": round(dynamic_reserve_max_soc, 1),
         "auto_plan_72h_execution_buffer_percent": round(execution_buffer_percent, 1),
+        "auto_plan_72h_max_charge_power_w": int(max_charge_power_w),
+        "auto_plan_72h_max_discharge_power_w": int(max_discharge_power_w),
         "auto_plan_72h_execution_reserve_floor_soc": (
             round(plan[0]["execution_reserve_floor_start_soc"], 1) if plan else None
         ),

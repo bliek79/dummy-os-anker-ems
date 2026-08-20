@@ -10,8 +10,6 @@ from .const import PLAN_SLOT_COUNT
 
 _MIN_ACTION_ENERGY_KWH = 0.01
 _DEFAULT_START_DELAY_MIN = 10
-_MAX_CHARGE_POWER_W = 3500
-_MAX_DISCHARGE_POWER_W = 3000
 
 
 def _as_float(value: Any) -> float | None:
@@ -94,7 +92,7 @@ def _forced_row_action(row: dict[str, Any]) -> tuple[str, str, float] | None:
     return None
 
 
-def _build_candidate(segment: list[dict[str, Any]], now_utc: datetime) -> dict[str, Any]:
+def _build_candidate(segment: list[dict[str, Any]], now_utc: datetime, max_charge_power_w: int, max_discharge_power_w: int) -> dict[str, Any]:
     first = segment[0]
     last = segment[-1]
     action = str(first["bridge_action"])
@@ -107,7 +105,7 @@ def _build_candidate(segment: list[dict[str, Any]], now_utc: datetime) -> dict[s
     duration_h = max(0.0, (planned_end - planned_start).total_seconds() / 3600.0)
     energy_kwh = sum(float(item["bridge_energy_kwh"]) for item in segment)
 
-    max_power_w = _MAX_CHARGE_POWER_W if action == "laden" else _MAX_DISCHARGE_POWER_W
+    max_power_w = max_charge_power_w if action == "laden" else max_discharge_power_w
     average_power_w = energy_kwh * 1000.0 / duration_h if duration_h > 0 else 0.0
     power_w = _round_power_up(average_power_w, max_power_w)
     target_soc = _as_float(last.get("soc_end"))
@@ -217,6 +215,8 @@ def build_planner_action_bridge(
     plan_valid = bool(data.get("auto_plan_72h_valid"))
     buffer_safe = bool(data.get("auto_plan_72h_execution_buffer_safe"))
     forecast_ready = bool(data.get("forecast_ready"))
+    max_charge_power_w = int(data.get("max_charge_power_w") or 800)
+    max_discharge_power_w = int(data.get("max_discharge_power_w") or 800)
 
     base = {
         "auto_bridge_observational_only": False,
@@ -226,6 +226,8 @@ def build_planner_action_bridge(
         "auto_bridge_rolling_window": True,
         "auto_bridge_slot_capacity": PLAN_SLOT_COUNT,
         "auto_bridge_pending_reconciliation_enabled": True,
+        "auto_bridge_max_charge_power_w": max_charge_power_w,
+        "auto_bridge_max_discharge_power_w": max_discharge_power_w,
     }
 
     if not plan_valid or not isinstance(auto_plan, list) or not auto_plan:
@@ -292,7 +294,7 @@ def build_planner_action_bridge(
         else:
             segments.append([row])
 
-    candidates = [_build_candidate(segment, now_utc) for segment in segments]
+    candidates = [_build_candidate(segment, now_utc, max_charge_power_w, max_discharge_power_w) for segment in segments]
     candidates = [candidate for candidate in candidates if candidate["expected_energy_kwh"] > _MIN_ACTION_ENERGY_KWH]
 
     scheduler_slots = data.get("scheduler_slots") or {}

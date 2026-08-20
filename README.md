@@ -5,7 +5,7 @@
 > **Status:** experimental alpha  
 > **Domain:** `anker_ems`  
 > **Minimum Home Assistant:** 2026.7.0  
-> **Current version:** `0.0.1-alpha.34`
+> **Current version:** `0.0.1-alpha.36`
 
 The integration combines battery status, electricity prices, solar forecast, home-consumption forecast, safety limits and user choices into one local EMS layer. The architecture is deliberately split into planning, persistent plan storage, scheduling, safety validation and physical execution.
 
@@ -49,6 +49,7 @@ The current alpha supports:
 - pre-start safety validation;
 - time-aware pre-start diagnostics and dry-run blocker tests;
 - non-actuating Scheduler -> Safety Guard handoff for automatic start-ready plans.
+- centralized configurable charge/discharge power limits based on the electrical connection profile.
 
 **Automatic physical execution is still disabled.** Automatic plans may reach the Scheduler, but the current development phase stops before unattended battery commands are issued.
 
@@ -99,8 +100,10 @@ Current default technical assumptions:
 
 - battery capacity: **7.2 kWh**;
 - hardware minimum SOC: **5%**;
-- maximum charging power: **3500 W**;
-- maximum discharging power: **3000 W**;
+- configurable maximum charging power;
+- configurable maximum discharging power;
+- dedicated-group preset: up to **3500 W charge / 3500 W discharge**;
+- shared/non-dedicated-group safety preset: maximum **800 W charge / 800 W discharge**;
 - charge efficiency: **92%**;
 - discharge efficiency: **92%**;
 - round-trip efficiency: **84.64%**;
@@ -108,6 +111,19 @@ Current default technical assumptions:
 - manual plan slots: **3**.
 
 These are integration defaults/project assumptions where applicable; configurable inputs remain selectable through the integration where implemented.
+
+### Electrical connection and central power limits
+
+Dummy OS EMS uses one central pair of power limits throughout the control chain:
+
+- `max_charge_power_w`;
+- `max_discharge_power_w`.
+
+For a new installation, Config Flow asks whether the battery is on a dedicated electrical group. A dedicated group can be configured up to 3500 W for charge and discharge. A shared/non-dedicated group is fail-safe capped at 800 W for both directions. The same values can later be changed through Options Flow.
+
+Existing entries upgraded from an older alpha without an explicit electrical profile fall back to the conservative shared-group limit of 800 W until the user confirms the installation profile in **Configure**.
+
+The planner, Action Bridge, Scheduler, pre-start validator, Safety Guard and Execution Controller all use these same configured limits. A layer is not allowed to plan, approve or execute power above the configured value.
 
 ## Required and supported sources
 

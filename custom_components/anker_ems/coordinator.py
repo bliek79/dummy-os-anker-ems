@@ -25,6 +25,14 @@ from .planner_action_bridge import build_planner_action_bridge
 from .const import (
     NAME,
     CONF_SIMULATION_MODE,
+    CONF_ELECTRICAL_PROFILE,
+    CONF_MAX_CHARGE_POWER_W,
+    CONF_MAX_DISCHARGE_POWER_W,
+    DEFAULT_ELECTRICAL_PROFILE,
+    DEFAULT_SHARED_MAX_POWER_W,
+    ELECTRICAL_PROFILE_SHARED,
+    ABSOLUTE_MAX_CHARGE_POWER_W,
+    ABSOLUTE_MAX_DISCHARGE_POWER_W,
     CONF_SOC_ENTITY,
     CONF_DEVICE_STATUS_ENTITY,
     CONF_CHARGE_POWER_ENTITY,
@@ -137,6 +145,32 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     @property
     def simulation_mode(self) -> bool:
         return bool(self.entry.data.get(CONF_SIMULATION_MODE, True))
+
+    @property
+    def electrical_profile(self) -> str:
+        return str(self.entry.options.get(CONF_ELECTRICAL_PROFILE, self.entry.data.get(CONF_ELECTRICAL_PROFILE, DEFAULT_ELECTRICAL_PROFILE)))
+
+    @property
+    def max_charge_power_w(self) -> int:
+        fallback = DEFAULT_SHARED_MAX_POWER_W if self.electrical_profile == ELECTRICAL_PROFILE_SHARED else ABSOLUTE_MAX_CHARGE_POWER_W
+        raw = self.entry.options.get(CONF_MAX_CHARGE_POWER_W, self.entry.data.get(CONF_MAX_CHARGE_POWER_W, fallback))
+        try:
+            value = int(float(raw))
+        except (TypeError, ValueError):
+            value = fallback
+        profile_cap = DEFAULT_SHARED_MAX_POWER_W if self.electrical_profile == ELECTRICAL_PROFILE_SHARED else ABSOLUTE_MAX_CHARGE_POWER_W
+        return max(100, min(profile_cap, value))
+
+    @property
+    def max_discharge_power_w(self) -> int:
+        fallback = DEFAULT_SHARED_MAX_POWER_W if self.electrical_profile == ELECTRICAL_PROFILE_SHARED else ABSOLUTE_MAX_DISCHARGE_POWER_W
+        raw = self.entry.options.get(CONF_MAX_DISCHARGE_POWER_W, self.entry.data.get(CONF_MAX_DISCHARGE_POWER_W, fallback))
+        try:
+            value = int(float(raw))
+        except (TypeError, ValueError):
+            value = fallback
+        profile_cap = DEFAULT_SHARED_MAX_POWER_W if self.electrical_profile == ELECTRICAL_PROFILE_SHARED else ABSOLUTE_MAX_DISCHARGE_POWER_W
+        return max(100, min(profile_cap, value))
 
     def _entity_id(self, key: str, default: str | None = None) -> str | None:
         return self.entry.options.get(key) or self.entry.data.get(key) or default
@@ -340,6 +374,9 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         control_ids = self.control_entity_ids
         data = {
             "simulation_mode": self.simulation_mode,
+            "electrical_profile": self.electrical_profile,
+            "max_charge_power_w": self.max_charge_power_w,
+            "max_discharge_power_w": self.max_discharge_power_w,
             "control_path_configured": all(bool(control_ids.get(key)) for key in ("operating_mode", "action_direction", "power_setpoint")),
             "soc": self._number(CONF_SOC_ENTITY),
             "device_status": self._state(CONF_DEVICE_STATUS_ENTITY),
@@ -375,6 +412,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             charge_efficiency_percent,
             discharge_efficiency_percent,
             minimum_trade_margin,
+            max_charge_power_w=self.max_charge_power_w,
         )
         data.update(planner_preview)
         data.update(
@@ -385,10 +423,12 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 data.get("soc"),
                 charge_efficiency_percent,
                 discharge_efficiency_percent,
+                max_charge_power_w=self.max_charge_power_w,
+                max_discharge_power_w=self.max_discharge_power_w,
             )
         )
         data.update(await self.source_monitor.async_observe(self._source_monitor_specs()))
-        data.update(self.scheduler.evaluate())
+        data.update(self.scheduler.evaluate(self.max_charge_power_w, self.max_discharge_power_w))
         bridge = build_planner_action_bridge(data)
         data.update(bridge)
 
@@ -449,7 +489,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
         # Refresh scheduler details from the just-synchronized and handed-off store.
-        data.update(self.scheduler.evaluate())
+        data.update(self.scheduler.evaluate(self.max_charge_power_w, self.max_discharge_power_w))
         refreshed_bridge = build_planner_action_bridge(data)
         # Keep writer result flags from above while refreshing candidate/slot data.
         for key, value in refreshed_bridge.items():

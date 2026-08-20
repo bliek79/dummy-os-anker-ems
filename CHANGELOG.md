@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.0.1-alpha.36 - Central Configurable Power Limits
+
+- Adds an electrical connection profile to Config Flow: dedicated group or shared/non-dedicated group.
+- Adds configurable `max_charge_power_w` and `max_discharge_power_w` values.
+- Dedicated-group configuration supports up to 3500 W charge and 3500 W discharge.
+- Shared/non-dedicated-group configuration is hard-capped at 800 W in both directions.
+- Existing upgraded entries without an explicit profile fail safe to 800 W until configured in Options Flow.
+- Applies the same central limits to planner preview, 72-hour planner, Action Bridge, Scheduler validation, pre-start validation, Safety Guard and Execution Controller.
+- Manual plan power input is constrained by the configured limits.
+- Keeps automatic planner-owned physical execution explicitly blocked in the legacy scheduled auto-start listener while the automatic execution phase is still under validation.
+- Automatic physical execution remains disabled.
+- No new Home Assistant entities are added; entity count remains 105.
+
 ## 0.0.1-alpha.35 - Scheduler to Safety Guard Handoff
 
 - Adds the first automatic, non-actuating handoff from a Scheduler-ready planner-owned plan to the Safety Guard layer.

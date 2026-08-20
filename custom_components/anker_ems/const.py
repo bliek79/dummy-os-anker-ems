@@ -2,9 +2,27 @@ from __future__ import annotations
 
 DOMAIN = "anker_ems"
 NAME = "Dummy OS EMS"
-VERSION = "0.0.1-alpha.35"
+VERSION = "0.0.1-alpha.36"
 
 CONF_SIMULATION_MODE = "simulation_mode"
+
+# Central electrical connection / battery power safety limits.
+CONF_ELECTRICAL_PROFILE = "electrical_profile"
+CONF_MAX_CHARGE_POWER_W = "max_charge_power_w"
+CONF_MAX_DISCHARGE_POWER_W = "max_discharge_power_w"
+
+ELECTRICAL_PROFILE_DEDICATED = "dedicated_group"
+ELECTRICAL_PROFILE_SHARED = "shared_group"
+
+# Fail-safe defaults for upgraded entries that have not yet explicitly chosen
+# their electrical installation profile in Options Flow.
+DEFAULT_ELECTRICAL_PROFILE = ELECTRICAL_PROFILE_SHARED
+DEFAULT_SHARED_MAX_POWER_W = 800
+DEFAULT_DEDICATED_MAX_CHARGE_POWER_W = 3500
+DEFAULT_DEDICATED_MAX_DISCHARGE_POWER_W = 3500
+ABSOLUTE_MAX_CHARGE_POWER_W = 3500
+ABSOLUTE_MAX_DISCHARGE_POWER_W = 3500
+MIN_CONTROL_POWER_W = 100
 
 CONF_SOC_ENTITY = "soc_entity"
 CONF_DEVICE_STATUS_ENTITY = "device_status_entity"

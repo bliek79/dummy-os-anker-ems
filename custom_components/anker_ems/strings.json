@@ -17,17 +17,35 @@
           "action_direction_entity": "Laad/ontlaadkeuze",
           "power_setpoint_entity": "Vermogensinstelling"
         }
+      },
+      "electrical_setup": {
+        "title": "Elektrische aansluiting",
+        "description": "Kies hoe de batterij elektrisch is aangesloten. Zonder eigen groep begrenst Dummy OS EMS laden en ontladen maximaal op 800 W.",
+        "data": {
+          "electrical_profile": "Aansluitprofiel"
+        }
+      },
+      "power_limits": {
+        "title": "Vermogenslimieten",
+        "description": "Stel de maximale laad- en ontlaadvermogens in. Deze limieten worden centraal gebruikt door planner, Scheduler, Safety Guard en Execution Controller.",
+        "data": {
+          "max_charge_power_w": "Maximaal laadvermogen",
+          "max_discharge_power_w": "Maximaal ontlaadvermogen"
+        }
       }
     },
     "abort": {
       "already_configured": "Dummy OS EMS is al geconfigureerd."
+    },
+    "error": {
+      "power_above_profile_limit": "De gekozen vermogenslimiet is hoger dan toegestaan voor het geselecteerde aansluitprofiel."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Forecast Sources",
-        "description": "Selecteer de bestaande prijs-, woning- en Solcast-bronnen en stel de softwarematige veiligheidsreserve in. Dummy OS EMS gebruikt deze bronnen voor diagnose en de observatieve energiebalans.",
+        "title": "EMS instellingen",
+        "description": "Pas forecastbronnen, reserve, rendement en centrale elektrische vermogenslimieten aan.",
         "data": {
           "known_price_entity": "Bekende/all-in prijzen",
           "forecast_price_entity": "Prijsforecast",
@@ -35,9 +53,15 @@
           "solar_today_entity": "Solcast vandaag",
           "solar_tomorrow_entity": "Solcast morgen",
           "solar_day3_entity": "Solcast dag 3",
-          "software_reserve_percent": "Softwarematige veiligheidsreserve boven 5% SOC"
+          "software_reserve_percent": "Softwarematige veiligheidsreserve boven 5% SOC",
+          "electrical_profile": "Aansluitprofiel",
+          "max_charge_power_w": "Maximaal laadvermogen",
+          "max_discharge_power_w": "Maximaal ontlaadvermogen"
         }
       }
+    },
+    "error": {
+      "power_above_profile_limit": "Zonder eigen groep mag laden en ontladen maximaal 800 W zijn."
     }
   }
 }

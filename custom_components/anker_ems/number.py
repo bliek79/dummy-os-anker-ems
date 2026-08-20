@@ -62,7 +62,11 @@ class AnkerEmsPlanNumber(NumberEntity):
         self._attr_name = f"Dummy OS EMS Plan {slot} {definition.label}"
         self._attr_unique_id = f"{entry.entry_id}_plan_{slot}_{definition.field}"
         self._attr_native_min_value = definition.minimum
-        self._attr_native_max_value = definition.maximum
+        self._attr_native_max_value = (
+            max(coordinator.max_charge_power_w, coordinator.max_discharge_power_w)
+            if definition.field == "power_w"
+            else definition.maximum
+        )
         self._attr_native_step = definition.step
         self._attr_native_unit_of_measurement = definition.unit
         self._attr_device_info = DeviceInfo(
@@ -80,7 +84,11 @@ class AnkerEmsPlanNumber(NumberEntity):
         return float(self.plan_store.get_value(self.slot, self.definition.field))
 
     async def async_set_native_value(self, value: float) -> None:
-        value = max(self.native_min_value, min(self.native_max_value, value))
+        max_value = self.native_max_value
+        if self.definition.field == "power_w":
+            action = self.plan_store.get_value(self.slot, "action")
+            max_value = self.coordinator.max_discharge_power_w if action == "ontladen" else self.coordinator.max_charge_power_w
+        value = max(self.native_min_value, min(max_value, value))
         steps = round((value - self.native_min_value) / self.native_step)
         value = self.native_min_value + steps * self.native_step
         await self.plan_store.async_set_value(self.slot, self.definition.field, value)

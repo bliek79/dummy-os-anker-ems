@@ -133,7 +133,7 @@ class AnkerEmsPreStartValidator:
         valid_action = action in {"laden", "ontladen"}
         add_check("action_valid", valid_action, f"Action: {action}", "invalid_action")
 
-        max_power = 3000 if action == "ontladen" else 3500
+        max_power = int(data.get("max_discharge_power_w") or 800) if action == "ontladen" else int(data.get("max_charge_power_w") or 800)
         power_valid = power is not None and 100 <= power <= max_power
         add_check("power_valid", power_valid, f"Power: {power} W; allowed 100-{max_power} W", "invalid_power")
 

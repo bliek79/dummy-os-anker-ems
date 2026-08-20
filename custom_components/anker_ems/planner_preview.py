@@ -7,7 +7,6 @@ from homeassistant.util import dt as dt_util
 
 from .const import DEFAULT_BATTERY_CAPACITY_KWH, MIN_SOC_PERCENT
 
-MAX_CHARGE_POWER_W = 3500
 _MIN_ENERGY_KWH = 0.01
 
 
@@ -41,6 +40,7 @@ def build_planner_preview(
     charge_efficiency_percent: float,
     discharge_efficiency_percent: float,
     minimum_trade_margin: float,
+    max_charge_power_w: int = 3500,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Build an observational planner and financial trade preview.
@@ -105,7 +105,7 @@ def build_planner_preview(
         if row["time"] == current_hour:
             elapsed = now_utc.minute / 60.0 + now_utc.second / 3600.0
             fraction = max(0.0, min(1.0, 1.0 - elapsed))
-        capacity_kwh = MAX_CHARGE_POWER_W / 1000.0 * fraction * charge_eff
+        capacity_kwh = max_charge_power_w / 1000.0 * fraction * charge_eff
         if capacity_kwh <= 0:
             continue
         allocated = min(remaining, capacity_kwh)
@@ -298,7 +298,7 @@ def build_planner_preview(
         "planner_preview_observational_only": True,
         "planner_preview_trading_execution_enabled": False,
         "planner_preview_losses_included": True,
-        "planner_preview_assumed_max_charge_power_w": MAX_CHARGE_POWER_W,
+        "planner_preview_assumed_max_charge_power_w": int(max_charge_power_w),
         "planner_preview_note": (
             "Alpha23 rekent handelsrendement observerend door met laad- en "
             "ontlaadrendement en minimum handelsmarge. Er worden nog geen "

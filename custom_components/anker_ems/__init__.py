@@ -333,6 +333,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return
         if data.get("scheduler_selected_action") not in {"laden", "ontladen"}:
             return
+        selected_slot = data.get("scheduler_selected_slot")
+        selected_detail = (data.get("scheduler_slots", {}) or {}).get(selected_slot, {}) or {}
+        if selected_detail.get("origin") == "automatic_72h_planner":
+            # Automatic planner execution is still deliberately disabled.
+            # Alpha36 only centralizes configurable power safety limits.
+            return
         if execution.data.get("active") or physical_test.data.get("active"):
             return
         if scheduled_autostart_task is not None and not scheduled_autostart_task.done():
