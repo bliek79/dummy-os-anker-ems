@@ -201,6 +201,45 @@ def _auto_plan_72h_attrs(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _auto_bridge_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "valid": data.get("auto_bridge_valid", False),
+        "reason": data.get("auto_bridge_reason"),
+        "candidate_count": data.get("auto_bridge_candidate_count"),
+        "slot_preview_count": data.get("auto_bridge_slot_preview_count"),
+        "overflow_count": data.get("auto_bridge_overflow_count"),
+        "invalid_candidate_count": data.get("auto_bridge_invalid_candidate_count"),
+        "rolling_window": data.get("auto_bridge_rolling_window", True),
+        "slot_capacity": data.get("auto_bridge_slot_capacity"),
+        "available_manual_slots": data.get("auto_bridge_available_manual_slots"),
+        "manual_slot_conflict": data.get("auto_bridge_manual_slot_conflict", False),
+        "manual_slot_conflict_count": data.get("auto_bridge_manual_slot_conflict_count"),
+        "manual_slots": data.get("auto_bridge_manual_slots", []),
+        "candidates": data.get("auto_bridge_candidates", []),
+        "slot_preview": data.get("auto_bridge_slot_preview", []),
+        "plan_store_write_enabled": data.get("auto_bridge_plan_store_write_enabled", False),
+        "scheduler_handoff_enabled": data.get("auto_bridge_scheduler_handoff_enabled", False),
+        "execution_enabled": data.get("auto_bridge_execution_enabled", False),
+        "observational_only": data.get("auto_bridge_observational_only", True),
+        "note": data.get("auto_bridge_note"),
+    }
+
+
+def _auto_bridge_slot_attrs(data: dict[str, Any], index: int) -> dict[str, Any]:
+    preview = data.get("auto_bridge_slot_preview") or []
+    item = preview[index] if index < len(preview) else None
+    return {
+        "slot_preview": item,
+        "preview_index": index + 1,
+        "candidate_count": data.get("auto_bridge_candidate_count"),
+        "overflow_count": data.get("auto_bridge_overflow_count"),
+        "plan_store_write_enabled": data.get("auto_bridge_plan_store_write_enabled", False),
+        "scheduler_handoff_enabled": data.get("auto_bridge_scheduler_handoff_enabled", False),
+        "execution_enabled": data.get("auto_bridge_execution_enabled", False),
+        "observational_only": True,
+    }
+
+
 def _controller_attrs(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "selected_slot": data.get("controller_selected_slot"),
@@ -422,6 +461,42 @@ SENSORS: tuple[AnkerEmsSensorDescription, ...] = (
         native_unit_of_measurement="€/kWh",
         value_fn=lambda d: d.get("planner_preview_best_discharge_price"),
         attrs_fn=_planner_preview_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="auto_bridge_status",
+        name="Dummy OS EMS Automatische actiebrug status",
+        value_fn=lambda d: d.get("auto_bridge_status"),
+        attrs_fn=_auto_bridge_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="auto_bridge_candidate_count",
+        name="Dummy OS EMS Automatische actiekandidaten",
+        value_fn=lambda d: d.get("auto_bridge_candidate_count"),
+        attrs_fn=_auto_bridge_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="auto_bridge_slot_preview_count",
+        name="Dummy OS EMS Automatische planslot preview",
+        value_fn=lambda d: d.get("auto_bridge_slot_preview_count"),
+        attrs_fn=_auto_bridge_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="auto_bridge_slot_1",
+        name="Dummy OS EMS Automatisch voorstel plan 1",
+        value_fn=lambda d: ((d.get("auto_bridge_slot_preview") or [{}])[0].get("purpose") if len(d.get("auto_bridge_slot_preview") or []) > 0 else "geen"),
+        attrs_fn=lambda d: _auto_bridge_slot_attrs(d, 0),
+    ),
+    AnkerEmsSensorDescription(
+        key="auto_bridge_slot_2",
+        name="Dummy OS EMS Automatisch voorstel plan 2",
+        value_fn=lambda d: ((d.get("auto_bridge_slot_preview") or [{}, {}])[1].get("purpose") if len(d.get("auto_bridge_slot_preview") or []) > 1 else "geen"),
+        attrs_fn=lambda d: _auto_bridge_slot_attrs(d, 1),
+    ),
+    AnkerEmsSensorDescription(
+        key="auto_bridge_slot_3",
+        name="Dummy OS EMS Automatisch voorstel plan 3",
+        value_fn=lambda d: ((d.get("auto_bridge_slot_preview") or [{}, {}, {}])[2].get("purpose") if len(d.get("auto_bridge_slot_preview") or []) > 2 else "geen"),
+        attrs_fn=lambda d: _auto_bridge_slot_attrs(d, 2),
     ),
     AnkerEmsSensorDescription(
         key="auto_plan_72h_status",

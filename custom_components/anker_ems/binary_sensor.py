@@ -34,6 +34,7 @@ async def async_setup_entry(
             AnkerEmsPlannerTradeProfitable(coordinator, entry),
             AnkerEmsAutoPlan72hValid(coordinator, entry),
             AnkerEmsAutoPlan72hExecutionBufferSafe(coordinator, entry),
+            AnkerEmsAutoBridgeValid(coordinator, entry),
         ]
     )
 
@@ -371,4 +372,32 @@ class AnkerEmsAutoPlan72hExecutionBufferSafe(_AnkerEmsBinarySensorBase):
             "breach_hours": data.get("auto_plan_72h_execution_buffer_breach_hours"),
             "observational_only": data.get("auto_plan_72h_observational_only", True),
             "execution_enabled": data.get("auto_plan_72h_execution_enabled", False),
+        }
+
+
+class AnkerEmsAutoBridgeValid(_AnkerEmsBinarySensorBase):
+    _attr_name = "Dummy OS EMS Automatische actiebrug geldig"
+
+    def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{entry.entry_id}_auto_bridge_valid"
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self.coordinator.data.get("auto_bridge_valid"))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        data = self.coordinator.data
+        return {
+            "status": data.get("auto_bridge_status"),
+            "reason": data.get("auto_bridge_reason"),
+            "candidate_count": data.get("auto_bridge_candidate_count"),
+            "slot_preview_count": data.get("auto_bridge_slot_preview_count"),
+            "overflow_count": data.get("auto_bridge_overflow_count"),
+            "manual_slot_conflict": data.get("auto_bridge_manual_slot_conflict", False),
+            "plan_store_write_enabled": data.get("auto_bridge_plan_store_write_enabled", False),
+            "scheduler_handoff_enabled": data.get("auto_bridge_scheduler_handoff_enabled", False),
+            "execution_enabled": data.get("auto_bridge_execution_enabled", False),
+            "observational_only": data.get("auto_bridge_observational_only", True),
         }

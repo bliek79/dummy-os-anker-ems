@@ -7,7 +7,7 @@ Het project wordt ontwikkeld als een lokale, modulaire EMS-laag bovenop Home Ass
 > **Status:** experimentele alpha  
 > **Domein:** `anker_ems`  
 > **Minimale Home Assistant-versie:** 2026.7.0  
-> **Huidige ontwikkelversie:** `0.0.1-alpha.25`
+> **Huidige ontwikkelversie:** `0.0.1-alpha.26`
 
 ---
 
@@ -585,7 +585,10 @@ Nog te valideren wanneer relevant:
 
 ## 2. Automatische 72-uursplanner
 
-De toekomstige planner berekent één volledige 72-uursstrategie.
+De planner berekent inmiddels één volledige 72-uursstrategie. Alpha26 vertaalt
+de eerstvolgende geforceerde netlaad- en netontlaadacties daarnaast observerend
+naar een rolling preview van maximaal drie uitvoerbare planslots. De feitelijke
+Plan Store-write en Scheduler-handoff blijven nog uitgeschakeld.
 
 De dashboardlaag kan daarna kiezen tussen:
 
@@ -1068,3 +1071,53 @@ Nieuwe samenvattende diagnose:
 
 Automatische planslot-creatie, Scheduler-aanroep en fysieke planneruitvoering
 blijven in alpha25 bewust uitgeschakeld.
+
+
+### Alpha26 - observerende planner-naar-planslot brug
+
+Alpha26 voegt de eerste expliciete vertaalbrug toe tussen het observerende
+72-uursplan en de bestaande drie planslots. De brug schrijft nog niets naar
+Plan Store en kan dus geen Scheduler- of fysieke actie starten.
+
+De vertaling maakt alleen expliciete third-party-control acties van:
+- veiligheidsladen uit het net;
+- handelsladen uit het net;
+- handelsontladen naar het net.
+
+Zonneladen en ontladen naar de woning worden bewust **niet** omgezet naar
+planslots. Deze stromen horen bij de normale `self_consumption`-werking en
+hoeven niet als geforceerde batterijactie te worden uitgevoerd.
+
+Opeenvolgende uren met dezelfde geforceerde actie en hetzelfde doel worden
+samengevoegd tot één uitvoerbaar voorstel met:
+- actie `laden` of `ontladen`;
+- doel van de actie;
+- geplande starttijd;
+- verwacht eindtijdstip;
+- berekend gemiddeld vermogen, naar boven afgerond op 10 W;
+- doel-SOC;
+- maximale looptijd;
+- maximale startvertraging;
+- verwachte energie;
+- bijbehorende prijs- en reserve-informatie.
+
+De eerstvolgende maximaal drie voorstellen vormen een **rolling 3-slot preview**.
+Wanneer later meer acties nodig zijn, blijven die als overflow-kandidaten zichtbaar
+en kunnen ze in een volgende fase worden doorgeschoven zodra een planslot vrijkomt.
+
+Bestaande handmatige planslots worden nooit automatisch als vrij beschouwd zolang
+er een gebruikersactie in staat. Alpha26 toont daarom per voorgesteld slot of het
+overeenkomstige handmatige slot beschikbaar zou zijn, maar overschrijft het niet.
+
+Nieuwe diagnose bevat onder andere:
+- status en geldigheid van de automatische actiebrug;
+- totaal aantal geforceerde actiekandidaten;
+- aantal voorstellen in het rolling 3-slot venster;
+- overflow-aantal;
+- conflicten met bestaande handmatige planslots;
+- drie afzonderlijke automatische planvoorstellen.
+
+In alpha26 blijven expliciet uitgeschakeld:
+- Plan Store-write;
+- Scheduler-handoff;
+- automatische fysieke uitvoering.

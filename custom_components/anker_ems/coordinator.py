@@ -19,6 +19,7 @@ from .source_monitor import AnkerEmsSourceMonitor
 from .energy_need import build_energy_need_analysis
 from .planner_preview import build_planner_preview
 from .planner_72h import build_72h_plan_preview
+from .planner_action_bridge import build_planner_action_bridge
 
 from .const import (
     NAME,
@@ -385,6 +386,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         data.update(await self.source_monitor.async_observe(self._source_monitor_specs()))
         data.update(self.scheduler.evaluate())
+        data.update(build_planner_action_bridge(data))
         data.update(self.safety_guard.evaluate(data))
         data.update(self.action_controller.evaluate(data))
         test_data = self.physical_test.data

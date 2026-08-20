@@ -1,3 +1,46 @@
+# 0.0.1-alpha.26
+
+## Observerende planner-naar-planslot brug
+- Nieuwe `planner_action_bridge` vertaalt de 72-uurs planneroutput naar concrete uitvoerbare voorstellen.
+- Alleen geforceerde acties worden vertaald:
+  - veiligheidsladen uit het net;
+  - handelsladen uit het net;
+  - handelsontladen naar het net.
+- Zonneladen en woningontlading blijven onder normale `self_consumption` en worden niet als planslot aangemaakt.
+- Opeenvolgende uren met dezelfde actie en hetzelfde doel worden samengevoegd.
+- Per voorstel worden onder andere starttijd, eindtijd, vermogen, doel-SOC, looptijd en verwachte energie berekend.
+- De eerstvolgende maximaal drie acties vormen een rolling 3-slot preview.
+- Extra toekomstige acties blijven zichtbaar als overflow-kandidaten.
+- Bestaande handmatige planslots worden als leidend behandeld en nooit automatisch overschreven.
+
+## Nieuwe entiteiten
+- Dummy OS EMS Automatische actiebrug status.
+- Dummy OS EMS Automatische actiekandidaten.
+- Dummy OS EMS Automatische planslot preview.
+- Dummy OS EMS Automatisch voorstel plan 1.
+- Dummy OS EMS Automatisch voorstel plan 2.
+- Dummy OS EMS Automatisch voorstel plan 3.
+- Dummy OS EMS Automatische actiebrug geldig.
+
+## Veiligheid
+- De 2% uitvoeringsbuffer uit alpha25 blijft volledig actief.
+- De brug blokkeert bij een ongeldig 72-uursplan of een onveilige uitvoeringsbuffer.
+- Handmatige planslots worden niet overschreven.
+- `plan_store_write_enabled=false`.
+- `scheduler_handoff_enabled=false`.
+- `execution_enabled=false`.
+- Geen fysieke batterijaansturing vanuit de automatische planner.
+
+## Te valideren
+- De actiebrug moet `ready_preview`, `idle_no_forced_actions` of een duidelijke blokkeerstatus tonen.
+- Netveiligheidsladen moet als `laden` / `veiligheidsladen` verschijnen.
+- Handelsontladen moet als `ontladen` / `handel_ontladen` verschijnen.
+- Zonneladen en woningontlading mogen niet als automatische planslotactie verschijnen.
+- De eerste drie toekomstige geforceerde acties moeten in voorstel plan 1 t/m 3 staan.
+- Bij meer dan drie acties moet `overflow_count` groter dan 0 worden.
+- Bestaande handmatige plannen mogen alleen een conflictstatus opleveren en nooit gewijzigd worden.
+- Geen Scheduler- of fysieke uitvoering mag automatisch starten.
+
 # 0.0.1-alpha.25
 
 ## Uitvoeringsbuffer voor toekomstige automatische uitvoering

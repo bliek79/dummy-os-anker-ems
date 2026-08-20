@@ -59,7 +59,7 @@ def build_72h_plan_preview(
 ) -> dict[str, Any]:
     """Build a sequential 72-hour battery plan preview.
 
-    Alpha25 is observational only:
+    Alpha26 keeps the 72-hour planner observational only:
     - no plans are written to the three manual slots;
     - no Scheduler call is made;
     - no physical battery command is executed.
@@ -644,7 +644,7 @@ def build_72h_plan_preview(
         "auto_plan_72h_observational_only": True,
         "auto_plan_72h_execution_enabled": False,
         "auto_plan_72h_note": (
-            "Alpha25 bewaakt aanvullend 2 procentpunt uitvoeringsbuffer boven de "
+            "Alpha26 behoudt de 2 procentpunt uitvoeringsbuffer boven de "
             "dynamische reserve en gebruikt deze buffer bij veiligheidsladen en ontladen. "
             "Er worden nog geen planslots gevuld en geen fysieke commando's uitgevoerd."
         ),
