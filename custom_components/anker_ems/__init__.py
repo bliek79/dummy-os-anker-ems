@@ -29,6 +29,11 @@ from .const import (
     TEST_MAX_POWER_W,
     TEST_MIN_DURATION_S,
     TEST_MIN_POWER_W,
+    CONF_ELECTRICAL_PROFILE,
+    CONF_MAX_CHARGE_POWER_W,
+    CONF_MAX_DISCHARGE_POWER_W,
+    DEFAULT_ELECTRICAL_PROFILE,
+    DEFAULT_SHARED_MAX_POWER_W,
 )
 from .coordinator import AnkerEmsCoordinator
 from .plan_store import AnkerEmsPlanStore
@@ -42,6 +47,39 @@ from .entity_naming import async_migrate_entity_ids
 
 _LOGGER = logging.getLogger(__name__)
 _SCHEDULED_RETRY_SECONDS = 10
+
+
+async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
+    """Migrate older Dummy OS EMS config entries to the current schema.
+
+    Version 2 adds the central electrical profile and charge/discharge power
+    limits. Existing installations fail safe to the shared-group profile at
+    800 W until the user explicitly confirms different limits in Options Flow.
+    All pre-existing config-entry data is preserved.
+    """
+    if config_entry.version > 2:
+        _LOGGER.error(
+            "Cannot migrate Dummy OS EMS config entry from future version %s",
+            config_entry.version,
+        )
+        return False
+
+    if config_entry.version == 1:
+        new_data = dict(config_entry.data)
+        new_data.setdefault(CONF_ELECTRICAL_PROFILE, DEFAULT_ELECTRICAL_PROFILE)
+        new_data.setdefault(CONF_MAX_CHARGE_POWER_W, DEFAULT_SHARED_MAX_POWER_W)
+        new_data.setdefault(CONF_MAX_DISCHARGE_POWER_W, DEFAULT_SHARED_MAX_POWER_W)
+
+        hass.config_entries.async_update_entry(
+            config_entry,
+            data=new_data,
+            version=2,
+        )
+        _LOGGER.info(
+            "Migrated Dummy OS EMS config entry from version 1 to 2 with safe 800 W defaults"
+        )
+
+    return True
 
 
 def _single_coordinator(hass: HomeAssistant) -> AnkerEmsCoordinator:

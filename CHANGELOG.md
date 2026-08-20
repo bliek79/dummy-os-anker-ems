@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.0.1-alpha.36.1 - Config Entry Migration Fix
+
+- Adds the missing Home Assistant `async_migrate_entry()` path for existing version 1 config entries.
+- Preserves all existing configuration data during migration.
+- Adds safe migration defaults: `shared_group`, 800 W charge and 800 W discharge.
+- Updates the config entry to schema version 2 so Options Flow can then be used to select the real electrical profile and power limits.
+- No planner, Scheduler, Safety Guard, or execution behavior is otherwise changed from alpha36.
+- Automatic planner-owned physical execution remains disabled.
+
 ## 0.0.1-alpha.36 - Central Configurable Power Limits
 
 - Adds an electrical connection profile to Config Flow: dedicated group or shared/non-dedicated group.
