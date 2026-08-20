@@ -389,9 +389,8 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         bridge = build_planner_action_bridge(data)
         data.update(bridge)
 
-        # Alpha29: controlled automatic Plan Store write. Only bridge-approved
-        # candidates with a reusable slot are persisted, and always as concept.
-        # Therefore the Scheduler cannot hand them to Execution automatically.
+        # Alpha30: controlled automatic Plan Store write followed by a separate
+        # guarded Scheduler handoff. Physical execution remains disabled.
         desired_auto_plans: dict[int, dict[str, Any]] = {}
         write_gate_open = (
             bool(data.get("auto_bridge_valid"))
@@ -410,6 +409,24 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         write_result = await self.plan_store.async_sync_automatic_plans(
             desired_auto_plans if write_gate_open else {}
         )
+        # Promote only the exact planner proposals that are currently approved
+        # by the bridge. Matching signatures protect against stale data and
+        # concurrent/manual edits between write and handoff.
+        handoff_gate_open = write_gate_open
+        handoff_allowed: dict[int, str] = {}
+        if handoff_gate_open:
+            for proposal in data.get("auto_bridge_slot_preview") or []:
+                if not proposal.get("scheduler_handoff_permitted"):
+                    continue
+                slot = proposal.get("suggested_slot")
+                signature = proposal.get("planner_signature")
+                if isinstance(slot, int) and isinstance(signature, str) and signature:
+                    handoff_allowed[slot] = signature
+
+        handoff_result = await self.plan_store.async_handoff_automatic_plans(
+            handoff_allowed if handoff_gate_open else {}
+        )
+
         data.update(
             {
                 "auto_bridge_plan_store_write_enabled": True,
@@ -418,13 +435,17 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "auto_bridge_plan_store_written_slots": write_result.get("written_slots", []),
                 "auto_bridge_plan_store_cleared_slots": write_result.get("cleared_slots", []),
                 "auto_bridge_plan_store_skipped_slots": write_result.get("skipped_slots", []),
-                "auto_bridge_scheduler_handoff_enabled": False,
+                "auto_bridge_scheduler_handoff_enabled": True,
+                "auto_bridge_scheduler_handoff_gate_open": handoff_gate_open,
+                "auto_bridge_scheduler_handoff_changed": handoff_result.get("changed", False),
+                "auto_bridge_scheduler_handoff_slots": handoff_result.get("handed_off_slots", []),
+                "auto_bridge_scheduler_handoff_skipped_slots": handoff_result.get("skipped_slots", []),
                 "auto_bridge_execution_enabled": False,
                 "auto_bridge_observational_only": False,
             }
         )
 
-        # Refresh scheduler details from the just-synchronized persistent store.
+        # Refresh scheduler details from the just-synchronized and handed-off store.
         data.update(self.scheduler.evaluate())
         refreshed_bridge = build_planner_action_bridge(data)
         # Keep writer result flags from above while refreshing candidate/slot data.
@@ -432,6 +453,10 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if key not in {
                 "auto_bridge_plan_store_write_enabled",
                 "auto_bridge_scheduler_handoff_enabled",
+                "auto_bridge_scheduler_handoff_gate_open",
+                "auto_bridge_scheduler_handoff_changed",
+                "auto_bridge_scheduler_handoff_slots",
+                "auto_bridge_scheduler_handoff_skipped_slots",
                 "auto_bridge_execution_enabled",
                 "auto_bridge_observational_only",
             }:

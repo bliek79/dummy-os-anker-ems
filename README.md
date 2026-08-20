@@ -7,7 +7,8 @@ Het project wordt ontwikkeld als een lokale, modulaire EMS-laag bovenop Home Ass
 > **Status:** experimentele alpha  
 > **Domein:** `anker_ems`  
 > **Minimale Home Assistant-versie:** 2026.7.0  
-> **Huidige ontwikkelversie:** `0.0.1-alpha.29`
+> **Huidige ontwikkelversie:** `0.0.1-alpha.30`
+> **Alpha30:** gecontroleerde Scheduler-handoff is actief; automatische fysieke uitvoering blijft uitgeschakeld.
 
 ---
 
@@ -585,10 +586,12 @@ Nog te valideren wanneer relevant:
 
 ## 2. Automatische 72-uursplanner
 
-De planner berekent inmiddels één volledige 72-uursstrategie. Alpha26 vertaalt
-de eerstvolgende geforceerde netlaad- en netontlaadacties daarnaast observerend
-naar een rolling preview van maximaal drie uitvoerbare planslots. De feitelijke
-Plan Store-write en Scheduler-handoff blijven nog uitgeschakeld.
+De planner berekent inmiddels één volledige 72-uursstrategie. De action bridge
+vertaalt de eerstvolgende geforceerde netlaad- en netontlaadacties naar een
+rolling preview van maximaal drie uitvoerbare planslots. Alpha29 voegde de
+gecontroleerde Plan Store-write toe; alpha30 voegt de afzonderlijk bewaakte
+Scheduler-handoff naar `pending` toe. Automatische fysieke uitvoering blijft
+bewust uitgeschakeld.
 
 De dashboardlaag kan daarna kiezen tussen:
 
@@ -1072,6 +1075,25 @@ Nieuwe samenvattende diagnose:
 Automatische planslot-creatie, Scheduler-aanroep en fysieke planneruitvoering
 blijven in alpha25 bewust uitgeschakeld.
 
+
+## Alpha30 — Controlled Scheduler Handoff
+
+Alpha30 start de fase **veilig automatisch uitvoeren** door de grens tussen de
+Plan Store en de Scheduler gecontroleerd te openen, zonder fysieke batterijcommando's
+automatisch te activeren. Een planner-owned plan mag alleen van `concept` naar
+`pending` wanneer het actuele 72-uursplan geldig is, de 2%-uitvoeringsbuffer veilig
+is, forecastbronnen gereed zijn, alle bridge-kandidaten technisch geldig zijn en
+de persistente `planner_signature` exact overeenkomt met het actuele voorstel.
+
+Planner-owned `pending` slots worden bij volgende coordinator-refreshes op signature
+teruggekoppeld aan dezelfde kandidaat. Daardoor verschijnen ze niet ten onrechte als
+handmatig slotconflict. Een wijziging door de gebruiker maakt het slot opnieuw
+`manual` en blokkeert automatische promotie.
+
+Alpha30 stopt bewust bij de Scheduler: `execution_enabled` blijft `false` en er
+wordt geen automatisch commando naar de Anker-batterij gestuurd. Dit maakt het
+mogelijk om eerst live te valideren dat plannen correct `pending`, `wachtend`,
+`startklaar` of `verlopen` worden voordat automatische uitvoering wordt geopend.
 
 ## Alpha29 — Controlled Automatic Plan Store Write
 

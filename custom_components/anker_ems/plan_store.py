@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -124,10 +124,9 @@ class AnkerEmsPlanStore:
     ) -> dict[str, Any]:
         """Atomically sync observer-approved planner proposals into free slots.
 
-        Alpha29 deliberately stores generated plans as ``concept``. The Scheduler
-        therefore cannot select or execute them. Existing non-terminal manual
-        plans are never overwritten. Automatic slots that are no longer part of
-        the rolling preview are cleared back to an empty concept slot.
+        Alpha30 first stores generated plans as ``concept``. A separate guarded
+        handoff may then promote matching automatic concepts to ``pending``.
+        Existing non-terminal manual plans are never overwritten.
         """
         changed_slots: list[int] = []
         written_slots: list[int] = []
@@ -203,7 +202,6 @@ class AnkerEmsPlanStore:
                 )
                 if not already_cleared:
                     empty = deepcopy(DEFAULT_PLAN)
-                    empty["origin"] = "automatic_72h_planner"
                     empty["lifecycle_status"] = "concept"
                     empty["lifecycle_reason"] = "automatic_preview_cleared"
                     empty["lifecycle_updated_at"] = now_iso
@@ -221,6 +219,67 @@ class AnkerEmsPlanStore:
             "written_slots": written_slots,
             "cleared_slots": cleared_slots,
             "skipped_slots": skipped_slots,
+        }
+
+    async def async_handoff_automatic_plans(
+        self, allowed: dict[int, str]
+    ) -> dict[str, Any]:
+        """Promote matching planner-owned concepts to Scheduler-visible pending.
+
+        The caller must already have passed planner, forecast and execution-buffer
+        gates. A slot is promoted only when it is still planner-owned, still a
+        concept, and its persistent planner signature exactly matches the current
+        bridge proposal. This makes the handoff deterministic and prevents stale
+        or user-edited plans from entering the Scheduler.
+        """
+        handed_off: list[int] = []
+        skipped: list[int] = []
+        now_iso = dt_util.now().isoformat()
+
+        for slot, signature in allowed.items():
+            if slot not in self._plans:
+                skipped.append(slot)
+                continue
+            plan = self._plans[slot]
+            if (
+                plan.get("origin") != "automatic_72h_planner"
+                or str(plan.get("lifecycle_status") or "").lower() != "concept"
+                or not signature
+                or plan.get("planner_signature") != signature
+                or plan.get("action") not in {"laden", "ontladen"}
+                or plan.get("execution_mode") != "gepland"
+            ):
+                skipped.append(slot)
+                continue
+
+            start_raw = plan.get("start_time")
+            start = dt_util.parse_datetime(str(start_raw)) if start_raw else None
+            if start is None:
+                skipped.append(slot)
+                continue
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+            # Do not hand stale planner data to the Scheduler. A start inside
+            # the configured start window may still be valid, including a plan
+            # generated for the currently running hour.
+            delay = float(plan.get("max_start_delay_min") or 0)
+            if dt_util.now() > start + timedelta(minutes=delay):
+                skipped.append(slot)
+                continue
+
+            plan["lifecycle_status"] = "pending"
+            plan["lifecycle_reason"] = "automatic_scheduler_handoff"
+            plan["lifecycle_updated_at"] = now_iso
+            handed_off.append(slot)
+
+        if handed_off:
+            await self._async_save()
+            self._notify_listeners()
+
+        return {
+            "changed": bool(handed_off),
+            "handed_off_slots": handed_off,
+            "skipped_slots": skipped,
         }
 
     async def async_mark_lifecycle(

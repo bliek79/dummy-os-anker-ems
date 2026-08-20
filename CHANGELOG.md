@@ -1,3 +1,16 @@
+# 0.0.1-alpha.30
+
+## Controlled Scheduler Handoff
+
+- Adds the first automatic handoff from validated planner-owned Plan Store concepts to Scheduler-visible `pending` plans.
+- Handoff is allowed only when the 72-hour plan is valid, the 2% execution buffer is safe, forecast sources are ready, all bridge candidates are valid, and the persistent planner signature still exactly matches the current proposal.
+- Planner-owned pending slots are matched by signature on later refreshes so they are not misreported as manual conflicts.
+- Manual/user-edited plans remain protected and are never promoted automatically.
+- Automatic physical execution remains disabled; alpha30 stops at Scheduler handoff.
+- Empty planner slots are reset with neutral/manual origin instead of retaining `automatic_72h_planner`.
+- Adds bridge attributes for Scheduler handoff gate, changed state, handed-off slots and skipped slots.
+- Entity count remains unchanged at 105.
+
 # 0.0.1-alpha.29
 
 ## Controlled Automatic Plan Store Write

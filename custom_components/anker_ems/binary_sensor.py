@@ -403,6 +403,10 @@ class AnkerEmsAutoBridgeValid(_AnkerEmsBinarySensorBase):
             "plan_store_cleared_slots": data.get("auto_bridge_plan_store_cleared_slots", []),
             "plan_store_skipped_slots": data.get("auto_bridge_plan_store_skipped_slots", []),
             "scheduler_handoff_enabled": data.get("auto_bridge_scheduler_handoff_enabled", False),
+            "scheduler_handoff_gate_open": data.get("auto_bridge_scheduler_handoff_gate_open", False),
+            "scheduler_handoff_changed": data.get("auto_bridge_scheduler_handoff_changed", False),
+            "scheduler_handoff_slots": data.get("auto_bridge_scheduler_handoff_slots", []),
+            "scheduler_handoff_skipped_slots": data.get("auto_bridge_scheduler_handoff_skipped_slots", []),
             "execution_enabled": data.get("auto_bridge_execution_enabled", False),
             "observational_only": data.get("auto_bridge_observational_only", True),
         }
