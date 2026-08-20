@@ -1,3 +1,14 @@
+## 0.0.1-alpha.38 - Final Live Revalidation Preview
+
+- Added a final non-actuating live revalidation stage after the Execution Controller handoff preview.
+- Rechecks Scheduler selection, planner identity/revision, authoritative pre-start state, Safety Guard state, forecast readiness and execution-buffer safety.
+- Revalidates configured charge/discharge limits, live SOC versus target, discharge execution reserve, control-path readiness and conflicting battery power.
+- Exposes detailed final-revalidation checks, blockers, warnings and timestamp on the existing Action Candidates sensor.
+- External-mode transition remains a warning/next-stage requirement; no mode switch or battery command is issued.
+- Automatic execution permission and physical control remain disabled.
+- Entity count remains 105.
+- README remains a compact current-state guide; release history stays in this changelog and GitHub Releases.
+
 # Changelog
 
 ## 0.0.1-alpha.37 - Safety Guard to Execution Controller Handoff Preview
