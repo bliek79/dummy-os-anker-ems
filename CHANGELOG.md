@@ -1,3 +1,42 @@
+# 0.0.1-alpha.25
+
+## Uitvoeringsbuffer voor toekomstige automatische uitvoering
+- Standaard 2 procentpunt SOC operationele buffer boven de berekende dynamische reserve.
+- De inhoudelijke dynamische reserve blijft ongewijzigd en afzonderlijk zichtbaar.
+- Veiligheidsladen wordt nu gepland tegen de gebufferde uitvoeringsreserve.
+- Woning- en handelsontlading mogen de gebufferde uitvoeringsreserve niet onderschrijden.
+- Per planuur toegevoegd:
+  - `execution_reserve_floor_start_soc`
+  - `execution_reserve_floor_soc`
+  - `execution_buffer_percent`
+  - `execution_headroom_soc`
+- Nieuwe samenvattende diagnose voor minimale uitvoeringsmarge en bufferonderschrijdingen.
+- Nieuwe sensor: Dummy OS EMS Automatisch plan uitvoeringsreserve.
+- Nieuwe sensor: Dummy OS EMS Automatisch plan minimale uitvoeringsmarge.
+- Nieuwe sensor: Dummy OS EMS Automatisch plan bufferonderschrijding.
+- Nieuwe binary sensor: Dummy OS EMS Automatisch plan uitvoeringsbuffer veilig.
+
+## README
+- De vaste EMS-besturingsfilosofie is expliciet opgenomen: nul op de meter eerst,
+  daarna tekortgestuurd goedkoop netladen, dure netafname vermijden en alleen
+  werkelijk vrije energie financieel zinvol verkopen.
+
+## Ongewijzigd
+- Planner blijft observerend.
+- `execution_enabled=false`.
+- Geen automatische planslot-creatie.
+- Geen Scheduler-aanroep vanuit de 72-uurs planner.
+- Geen fysieke batterijaansturing vanuit de automatische planner.
+
+## Te valideren
+- `execution_buffer_percent` moet 2,0% tonen.
+- De uitvoeringsreserve moet normaal 2 procentpunt boven de dynamische reserve liggen,
+  behalve wanneer 100% SOC de bovengrens vormt.
+- `execution_buffer_breach_hours` hoort bij een uitvoerbaar plan 0 te zijn.
+- `Dummy OS EMS Automatisch plan uitvoeringsbuffer veilig` hoort dan aan te staan.
+- Veiligheidslading mag iets toenemen wanneer dat nodig is om de extra buffer te bewaken.
+- Geen enkele automatische fysieke actie mag door deze alpha worden gestart.
+
 # 0.0.1-alpha.24.4
 
 ## Correctie dynamische reserve

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 DOMAIN = "anker_ems"
 NAME = "Dummy OS EMS"
-VERSION = "0.0.1-alpha.24.4"
+VERSION = "0.0.1-alpha.25"
 
 CONF_SIMULATION_MODE = "simulation_mode"
 
@@ -33,6 +33,10 @@ CONF_MINIMUM_TRADE_MARGIN = "minimum_trade_margin"
 DEFAULT_CHARGE_EFFICIENCY_PERCENT = 92.0
 DEFAULT_DISCHARGE_EFFICIENCY_PERCENT = 92.0
 DEFAULT_MINIMUM_TRADE_MARGIN = 0.10
+
+# Alpha25: extra operational headroom above the calculated dynamic reserve.
+# This buffer is used by the observer planner before automatic execution is enabled.
+DEFAULT_AUTO_EXECUTION_BUFFER_PERCENT = 2.0
 
 DEFAULT_KNOWN_PRICE_ENTITY = "sensor.battery_control_energy_prices"
 DEFAULT_FORECAST_PRICE_ENTITY = "sensor.forecast_prices_all_in_data"

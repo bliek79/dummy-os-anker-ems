@@ -33,6 +33,7 @@ async def async_setup_entry(
             AnkerEmsPlannerSolarChargeDelay(coordinator, entry),
             AnkerEmsPlannerTradeProfitable(coordinator, entry),
             AnkerEmsAutoPlan72hValid(coordinator, entry),
+            AnkerEmsAutoPlan72hExecutionBufferSafe(coordinator, entry),
         ]
     )
 
@@ -344,6 +345,30 @@ class AnkerEmsAutoPlan72hValid(_AnkerEmsBinarySensorBase):
             "hours": data.get("auto_plan_72h_count"),
             "start": data.get("auto_plan_72h_start"),
             "end": data.get("auto_plan_72h_end"),
+            "observational_only": data.get("auto_plan_72h_observational_only", True),
+            "execution_enabled": data.get("auto_plan_72h_execution_enabled", False),
+        }
+
+
+class AnkerEmsAutoPlan72hExecutionBufferSafe(_AnkerEmsBinarySensorBase):
+    _attr_name = "Dummy OS EMS Automatisch plan uitvoeringsbuffer veilig"
+
+    def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{entry.entry_id}_auto_plan_72h_execution_buffer_safe"
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self.coordinator.data.get("auto_plan_72h_execution_buffer_safe"))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        data = self.coordinator.data
+        return {
+            "buffer_percent": data.get("auto_plan_72h_execution_buffer_percent"),
+            "execution_reserve_floor_soc": data.get("auto_plan_72h_execution_reserve_floor_soc"),
+            "minimum_headroom_soc": data.get("auto_plan_72h_min_execution_headroom_soc"),
+            "breach_hours": data.get("auto_plan_72h_execution_buffer_breach_hours"),
             "observational_only": data.get("auto_plan_72h_observational_only", True),
             "execution_enabled": data.get("auto_plan_72h_execution_enabled", False),
         }

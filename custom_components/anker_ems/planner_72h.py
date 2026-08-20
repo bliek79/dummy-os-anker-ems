@@ -5,7 +5,11 @@ from typing import Any
 
 from homeassistant.util import dt as dt_util
 
-from .const import DEFAULT_BATTERY_CAPACITY_KWH, MIN_SOC_PERCENT
+from .const import (
+    DEFAULT_AUTO_EXECUTION_BUFFER_PERCENT,
+    DEFAULT_BATTERY_CAPACITY_KWH,
+    MIN_SOC_PERCENT,
+)
 
 MAX_CHARGE_POWER_W = 3500
 MAX_DISCHARGE_POWER_W = 3000
@@ -50,11 +54,12 @@ def build_72h_plan_preview(
     soc: float | None,
     charge_efficiency_percent: float,
     discharge_efficiency_percent: float,
+    execution_buffer_percent: float = DEFAULT_AUTO_EXECUTION_BUFFER_PERCENT,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Build a sequential 72-hour battery plan preview.
 
-    Alpha24 is observational only:
+    Alpha25 is observational only:
     - no plans are written to the three manual slots;
     - no Scheduler call is made;
     - no physical battery command is executed.
@@ -64,6 +69,7 @@ def build_72h_plan_preview(
 
     charge_eff = max(0.50, min(1.00, float(charge_efficiency_percent) / 100.0))
     discharge_eff = max(0.50, min(1.00, float(discharge_efficiency_percent) / 100.0))
+    execution_buffer_percent = max(0.0, min(10.0, float(execution_buffer_percent)))
 
     if soc is None:
         return {
@@ -113,6 +119,8 @@ def build_72h_plan_preview(
         capacity,
         max(minimum_stored_kwh, base_reserve_floor_kwh),
     )
+    execution_buffer_kwh = capacity * execution_buffer_percent / 100.0
+
 
     def _is_usable_solar(index: int) -> bool:
         if index < 0 or index >= len(rows):
@@ -168,6 +176,12 @@ def build_72h_plan_preview(
         first_usable = rows[usable_index]["time"]
         return floor_kwh, net_home_need_kwh, first_usable
 
+    def _execution_reserve(index: int) -> tuple[float, float, float, datetime | None]:
+        """Return calculated reserve plus the alpha25 execution headroom."""
+        floor_kwh, need_kwh, first_usable = _dynamic_reserve(index)
+        execution_floor_kwh = min(capacity, floor_kwh + execution_buffer_kwh)
+        return execution_floor_kwh, floor_kwh, need_kwh, first_usable
+
     safety_hours_raw = planner_preview.get("planner_preview_safety_charge_hours") or []
     safety_by_time: dict[str, float] = {}
     for item in safety_hours_raw:
@@ -198,6 +212,10 @@ def build_72h_plan_preview(
     max_soc_seen = start_soc
     dynamic_reserve_min_soc = 100.0
     dynamic_reserve_max_soc = 0.0
+    execution_reserve_min_soc = 100.0
+    execution_reserve_max_soc = 0.0
+    minimum_execution_headroom_soc = 100.0
+    execution_buffer_breach_hours = 0
 
     # Reserve a future high-value discharge opportunity. This prevents battery
     # energy from being consumed too early by low-value home deficits.
@@ -247,8 +265,8 @@ def build_72h_plan_preview(
         # Build reserve requirements first.
         reserve_requirements = []
         for idx, _row in enumerate(rows):
-            floor_kwh, _, next_solar = _dynamic_reserve(idx)
-            reserve_requirements.append((idx, floor_kwh, next_solar))
+            execution_floor_kwh, _, _, next_solar = _execution_reserve(idx)
+            reserve_requirements.append((idx, execution_floor_kwh, next_solar))
 
         # Detect local reserve peaks that are tied to a real future usable-solar block.
         peaks: list[tuple[int, float, datetime]] = []
@@ -324,12 +342,16 @@ def build_72h_plan_preview(
         hour = row["time"]
         fraction = _hour_fraction(hour, now_utc)
 
-        reserve_floor_start_kwh, reserve_need_start_kwh, next_usable_solar = _dynamic_reserve(index)
-        reserve_floor_end_kwh, reserve_need_end_kwh, _ = _dynamic_reserve(index + 1)
+        execution_floor_start_kwh, reserve_floor_start_kwh, reserve_need_start_kwh, next_usable_solar = _execution_reserve(index)
+        execution_floor_end_kwh, reserve_floor_end_kwh, reserve_need_end_kwh, _ = _execution_reserve(index + 1)
         reserve_floor_start_soc = reserve_floor_start_kwh / capacity * 100.0
         reserve_floor_end_soc = reserve_floor_end_kwh / capacity * 100.0
+        execution_floor_start_soc = execution_floor_start_kwh / capacity * 100.0
+        execution_floor_end_soc = execution_floor_end_kwh / capacity * 100.0
         dynamic_reserve_min_soc = min(dynamic_reserve_min_soc, reserve_floor_end_soc)
         dynamic_reserve_max_soc = max(dynamic_reserve_max_soc, reserve_floor_start_soc)
+        execution_reserve_min_soc = min(execution_reserve_min_soc, execution_floor_end_soc)
+        execution_reserve_max_soc = max(execution_reserve_max_soc, execution_floor_start_soc)
         charge_input_limit = MAX_CHARGE_POWER_W / 1000.0 * fraction
         discharge_output_limit = MAX_DISCHARGE_POWER_W / 1000.0 * fraction
 
@@ -430,10 +452,10 @@ def build_72h_plan_preview(
 
         # 4) Home deficit uses battery only when doing so does not consume
         # energy reserved for a later, more valuable trade discharge.
-        operational_floor = reserve_floor_end_kwh + trade_energy_reserved_kwh
+        operational_floor = execution_floor_end_kwh + trade_energy_reserved_kwh
         operational_floor = min(
             capacity,
-            max(reserve_floor_end_kwh, operational_floor),
+            max(execution_floor_end_kwh, operational_floor),
         )
 
         available_stored_above_floor = max(0.0, stored_kwh - operational_floor)
@@ -487,7 +509,7 @@ def build_72h_plan_preview(
             remaining_output_limit = max(0.0, discharge_output_limit - discharge_to_home)
             available_stored_above_reserve = max(
                 0.0,
-                stored_kwh - reserve_floor_end_kwh,
+                stored_kwh - execution_floor_end_kwh,
             )
             max_trade_output = available_stored_above_reserve * discharge_eff
             discharge_to_grid = min(remaining_output_limit, max_trade_output)
@@ -507,6 +529,10 @@ def build_72h_plan_preview(
         soc_end = stored_kwh / capacity * 100.0
         min_soc_seen = min(min_soc_seen, soc_end)
         max_soc_seen = max(max_soc_seen, soc_end)
+        execution_headroom_soc = soc_end - execution_floor_end_soc
+        minimum_execution_headroom_soc = min(minimum_execution_headroom_soc, execution_headroom_soc)
+        if execution_headroom_soc < -0.05:
+            execution_buffer_breach_hours += 1
 
         action_parts: list[str] = []
         if grid_safety_input > _MIN_ENERGY_KWH:
@@ -550,6 +576,10 @@ def build_72h_plan_preview(
                 "soc_end": round(soc_end, 1),
                 "reserve_floor_soc": round(reserve_floor_end_soc, 1),
                 "reserve_floor_start_soc": round(reserve_floor_start_soc, 1),
+                "execution_reserve_floor_soc": round(execution_floor_end_soc, 1),
+                "execution_reserve_floor_start_soc": round(execution_floor_start_soc, 1),
+                "execution_buffer_percent": round(execution_buffer_percent, 1),
+                "execution_headroom_soc": round(execution_headroom_soc, 1),
                 "dynamic_need_until_solar_kwh": round(reserve_need_start_kwh, 3),
                 "dynamic_need_after_hour_kwh": round(reserve_need_end_kwh, 3),
                 "next_usable_solar": (
@@ -586,6 +616,15 @@ def build_72h_plan_preview(
         ),
         "auto_plan_72h_dynamic_reserve_min_soc": round(dynamic_reserve_min_soc, 1),
         "auto_plan_72h_dynamic_reserve_max_soc": round(dynamic_reserve_max_soc, 1),
+        "auto_plan_72h_execution_buffer_percent": round(execution_buffer_percent, 1),
+        "auto_plan_72h_execution_reserve_floor_soc": (
+            round(plan[0]["execution_reserve_floor_start_soc"], 1) if plan else None
+        ),
+        "auto_plan_72h_execution_reserve_min_soc": round(execution_reserve_min_soc, 1),
+        "auto_plan_72h_execution_reserve_max_soc": round(execution_reserve_max_soc, 1),
+        "auto_plan_72h_min_execution_headroom_soc": round(minimum_execution_headroom_soc, 1),
+        "auto_plan_72h_execution_buffer_breach_hours": execution_buffer_breach_hours,
+        "auto_plan_72h_execution_buffer_safe": execution_buffer_breach_hours == 0,
         "auto_plan_72h_solar_horizon_complete": all(
             item.get("solar_horizon_complete", False) for item in plan
         ),
@@ -605,9 +644,8 @@ def build_72h_plan_preview(
         "auto_plan_72h_observational_only": True,
         "auto_plan_72h_execution_enabled": False,
         "auto_plan_72h_note": (
-            "Alpha24.4 gebruikt dynamische reserve alleen wanneer een volgende "
-            "bruikbare zonneperiode binnen de forecast aantoonbaar is en plant "
-            "veiligheidslading in de goedkoopste haalbare uren. Er worden geen "
-            "planslots gevuld en geen fysieke commando's uitgevoerd."
+            "Alpha25 bewaakt aanvullend 2 procentpunt uitvoeringsbuffer boven de "
+            "dynamische reserve en gebruikt deze buffer bij veiligheidsladen en ontladen. "
+            "Er worden nog geen planslots gevuld en geen fysieke commando's uitgevoerd."
         ),
     }

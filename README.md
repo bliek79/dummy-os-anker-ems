@@ -7,7 +7,7 @@ Het project wordt ontwikkeld als een lokale, modulaire EMS-laag bovenop Home Ass
 > **Status:** experimentele alpha  
 > **Domein:** `anker_ems`  
 > **Minimale Home Assistant-versie:** 2026.7.0  
-> **Huidige ontwikkelversie:** `0.0.1-alpha.24.4`
+> **Huidige ontwikkelversie:** `0.0.1-alpha.25`
 
 ---
 
@@ -752,7 +752,30 @@ De melding kan bevatten:
 
 ---
 
-## 11. Minder afhankelijkheid van YAML/Jinja
+## 11. Financiële beoordeling extra batterijcapaciteit
+
+Wanneer de EMS-strategie stabiel draait en voldoende praktijkhistorie beschikbaar
+is, wordt beoordeeld of uitbreiding van de huidige 7,2 kWh batterij financieel
+interessant is.
+
+De analyse gebruikt werkelijke EMS-data, waaronder:
+- benuttingsgraad van de huidige batterij;
+- momenten waarop opslagcapaciteit tekortkomt;
+- gemiste mogelijkheid om goedkope netenergie op te slaan;
+- extra vermeden dure netafname;
+- extra verkoopmogelijkheden op hoge prijsuren;
+- laad- en ontlaadverliezen;
+- extra cycli en werkelijk bruikbare capaciteit;
+- jaarlijkse extra besparing/opbrengst en terugverdientijd.
+
+Als aankoopreferentie worden minimaal circa **€1.999 normaal**, **€1.699 met
+korting** en eventueel lagere Duitse marktprijzen doorgerekend. Het doel is ook
+een maximale economisch verantwoorde aankoopprijs voor extra capaciteit te
+bepalen.
+
+---
+
+## 12. Minder afhankelijkheid van YAML/Jinja
 
 Een belangrijk langetermijndoel is om EMS-specifieke logica uit zware Home Assistant YAML/Jinja-packages naar de Python-integratie te verplaatsen.
 
@@ -878,6 +901,28 @@ Veiligheidslading heeft altijd voorrang op handelslogica. De handelslaag blijft 
 
 
 
+## EMS-besturingsfilosofie
+
+Dummy OS EMS gebruikt een vaste prioriteitsvolgorde voor energie. Het primaire
+doel is **nul op de meter / maximaal eigenverbruik**. Zonne-energie gaat eerst
+naar de woning en daarna naar de batterij.
+
+Wanneer eigen productie onvoldoende is, wordt alleen het werkelijk benodigde
+tekort uit het net geladen en bij voorkeur op de goedkoopste geschikte uren
+voordat die energie nodig is. Opgeslagen energie wordt vervolgens gebruikt om
+dure netafname te voorkomen.
+
+Alleen energie die aantoonbaar vrij is boven de verwachte woningbehoefte, de
+dynamische reserve en komende noodzakelijke behoefte mag voor handel worden
+gebruikt. Echt overschot mag tegen een zo hoog mogelijke financieel zinvolle
+prijs worden verkocht.
+
+De planner houdt daarbij rekening met laad- en ontlaadverliezen, Solar Charge
+Delay, de harde 5% minimum-SOC van de Anker-batterij en een minimale
+rendements-/winstdrempel. Het EMS handelt dus niet om het handelen: extra
+batterijcycli zijn alleen zinvol wanneer het verwachte financiële voordeel na
+verliezen voldoende groot is.
+
 ## Automatische 72-uurs planpreview
 
 Alpha24 voegt de eerste doorlopende automatische 72-uurs planpreview toe.
@@ -991,3 +1036,35 @@ Nieuwe diagnose:
 - `solar_horizon_incomplete_hours`
 - per planuur `solar_horizon_complete`
 
+
+
+### Alpha25 - uitvoeringsbuffer vóór automatische koppeling
+
+Alpha25 blijft observerend, maar voegt de eerste expliciete veiligheidslaag toe
+voor de toekomstige koppeling van de 72-uurs planner aan de fysieke uitvoering.
+
+Boven de berekende dynamische reserve wordt standaard **2 procentpunt SOC**
+operationele buffer aangehouden. Deze buffer wordt gebruikt bij:
+- het vooraf plannen van noodzakelijke veiligheidslading;
+- woningontlading;
+- handelsontlading;
+- de berekening van beschikbare energie boven de operationele reserve.
+
+De oorspronkelijke dynamische reserve blijft afzonderlijk zichtbaar. Daardoor
+kan worden gecontroleerd hoeveel marge de planner werkelijk boven de inhoudelijk
+berekende reserve bewaart.
+
+Nieuwe diagnosevelden per planuur:
+- `execution_reserve_floor_start_soc`
+- `execution_reserve_floor_soc`
+- `execution_buffer_percent`
+- `execution_headroom_soc`
+
+Nieuwe samenvattende diagnose:
+- actuele uitvoeringsreserve;
+- minimale uitvoeringsmarge over 72 uur;
+- aantal uren waarin de uitvoeringsbuffer wordt onderschreden;
+- binaire status of de volledige planhorizon de buffer respecteert.
+
+Automatische planslot-creatie, Scheduler-aanroep en fysieke planneruitvoering
+blijven in alpha25 bewust uitgeschakeld.
