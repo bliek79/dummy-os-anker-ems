@@ -12,6 +12,7 @@ from homeassistant.util import dt as dt_util
 from .plan_store import AnkerEmsPlanStore
 from .scheduler import AnkerEmsScheduler
 from .safety_guard import AnkerEmsSafetyGuard
+from .prestart_validator import AnkerEmsPreStartValidator
 from .action_controller import AnkerEmsActionController
 from .physical_test import AnkerEmsPhysicalTestController
 from .execution import AnkerEmsExecutionController
@@ -461,6 +462,10 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "auto_bridge_observational_only",
             }:
                 data[key] = value
+        # Alpha32: observational pre-start gate for automatic Scheduler-ready plans.
+        # This is intentionally evaluated before the legacy physical Safety Guard and
+        # never calls the Execution Controller.
+        data.update(AnkerEmsPreStartValidator().evaluate(data))
         data.update(self.safety_guard.evaluate(data))
         data.update(self.action_controller.evaluate(data))
         test_data = self.physical_test.data

@@ -7,13 +7,13 @@ Het project wordt ontwikkeld als een lokale, modulaire EMS-laag bovenop Home Ass
 > **Status:** experimentele alpha  
 > **Domein:** `anker_ems`  
 > **Minimale Home Assistant-versie:** 2026.7.0  
-> **Huidige ontwikkelversie:** `0.0.1-alpha.31`
+> **Huidige ontwikkelversie:** `0.0.1-alpha.32`
 
-### Alpha31 - Automatic Pending Plan Reconciliation
+### Alpha32 - Pre-Start Safety Validation
 
-Alpha31 makes rolling Scheduler plans revision-safe. A stable `planner_identity` identifies the planned action, while `planner_signature` represents the latest calculated revision. Future planner-owned pending plans may be updated when forecast/SOC changes alter power, target SOC or expected energy. Planner-owned pending actions that disappear from the current preview are cleared, while plans at or past their planned start are frozen. Automatic physical execution remains disabled.
+Alpha32 adds a dedicated observational safety gate immediately before an automatic Scheduler-ready plan could proceed to execution. The gate rechecks planner validity, forecast readiness, the 2% execution buffer, Action Bridge validity, current SOC, target SOC, execution reserve and stable `planner_identity`. A changed planner revision is reported as a warning. Automatic physical execution remains disabled.
 
-> **Alpha31:** pending-plan reconciliatie en gecontroleerde Scheduler-handoff zijn actief; automatische fysieke uitvoering blijft uitgeschakeld.
+> **Alpha32:** pre-start veiligheidsvalidatie is actief; Scheduler-handoff blijft actief en automatische fysieke uitvoering blijft uitgeschakeld.
 
 ---
 

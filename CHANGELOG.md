@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.0.1-alpha.32 - Pre-Start Safety Validation
+
+- Adds a dedicated observational pre-start safety gate for automatic Scheduler-ready plans.
+- Revalidates the current 72-hour planner validity, forecast readiness, 2% execution buffer and Action Bridge validity immediately before an automatic plan would be eligible for execution.
+- Requires the Scheduler-selected automatic plan to still exist in the current rolling planner by stable `planner_identity`.
+- Rechecks current SOC against the stored target SOC and, for discharge actions, the current execution-reserve floor.
+- Reports a changed planner revision/signature as a warning while stable planner identity remains the hard continuity requirement.
+- Exposes pre-start diagnostics through the existing Action Bridge entity attributes; no new Home Assistant entities are added.
+- Automatic physical execution remains disabled and no Anker command is sent by the new validator.
+- Entity count remains unchanged at 105.
+
 ## 0.0.1-alpha.31 - Automatic Pending Plan Reconciliation
 
 - Separates stable `planner_identity` from mutable `planner_signature`.
