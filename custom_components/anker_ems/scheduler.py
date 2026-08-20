@@ -104,6 +104,7 @@ class AnkerEmsScheduler:
                 "origin": plan.get("origin", "manual"),
                 "purpose": plan.get("purpose"),
                 "planner_generated_at": plan.get("planner_generated_at"),
+                "planner_identity": plan.get("planner_identity"),
                 "planner_signature": plan.get("planner_signature"),
                 "selected": False,
                 "physical_control": False,

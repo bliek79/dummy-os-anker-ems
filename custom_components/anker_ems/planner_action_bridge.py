@@ -160,8 +160,35 @@ def _build_candidate(segment: list[dict[str, Any]], now_utc: datetime) -> dict[s
     }
 
 
+def _candidate_identity(candidate: dict[str, Any]) -> str:
+    """Return the stable planner-action identity independent of forecast revisions.
+
+    Alpha31 separates *which* action this is from the latest calculated values.
+    Source-hour anchors remain stable when SOC, power, target SOC or expected
+    energy are revised by a rolling 72-hour replan.
+    """
+    return "|".join(
+        [
+            str(candidate.get("action") or ""),
+            str(candidate.get("purpose") or ""),
+            ",".join(str(value) for value in candidate.get("source_hours") or []),
+            str(candidate.get("planned_end_time") or ""),
+        ]
+    )
+
+
+def _identity_from_signature(signature: Any) -> str | None:
+    """Derive Alpha31 identity from an Alpha29/30 six-part signature."""
+    if not isinstance(signature, str) or not signature:
+        return None
+    parts = signature.split("|")
+    if len(parts) < 4:
+        return None
+    return "|".join(parts[:4])
+
+
 def _candidate_signature(candidate: dict[str, Any]) -> str:
-    """Return stable identity for a planner action across coordinator refreshes."""
+    """Return the latest revision signature for a planner action."""
     signature_energy = round(float(candidate.get("expected_energy_kwh") or 0.0), 2)
     return "|".join(
         [
@@ -198,6 +225,7 @@ def build_planner_action_bridge(
         "auto_bridge_execution_enabled": False,
         "auto_bridge_rolling_window": True,
         "auto_bridge_slot_capacity": PLAN_SLOT_COUNT,
+        "auto_bridge_pending_reconciliation_enabled": True,
     }
 
     if not plan_valid or not isinstance(auto_plan, list) or not auto_plan:
@@ -284,18 +312,21 @@ def build_planner_action_bridge(
                 "manual_lifecycle_status": detail.get("lifecycle_status"),
                 "manual_origin": detail.get("origin"),
                 "planner_signature": detail.get("planner_signature"),
+                "planner_identity": detail.get("planner_identity") or _identity_from_signature(detail.get("planner_signature")),
             }
         )
 
-    # Alpha30 keeps planner-owned pending slots stable. First match a candidate
-    # to an already handed-off automatic slot by planner signature. Only new or
-    # changed candidates consume a reusable slot. This prevents a pending plan
-    # from being misreported as a manual conflict on the next coordinator poll.
+    # Alpha31 reconciles planner-owned pending slots by stable planner identity,
+    # not by the revision signature. Forecast/SOC changes may legitimately alter
+    # power, target SOC and expected energy while the underlying planned action
+    # (purpose + source hour(s)) remains the same.
     preview: list[dict[str, Any]] = []
     used_slots: set[int] = set()
     for candidate in candidates[:PLAN_SLOT_COUNT]:
         enriched = dict(candidate)
+        identity = _candidate_identity(enriched)
         signature = _candidate_signature(enriched)
+        enriched["planner_identity"] = identity
         enriched["planner_signature"] = signature
 
         matched = next(
@@ -305,7 +336,7 @@ def build_planner_action_bridge(
                 if item["slot"] not in used_slots
                 and item.get("manual_origin") == "automatic_72h_planner"
                 and str(item.get("manual_lifecycle_status") or "").lower() == "pending"
-                and item.get("planner_signature") == signature
+                and item.get("planner_identity") == identity
             ),
             None,
         )
@@ -334,8 +365,10 @@ def build_planner_action_bridge(
         enriched["plan_store_write_permitted"] = bool(
             candidate.get("valid")
             and actual_slot is not None
-            and not automatic_pending_match
-            and actual_slot.get("available_for_automatic_write")
+            and (
+                automatic_pending_match
+                or actual_slot.get("available_for_automatic_write")
+            )
         )
         enriched["scheduler_handoff_permitted"] = bool(
             candidate.get("valid") and actual_slot is not None
@@ -397,8 +430,8 @@ def build_planner_action_bridge(
         "auto_bridge_manual_slot_conflict": preview_conflicts > 0,
         "auto_bridge_manual_slot_conflict_count": preview_conflicts,
         "auto_bridge_note": (
-            "Alpha30 schrijft geldige geforceerde netlaad- en netontlaadvoorstellen naar vrije Plan Store-slots en "
-            "promoveert matching planner-owned concepts gecontroleerd naar pending voor de Scheduler. "
+            "Alpha31 reconcileert planner-owned pending plannen op stabiele planner identity, werkt toekomstige "
+            "pending revisies gecontroleerd bij en ruimt vervallen automatische pending plannen op. "
             "Fysieke automatische uitvoering blijft uitgeschakeld."
         ),
     }

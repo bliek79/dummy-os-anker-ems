@@ -1,3 +1,16 @@
+# Changelog
+
+## 0.0.1-alpha.31 - Automatic Pending Plan Reconciliation
+
+- Separates stable `planner_identity` from mutable `planner_signature`.
+- Matches planner-owned pending plans by action identity instead of exact forecast revision.
+- Reconciles future pending plans when target SOC, power or expected energy changes.
+- Clears stale future planner-owned pending plans that disappear from the rolling 72-hour preview.
+- Freezes automatic plans at their planned start so Scheduler-ready/due plans are not rewritten.
+- Keeps manual/user-edited plans protected.
+- Scheduler handoff remains enabled; automatic physical execution remains disabled.
+- Entity count remains unchanged.
+
 # 0.0.1-alpha.30
 
 ## Controlled Scheduler Handoff

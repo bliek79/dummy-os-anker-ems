@@ -37,6 +37,7 @@ DEFAULT_PLAN: dict[str, Any] = {
     "origin": "manual",
     "purpose": None,
     "planner_generated_at": None,
+    "planner_identity": None,
     "planner_signature": None,
 }
 
@@ -108,6 +109,7 @@ class AnkerEmsPlanStore:
         self._plans[slot]["origin"] = "manual"
         self._plans[slot]["purpose"] = None
         self._plans[slot]["planner_generated_at"] = None
+        self._plans[slot]["planner_identity"] = None
         self._plans[slot]["planner_signature"] = None
         # Any user edit makes a terminal/active plan eligible for a fresh
         # lifecycle. This prevents completed plans from silently becoming
@@ -124,9 +126,10 @@ class AnkerEmsPlanStore:
     ) -> dict[str, Any]:
         """Atomically sync observer-approved planner proposals into free slots.
 
-        Alpha30 first stores generated plans as ``concept``. A separate guarded
-        handoff may then promote matching automatic concepts to ``pending``.
-        Existing non-terminal manual plans are never overwritten.
+        Alpha31 also reconciles future planner-owned ``pending`` plans. The
+        stable planner identity determines whether a rolling forecast revision
+        belongs to the same action; the revision signature may then change.
+        Manual plans and automatic plans that are already due are never rewritten.
         """
         changed_slots: list[int] = []
         written_slots: list[int] = []
@@ -139,6 +142,31 @@ class AnkerEmsPlanStore:
             status = str(plan.get("lifecycle_status") or "").lower()
             return action in (None, "geen") or status in {"geannuleerd", "voltooid", "fout"}
 
+        def derived_identity(plan: dict[str, Any]) -> str | None:
+            identity = plan.get("planner_identity")
+            if isinstance(identity, str) and identity:
+                return identity
+            signature = plan.get("planner_signature")
+            if not isinstance(signature, str) or not signature:
+                return None
+            parts = signature.split("|")
+            return "|".join(parts[:4]) if len(parts) >= 4 else None
+
+        def pending_revisable(plan: dict[str, Any]) -> bool:
+            if str(plan.get("origin") or "") != "automatic_72h_planner":
+                return False
+            if str(plan.get("lifecycle_status") or "").lower() != "pending":
+                return False
+            start_raw = plan.get("start_time")
+            start = dt_util.parse_datetime(str(start_raw)) if start_raw else None
+            if start is None:
+                return False
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+            # Freeze at the planned start. Once a plan can be Scheduler-ready,
+            # rolling forecast revisions must no longer rewrite it.
+            return dt_util.now() < start
+
         for slot in range(1, PLAN_SLOT_COUNT + 1):
             current = self._plans[slot]
             proposal = desired.get(slot)
@@ -146,6 +174,7 @@ class AnkerEmsPlanStore:
             current_lifecycle = str(current.get("lifecycle_status") or "").lower()
             reusable = (
                 (current_origin == "automatic_72h_planner" and current_lifecycle == "concept")
+                or pending_revisable(current)
                 or terminal(current)
             )
 
@@ -158,12 +187,23 @@ class AnkerEmsPlanStore:
                 for key in CONTROL_FIELDS:
                     if key in proposal:
                         new_plan[key] = proposal[key]
-                new_plan["lifecycle_status"] = "concept"
-                new_plan["lifecycle_reason"] = "automatic_preview_written_no_handoff"
+                keep_pending = (
+                    current_origin == "automatic_72h_planner"
+                    and current_lifecycle == "pending"
+                    and pending_revisable(current)
+                    and derived_identity(current) == proposal.get("planner_identity")
+                )
+                new_plan["lifecycle_status"] = "pending" if keep_pending else "concept"
+                new_plan["lifecycle_reason"] = (
+                    "automatic_pending_reconciled"
+                    if keep_pending
+                    else "automatic_preview_written_no_handoff"
+                )
                 new_plan["lifecycle_updated_at"] = now_iso
                 new_plan["origin"] = "automatic_72h_planner"
                 new_plan["purpose"] = proposal.get("purpose")
                 new_plan["planner_generated_at"] = now_iso
+                new_plan["planner_identity"] = proposal.get("planner_identity")
                 new_plan["planner_signature"] = proposal.get("planner_signature")
 
                 # Do not write persistent storage every coordinator poll. The
@@ -189,10 +229,12 @@ class AnkerEmsPlanStore:
                     written_slots.append(slot)
                 continue
 
-            # Only clear stale planner-owned concepts. Manual slots are untouched.
+            # Clear stale planner-owned concepts and future pending actions that
+            # disappeared from the latest rolling planner. Due/started pending
+            # actions are frozen and manual slots are never touched.
             if (
                 current_origin == "automatic_72h_planner"
-                and current_lifecycle == "concept"
+                and (current_lifecycle == "concept" or pending_revisable(current))
             ):
                 already_cleared = (
                     current.get("action") in (None, "geen")
@@ -224,13 +266,12 @@ class AnkerEmsPlanStore:
     async def async_handoff_automatic_plans(
         self, allowed: dict[int, str]
     ) -> dict[str, Any]:
-        """Promote matching planner-owned concepts to Scheduler-visible pending.
+        """Promote matching concepts, or validate reconciled pending revisions.
 
-        The caller must already have passed planner, forecast and execution-buffer
-        gates. A slot is promoted only when it is still planner-owned, still a
-        concept, and its persistent planner signature exactly matches the current
-        bridge proposal. This makes the handoff deterministic and prevents stale
-        or user-edited plans from entering the Scheduler.
+        The caller has already passed planner, forecast and execution-buffer gates.
+        Alpha31 permits an already-pending planner-owned slot when its latest
+        persistent revision signature matches the bridge proposal. Physical
+        execution remains disabled elsewhere.
         """
         handed_off: list[int] = []
         skipped: list[int] = []
@@ -241,9 +282,10 @@ class AnkerEmsPlanStore:
                 skipped.append(slot)
                 continue
             plan = self._plans[slot]
+            lifecycle = str(plan.get("lifecycle_status") or "").lower()
             if (
                 plan.get("origin") != "automatic_72h_planner"
-                or str(plan.get("lifecycle_status") or "").lower() != "concept"
+                or lifecycle not in {"concept", "pending"}
                 or not signature
                 or plan.get("planner_signature") != signature
                 or plan.get("action") not in {"laden", "ontladen"}
@@ -267,10 +309,11 @@ class AnkerEmsPlanStore:
                 skipped.append(slot)
                 continue
 
-            plan["lifecycle_status"] = "pending"
-            plan["lifecycle_reason"] = "automatic_scheduler_handoff"
-            plan["lifecycle_updated_at"] = now_iso
-            handed_off.append(slot)
+            if lifecycle == "concept":
+                plan["lifecycle_status"] = "pending"
+                plan["lifecycle_reason"] = "automatic_scheduler_handoff"
+                plan["lifecycle_updated_at"] = now_iso
+                handed_off.append(slot)
 
         if handed_off:
             await self._async_save()
