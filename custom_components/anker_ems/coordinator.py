@@ -511,6 +511,9 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         data["physical_test_active"] = bool(self.physical_test.data.get("active"))
         data["execution_active"] = bool(self.execution.data.get("active"))
         data.update(self.safety_guard.evaluate_automatic_handoff(data))
+        # Alpha37: expose the next automatic handoff into the Execution
+        # Controller as a non-actuating preview. No services are called here.
+        data.update(self.execution.evaluate_automatic_handoff(data))
 
         # Legacy Safety Guard / Action Controller remain available for the
         # existing manual execution path. The automatic Alpha35 handoff stops

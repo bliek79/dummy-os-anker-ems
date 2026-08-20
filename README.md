@@ -5,7 +5,7 @@
 > **Status:** experimental alpha  
 > **Domain:** `anker_ems`  
 > **Minimum Home Assistant:** 2026.7.0  
-> **Current version:** `0.0.1-alpha.36.3`
+> **Current version:** `0.0.1-alpha.37`
 
 The integration combines battery status, electricity prices, solar forecast, home-consumption forecast, safety limits and user choices into one local EMS layer. The architecture is deliberately split into planning, persistent plan storage, scheduling, safety validation and physical execution.
 
@@ -48,7 +48,8 @@ The current alpha supports:
 - stale automatic-plan cleanup;
 - pre-start safety validation;
 - time-aware pre-start diagnostics and dry-run blocker tests;
-- non-actuating Scheduler -> Safety Guard handoff for automatic start-ready plans.
+- non-actuating Scheduler -> Safety Guard handoff for automatic start-ready plans;
+- non-actuating Safety Guard -> Execution Controller handoff preview with final execution prerequisites;
 - centralized configurable charge/discharge power limits based on the electrical connection profile.
 
 **Automatic physical execution is still disabled.** Automatic plans may reach the Scheduler, but the current development phase stops before unattended battery commands are issued.
@@ -177,7 +178,7 @@ The Scheduler manages lifecycle timing, start windows and selection of plans. Au
 
 ### Safety Guard and Execution Controller
 
-The existing manual execution path has been physically validated for controlled charge/discharge, safe stop and return to `self_consumption`. The automatic planner path now reaches a dedicated non-actuating Safety Guard handoff after the authoritative pre-start gate. This stage validates the selected automatic plan and future control path but deliberately stops before the Execution Controller.
+The existing manual execution path has been physically validated for controlled charge/discharge, safe stop and return to `self_consumption`. The automatic planner path now reaches the Safety Guard and a non-actuating Execution Controller handoff preview after the authoritative pre-start gate. The preview validates the final controller-facing plan parameters and controller-idle/control-path prerequisites, but deliberately performs no mode switch, direction change, power setpoint or physical execution.
 
 ## Home Assistant entities
 
@@ -185,7 +186,7 @@ The integration currently creates **105 entities** across sensor, binary sensor,
 
 Technical entity IDs and friendly names use English naming. Dashboard labels may remain Dutch. Newly created visible integration names begin with **Dummy OS EMS**.
 
-For planner/scheduler development, `sensor.dummy_os_ems_bridge_candidates` exposes the most detailed bridge, Plan Store, Scheduler and pre-start diagnostics as attributes.
+For planner/scheduler development, `sensor.dummy_os_ems_bridge_candidates` exposes the most detailed bridge, Plan Store, Scheduler, pre-start, Safety Guard and Execution Controller handoff diagnostics as attributes.
 
 ## Services
 

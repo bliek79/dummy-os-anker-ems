@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.0.1-alpha.37 - Safety Guard to Execution Controller Handoff Preview
+
+- Adds the first automatic, non-actuating Safety Guard -> Execution Controller handoff preview.
+- Requires an automatic Scheduler-ready plan and a successful Safety Guard handoff before the execution handoff can become ready.
+- Revalidates planner identity, action, configured power limits, target SOC, runtime, control-path configuration, physical-test idle state and Execution Controller idle state.
+- Exposes the selected slot, action, power, target SOC, runtime, blockers and warnings through the existing Action Candidates sensor attributes.
+- Treats the future external-mode switch as an expected warning rather than performing it.
+- Marks final live revalidation as mandatory before any future physical command path may be enabled.
+- Keeps `execution_permitted` and physical control explicitly false; no Home Assistant control service is called by this new path.
+- Keeps centralized configurable charge/discharge limits from alpha36.3 unchanged.
+- No Home Assistant entities are added or removed; entity count remains 105.
+
 ## 0.0.1-alpha.36.3 - Correct Release Packaging
 
 - Repackages the alpha36.2 Options Flow compatibility fix from the verified corrected source tree.
