@@ -1,3 +1,35 @@
+# 0.0.1-alpha.27
+
+## Forward Reserve Precharge
+- Correctie van een timingfout in de dynamische veiligheidslading die in alpha26 zichtbaar werd bij een plotselinge stijging van de uitvoeringsreserve.
+- De planner behandelt de reserve die na een uur geldt nu als een echte einde-van-uur deadline.
+- Een toekomstige reservepiek moet daardoor al aan het einde van het voorafgaande planningsuur haalbaar zijn en wordt niet meer pas in het volgende uur gecorrigeerd.
+- Voor elke aantoonbare toekomstige uitvoeringsreservepiek wordt vooraf berekend hoeveel opgeslagen energie beschikbaar zal zijn uit start-SOC en gratis zonne-overschot.
+- Alleen het resterende tekort wordt als veiligheidslading uit het net gepland.
+- Dat tekort wordt verdeeld over de goedkoopste technisch haalbare uren vóór of op de reserve-deadline.
+- De 2 procentpunt uitvoeringsbuffer uit alpha25 blijft ongewijzigd.
+- Horizon-fallback zonder aantoonbare volgende bruikbare zonneperiode blijft behouden en creëert geen kunstmatige extra netlading.
+
+## Actiebrug
+- De observerende planner-naar-planslot brug uit alpha26 blijft aanwezig.
+- De brug blijft blokkeren zolang `execution_buffer_safe=false`.
+- Zodra de 72-uursplanner weer een veilige buffer berekent, kan de brug automatisch de netlaad-/netontlaadkandidaten tonen.
+
+## Veiligheid
+- `plan_store_write_enabled=false`.
+- `scheduler_handoff_enabled=false`.
+- `execution_enabled=false`.
+- Geen automatische planslot-write en geen fysieke batterijaansturing.
+
+## Te valideren
+- `execution_buffer_breach_hours` moet bij een technisch haalbaar plan terug naar 0.
+- `min_execution_headroom_soc` mag niet negatief zijn.
+- `Dummy OS EMS Automatisch plan uitvoeringsbuffer veilig` moet dan `on` worden.
+- De eerder waargenomen reservepiek rond een einde-van-uur overgang mag niet meer één uur te laat worden aangevuld.
+- Veiligheidslading mag alleen toenemen met de hoeveelheid die nodig is om de toekomstige reserve op tijd te halen.
+- Na een veilige plannerbuffer moet de alpha26 actiebrug weer actiekandidaten kunnen produceren.
+- Automatische fysieke uitvoering moet uitgeschakeld blijven.
+
 # 0.0.1-alpha.26
 
 ## Observerende planner-naar-planslot brug

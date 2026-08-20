@@ -59,7 +59,7 @@ def build_72h_plan_preview(
 ) -> dict[str, Any]:
     """Build a sequential 72-hour battery plan preview.
 
-    Alpha26 keeps the 72-hour planner observational only:
+    Alpha27 keeps the 72-hour planner observational only:
     - no plans are written to the three manual slots;
     - no Scheduler call is made;
     - no physical battery command is executed.
@@ -252,23 +252,34 @@ def build_72h_plan_preview(
     trade_energy_reserved_kwh = 0.0
 
     def _planned_dynamic_safety_charge_by_hour() -> dict[str, float]:
-        """Pre-plan dynamic safety charging in the cheapest feasible hours.
+        """Pre-plan safety energy before each future execution-reserve deadline.
 
-        Work backwards from each reserve peak and buy only the stored energy that
-        cannot be covered by the simulated starting battery and prior solar.
-        This is observer-only and intentionally conservative.
+        Alpha27 fixes the timing edge found in alpha26: the reserve that applies
+        *after* an hour must already be achievable by the end of that same hour.
+        The previous implementation looked at the reserve at the start of the
+        following hour, which could make a sharp reserve increase arrive one
+        hour too late.
+
+        For every local end-of-hour reserve peak we estimate how much stored
+        energy will be available from the starting SOC and free solar. Only the
+        remaining deficit is bought from the grid, allocated to the cheapest
+        technically feasible hour(s) at or before the deadline.
         """
         planned: dict[str, float] = {}
         if not rows:
             return planned
 
-        # Build reserve requirements first.
-        reserve_requirements = []
+        # A row's execution_floor_end is the requirement that must be met when
+        # that row finishes. Therefore requirement index N uses reserve(N + 1),
+        # but its charging deadline remains row N. This is the core alpha27 fix.
+        reserve_requirements: list[tuple[int, float, datetime | None]] = []
         for idx, _row in enumerate(rows):
-            execution_floor_kwh, _, _, next_solar = _execution_reserve(idx)
-            reserve_requirements.append((idx, execution_floor_kwh, next_solar))
+            execution_floor_end_kwh, _, _, next_solar = _execution_reserve(idx + 1)
+            reserve_requirements.append((idx, execution_floor_end_kwh, next_solar))
 
-        # Detect local reserve peaks that are tied to a real future usable-solar block.
+        # Detect local end-of-hour reserve peaks tied to a demonstrable future
+        # usable-solar block. Horizon-fallback hours deliberately do not create
+        # artificial precharge demand.
         peaks: list[tuple[int, float, datetime]] = []
         for idx, floor_kwh, next_solar in reserve_requirements:
             if next_solar is None:
@@ -282,11 +293,14 @@ def build_72h_plan_preview(
             if floor_kwh > prev_floor + _MIN_ENERGY_KWH and floor_kwh >= next_floor - _MIN_ENERGY_KWH:
                 peaks.append((idx, floor_kwh, next_solar))
 
-        for peak_idx, required_floor_kwh, next_solar in peaks:
-            # Estimate stored energy available at peak from initial SOC plus solar surplus,
-            # ignoring discretionary discharge. This prevents unnecessary safety charging.
+        for deadline_idx, required_floor_kwh, _next_solar in peaks:
+            # Estimate stored energy available at the end of the deadline hour
+            # from initial SOC + solar surplus + safety energy already allocated
+            # for an earlier reserve peak. Discretionary discharge is ignored
+            # here; the sequential planner later prevents discharge below the
+            # execution reserve itself.
             estimated_stored = capacity * start_soc / 100.0
-            for sim_idx in range(0, peak_idx + 1):
+            for sim_idx in range(0, deadline_idx + 1):
                 sim_row = rows[sim_idx]
                 frac = _hour_fraction(sim_row["time"], now_utc)
                 solar_surplus = max(
@@ -299,17 +313,18 @@ def build_72h_plan_preview(
                 )
                 key = sim_row["time"].isoformat()
                 if key in planned:
-                    estimated_stored = min(
-                        capacity,
-                        estimated_stored + planned[key],
-                    )
+                    estimated_stored = min(capacity, estimated_stored + planned[key])
 
             deficit_stored = max(0.0, required_floor_kwh - estimated_stored)
             if deficit_stored <= _MIN_ENERGY_KWH:
                 continue
 
-            candidates = []
-            for cand_idx in range(0, peak_idx + 1):
+            # Choose only hours that can physically contribute before the
+            # deadline, ordered by price and then time. Planned values are stored
+            # battery energy (after charge efficiency), matching the rest of the
+            # planner's safety-allocation model.
+            candidates: list[tuple[float, datetime, float]] = []
+            for cand_idx in range(0, deadline_idx + 1):
                 cand = rows[cand_idx]
                 price = cand["price"]
                 if price is None:
@@ -644,8 +659,8 @@ def build_72h_plan_preview(
         "auto_plan_72h_observational_only": True,
         "auto_plan_72h_execution_enabled": False,
         "auto_plan_72h_note": (
-            "Alpha26 behoudt de 2 procentpunt uitvoeringsbuffer boven de "
-            "dynamische reserve en gebruikt deze buffer bij veiligheidsladen en ontladen. "
+            "Alpha27 behoudt de 2 procentpunt uitvoeringsbuffer en plant toekomstige "
+            "reservepieken nu vóór hun echte einde-van-uur deadline vooruit. "
             "Er worden nog geen planslots gevuld en geen fysieke commando's uitgevoerd."
         ),
     }

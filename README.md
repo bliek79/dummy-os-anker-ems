@@ -7,7 +7,7 @@ Het project wordt ontwikkeld als een lokale, modulaire EMS-laag bovenop Home Ass
 > **Status:** experimentele alpha  
 > **Domein:** `anker_ems`  
 > **Minimale Home Assistant-versie:** 2026.7.0  
-> **Huidige ontwikkelversie:** `0.0.1-alpha.26`
+> **Huidige ontwikkelversie:** `0.0.1-alpha.27`
 
 ---
 
@@ -1071,6 +1071,36 @@ Nieuwe samenvattende diagnose:
 
 Automatische planslot-creatie, Scheduler-aanroep en fysieke planneruitvoering
 blijven in alpha25 bewust uitgeschakeld.
+
+
+### Alpha27 - Forward Reserve Precharge
+
+Alpha27 corrigeert de timing van dynamische veiligheidslading. In alpha26 kon een
+scherpe stijging van de uitvoeringsreserve pas zichtbaar worden in de overgang
+naar het volgende uur. Daardoor kon de planner op het einde van het voorafgaande
+uur tijdelijk onder de vereiste 2%-uitvoeringsbuffer uitkomen, terwijl een uur
+later de reserve weer precies werd gehaald.
+
+De planner behandelt de **uitvoeringsreserve na ieder planuur** nu als een echte
+deadline. Voor toekomstige lokale reservepieken wordt vooraf bepaald hoeveel
+opgeslagen energie op dat moment beschikbaar zal zijn uit:
+- de actuele start-SOC;
+- gratis verwacht zonne-overschot;
+- eerder toegewezen noodzakelijke veiligheidslading.
+
+Alleen wanneer dat samen onvoldoende is, plant de planner extra netlading. De
+benodigde opgeslagen energie wordt dan over de goedkoopste technisch haalbare
+uren vóór of op de deadline verdeeld. Hiermee blijft het uitgangspunt behouden:
+**geen netladen omdat een uur goedkoop is, maar alleen netladen wanneer een
+toekomstige noodzakelijke reserve anders niet tijdig haalbaar is.**
+
+De horizon-fallback uit alpha24.4 blijft gelden: wanneer binnen de resterende
+forecast geen volgende bruikbare zonneperiode aantoonbaar is, ontstaat daaruit
+geen kunstmatige volledige-horizon reserve of extra voorlading.
+
+De actiebrug uit alpha26 blijft observerend en blijft blokkeren wanneer de
+uitvoeringsbuffer niet veilig is. Plan Store-write, Scheduler-handoff en fysieke
+uitvoering blijven in alpha27 uitgeschakeld.
 
 
 ### Alpha26 - observerende planner-naar-planslot brug
