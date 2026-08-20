@@ -5,7 +5,7 @@
 > **Status:** experimental alpha  
 > **Domain:** `anker_ems`  
 > **Minimum Home Assistant:** 2026.7.0  
-> **Current version:** `0.0.1-alpha.38`
+> **Current version:** `0.0.1-alpha.39`
 
 The integration combines battery status, electricity prices, solar forecast, home-consumption forecast, safety limits and user choices into one local EMS layer. The architecture is deliberately split into planning, persistent plan storage, scheduling, safety validation and physical execution.
 

@@ -404,6 +404,62 @@ class AnkerEmsExecutionController:
             "auto_final_revalidation_physical_control": False,
         }
 
+    def evaluate_mode_switch_transaction(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Preview the guarded external-mode transaction without actuating.
+
+        Alpha39 turns the final revalidation result into an explicit transaction
+        plan for the future physical mode switch. No Home Assistant service is
+        called here. The preview requires a zero-power safety step, the mode
+        transition, control-source availability recheck and a final safe-return
+        path before direction/power execution may ever be enabled.
+        """
+        required = bool(data.get("auto_final_revalidation_required"))
+        safe = bool(data.get("auto_final_revalidation_safe"))
+        mode = data.get("operating_mode")
+        control_ok = bool(data.get("control_path_configured"))
+        controller_idle = not bool(data.get("execution_active"))
+        test_idle = not bool(data.get("physical_test_active"))
+        power = self._number_value(data.get("power_setpoint_w"))
+
+        blockers: list[str] = []
+        if required and not safe:
+            blockers.append("final_revalidation_not_safe")
+        if required and not control_ok:
+            blockers.append("control_path_not_configured")
+        if required and not controller_idle:
+            blockers.append("execution_controller_busy")
+        if required and not test_idle:
+            blockers.append("physical_test_active")
+
+        ready = required and safe and not blockers
+        steps = [
+            {"step": 1, "action": "zero_power_guard", "required": True, "physical": False},
+            {"step": 2, "action": "switch_third_party_control", "required": mode != _EXTERNAL_MODE, "physical": False},
+            {"step": 3, "action": "wait_external_controls", "required": True, "physical": False},
+            {"step": 4, "action": "post_mode_revalidation", "required": True, "physical": False},
+            {"step": 5, "action": "direction_and_power_handoff", "required": True, "physical": False, "enabled": False},
+            {"step": 6, "action": "safe_return_self_consumption", "required": True, "physical": False},
+        ]
+        return {
+            "auto_mode_switch_preview_enabled": True,
+            "auto_mode_switch_preview_required": required,
+            "auto_mode_switch_preview_ready": ready,
+            "auto_mode_switch_preview_status": "ready_observe" if ready else ("blocked" if required else "not_required"),
+            "auto_mode_switch_preview_reason": (
+                "Mode-switch transaction is gereed als observerende stap; fysieke mode-switch blijft uit"
+                if ready else (", ".join(blockers) if blockers else "Geen finale revalidatie actief")
+            ),
+            "auto_mode_switch_preview_blockers": blockers,
+            "auto_mode_switch_preview_steps": steps,
+            "auto_mode_switch_preview_current_mode": mode,
+            "auto_mode_switch_preview_power_setpoint_w": power,
+            "auto_mode_switch_preview_zero_power_guard_required": power is None or abs(power) > 1,
+            "auto_mode_switch_preview_post_mode_revalidation_required": True,
+            "auto_mode_switch_preview_safe_return_required": True,
+            "auto_mode_switch_preview_execution_permitted": False,
+            "auto_mode_switch_preview_physical_control": False,
+        }
+
     @staticmethod
     def _number_value(value: Any) -> float | None:
         try:

@@ -1,4 +1,15 @@
-## 0.0.1-alpha.38 - Final Live Revalidation Preview
+# Changelog
+
+## 0.0.1-alpha.39
+
+### Mode Switch Transaction Preview
+- Adds an explicit observer-only transaction preview after Final Live Revalidation.
+- Defines the future safe sequence: zero-power guard, `third_party_control` switch, wait for external controls, post-mode revalidation, direction/power handoff, and guaranteed safe return to `self_consumption`.
+- Exposes readiness, blockers, current mode, current setpoint and zero-power-guard requirement on Action Candidates.
+- Does not call Home Assistant control services. Automatic physical execution remains disabled.
+- Entity count remains unchanged.
+
+## 0.0.1-alpha.39 - Final Live Revalidation Preview
 
 - Added a final non-actuating live revalidation stage after the Execution Controller handoff preview.
 - Rechecks Scheduler selection, planner identity/revision, authoritative pre-start state, Safety Guard state, forecast readiness and execution-buffer safety.

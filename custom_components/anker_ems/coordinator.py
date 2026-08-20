@@ -516,6 +516,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # No Home Assistant control service is called by either stage.
         data.update(self.execution.evaluate_automatic_handoff(data))
         data.update(self.execution.evaluate_final_revalidation(data))
+        data.update(self.execution.evaluate_mode_switch_transaction(data))
 
         # Legacy Safety Guard / Action Controller remain available for the
         # existing manual execution path. The automatic Alpha35 handoff stops
