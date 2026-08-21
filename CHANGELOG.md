@@ -1,3 +1,12 @@
+## 0.0.1-alpha.52.1
+
+- Fixed Plan72 safety-precharge capacity accounting when solar charging and grid safety charging share the same hourly charge-power limit.
+- The safety pre-planner now subtracts forecast solar-surplus input from the charge-input headroom available for grid safety charging.
+- Prevents an execution-reserve miss such as SOC 79.9% versus required 80.9% during a partially elapsed hour.
+- Keeps the 2 percentage-point execution buffer strict; no safety gate was relaxed.
+- Keeps alpha52 two-stage Anker control-path readiness unchanged.
+- Automatic physical execution remains disabled; shadow-only behavior is unchanged.
+
 ## 0.0.1-alpha.52
 
 - Added two-stage Anker control-path readiness for automatic execution shadow validation.

@@ -334,7 +334,23 @@ def build_72h_plan_preview(
                 if price is None:
                     continue
                 fraction = _hour_fraction(cand["time"], now_utc)
-                max_stored = max_charge_power_w / 1000.0 * fraction * charge_eff
+
+                # Safety precharge and solar charging share the same physical
+                # charge-input ceiling.  The earlier alpha52 pre-planner used
+                # the complete inverter charge limit for grid safety charging
+                # and then the sequential planner correctly gave solar first
+                # priority.  During a partially elapsed hour this could make the
+                # pre-planner overestimate how much grid energy would actually
+                # fit, leaving the final SOC just below the execution reserve.
+                # Reserve only the grid-input headroom that remains after the
+                # forecast solar surplus for this hour has taken its share.
+                charge_input_limit = max_charge_power_w / 1000.0 * fraction
+                solar_surplus_input = max(
+                    0.0,
+                    (cand["solar_kwh"] - cand["home_kwh"]) * fraction,
+                )
+                available_grid_input = max(0.0, charge_input_limit - solar_surplus_input)
+                max_stored = available_grid_input * charge_eff
                 if max_stored <= _MIN_ENERGY_KWH:
                     continue
                 candidates.append((price, cand["time"], max_stored))

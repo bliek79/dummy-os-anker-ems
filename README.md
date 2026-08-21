@@ -5,7 +5,7 @@
 > **Status:** experimental alpha  
 > **Domain:** `anker_ems`  
 > **Minimum Home Assistant:** 2026.7.0  
-> **Current version:** `0.0.1-alpha.52`
+> **Current version:** `0.0.1-alpha.52.1`
 
 ### Alpha52 - Two-Stage Control Path Readiness
 
