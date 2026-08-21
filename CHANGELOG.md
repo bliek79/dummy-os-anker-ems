@@ -901,3 +901,12 @@ Still disabled in alpha29:
 - Eerste config flow.
 - Eerste coordinator.
 - Eerste read-only sensoren.
+
+## 0.0.1-alpha.40.8 - Minimal Options Flow Recovery
+
+- Rebuilt the Options Flow from the last known working alpha36.3 pattern.
+- Removed all non-essential planner/forecast/monitor fields from the Options Flow for this validation release.
+- Options now expose only electrical profile, charge/discharge limits, market-price architecture, market-price source, import/export markup and tariff resolution.
+- Preserves existing hidden options when saving the minimal form.
+- Reconfigure remains limited to setup-critical Anker entities.
+- Existing planner, Recorder optimizations and Control Path Readiness behavior are unchanged.

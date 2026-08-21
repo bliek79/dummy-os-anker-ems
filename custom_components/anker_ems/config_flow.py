@@ -230,22 +230,21 @@ class AnkerEmsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     @staticmethod
-    @callback
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
-        """Return the native Home Assistant options flow."""
+        """Return a deliberately minimal, proven Options Flow."""
         return AnkerEmsOptionsFlow()
 
 
 class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
-    """Options Flow for tunable EMS, price and planner settings."""
+    """Minimal Options Flow for electrical and price architecture settings."""
 
     async def async_step_init(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Manage optional Dummy OS EMS settings."""
+        """Manage the stable core options only."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -260,111 +259,126 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
             if charge > profile_cap or discharge > profile_cap:
                 errors["base"] = "power_above_profile_limit"
             else:
-                # The integration's existing config-entry update listener reloads
-                # the integration after options are stored.
-                return self.async_create_entry(title="", data=user_input)
+                merged = dict(self.config_entry.options)
+                merged.update(user_input)
+                return self.async_create_entry(title="", data=merged)
 
         return self.async_show_form(
             step_id="init",
-            data_schema=self.add_suggested_values_to_schema(
-                self._options_schema(), self._suggested_values(user_input)
-            ),
+            data_schema=self._options_schema(user_input),
             errors=errors,
         )
 
-    def _suggested_values(self, user_input: dict[str, Any] | None) -> dict[str, Any]:
-        """Build safe suggested values without passing invalid selector defaults."""
-        if user_input is not None:
-            return dict(user_input)
-
-        options = self.config_entry.options
-        data = self.config_entry.data
-
-        def current(key: str, default: Any) -> Any:
-            return options.get(key, data.get(key, default))
-
-        return {
-            CONF_ELECTRICAL_PROFILE: current(CONF_ELECTRICAL_PROFILE, DEFAULT_ELECTRICAL_PROFILE),
-            CONF_MAX_CHARGE_POWER_W: current(CONF_MAX_CHARGE_POWER_W, DEFAULT_SHARED_MAX_POWER_W),
-            CONF_MAX_DISCHARGE_POWER_W: current(CONF_MAX_DISCHARGE_POWER_W, DEFAULT_SHARED_MAX_POWER_W),
-            CONF_MARKET_PRICE_ARCHITECTURE_ENABLED: current(CONF_MARKET_PRICE_ARCHITECTURE_ENABLED, False),
-            CONF_MARKET_PRICE_ENTITY: current(CONF_MARKET_PRICE_ENTITY, DEFAULT_MARKET_PRICE_ENTITY),
-            CONF_IMPORT_MARKUP_PER_KWH: current(CONF_IMPORT_MARKUP_PER_KWH, DEFAULT_IMPORT_MARKUP_PER_KWH),
-            CONF_EXPORT_MARKUP_PER_KWH: current(CONF_EXPORT_MARKUP_PER_KWH, DEFAULT_EXPORT_MARKUP_PER_KWH),
-            CONF_TARIFF_RESOLUTION: current(CONF_TARIFF_RESOLUTION, DEFAULT_TARIFF_RESOLUTION),
-            CONF_KNOWN_PRICE_ENTITY: current(CONF_KNOWN_PRICE_ENTITY, DEFAULT_KNOWN_PRICE_ENTITY),
-            CONF_FORECAST_PRICE_ENTITY: current(CONF_FORECAST_PRICE_ENTITY, DEFAULT_FORECAST_PRICE_ENTITY),
-            CONF_HOME_FORECAST_ENTITY: current(CONF_HOME_FORECAST_ENTITY, DEFAULT_HOME_FORECAST_ENTITY),
-            CONF_SOLAR_TODAY_ENTITY: current(CONF_SOLAR_TODAY_ENTITY, DEFAULT_SOLAR_TODAY_ENTITY),
-            CONF_SOLAR_TOMORROW_ENTITY: current(CONF_SOLAR_TOMORROW_ENTITY, DEFAULT_SOLAR_TOMORROW_ENTITY),
-            CONF_SOLAR_DAY3_ENTITY: current(CONF_SOLAR_DAY3_ENTITY, DEFAULT_SOLAR_DAY3_ENTITY),
-            CONF_SOFTWARE_RESERVE_PERCENT: current(CONF_SOFTWARE_RESERVE_PERCENT, DEFAULT_SOFTWARE_RESERVE_PERCENT),
-            CONF_CHARGE_EFFICIENCY_PERCENT: current(CONF_CHARGE_EFFICIENCY_PERCENT, DEFAULT_CHARGE_EFFICIENCY_PERCENT),
-            CONF_DISCHARGE_EFFICIENCY_PERCENT: current(CONF_DISCHARGE_EFFICIENCY_PERCENT, DEFAULT_DISCHARGE_EFFICIENCY_PERCENT),
-            CONF_MINIMUM_TRADE_MARGIN: current(CONF_MINIMUM_TRADE_MARGIN, DEFAULT_MINIMUM_TRADE_MARGIN),
-            CONF_MONITOR_ENERGYZERO_ENTITY: current(CONF_MONITOR_ENERGYZERO_ENTITY, DEFAULT_MONITOR_ENERGYZERO_ENTITY),
-            CONF_MONITOR_STROOMVOORSPELLER_ENTITY: current(CONF_MONITOR_STROOMVOORSPELLER_ENTITY, DEFAULT_MONITOR_STROOMVOORSPELLER_ENTITY),
-            CONF_MONITOR_SOLCAST_API_ENTITY: current(CONF_MONITOR_SOLCAST_API_ENTITY, DEFAULT_MONITOR_SOLCAST_API_ENTITY),
-        }
-
-    @staticmethod
-    def _options_schema() -> vol.Schema:
-        """Return a stable schema; values are injected with suggested-values helper."""
-        return vol.Schema(
-            {
-                vol.Required(CONF_ELECTRICAL_PROFILE): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[
-                            selector.SelectOptionDict(value=ELECTRICAL_PROFILE_DEDICATED, label="Eigen groep"),
-                            selector.SelectOptionDict(value=ELECTRICAL_PROFILE_SHARED, label="Geen eigen groep / gedeelde groep"),
-                        ],
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Required(CONF_MAX_CHARGE_POWER_W): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=100, max=ABSOLUTE_MAX_CHARGE_POWER_W, step=100, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="W")
-                ),
-                vol.Required(CONF_MAX_DISCHARGE_POWER_W): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=100, max=ABSOLUTE_MAX_DISCHARGE_POWER_W, step=100, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="W")
-                ),
-                vol.Required(CONF_MARKET_PRICE_ARCHITECTURE_ENABLED): selector.BooleanSelector(),
-                vol.Required(CONF_MARKET_PRICE_ENTITY): _entity_selector("sensor"),
-                vol.Required(CONF_IMPORT_MARKUP_PER_KWH): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=-1.0, max=1.0, step=0.0001, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="EUR/kWh")
-                ),
-                vol.Required(CONF_EXPORT_MARKUP_PER_KWH): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=-1.0, max=1.0, step=0.0001, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="EUR/kWh")
-                ),
-                vol.Required(CONF_TARIFF_RESOLUTION): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[
-                            selector.SelectOptionDict(value=TARIFF_RESOLUTION_HOURLY, label="Per uur"),
-                            selector.SelectOptionDict(value=TARIFF_RESOLUTION_QUARTER_HOURLY, label="Per kwartier"),
-                        ],
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Required(CONF_KNOWN_PRICE_ENTITY): _entity_selector("sensor"),
-                vol.Required(CONF_FORECAST_PRICE_ENTITY): _entity_selector("sensor"),
-                vol.Required(CONF_HOME_FORECAST_ENTITY): _entity_selector("sensor"),
-                vol.Required(CONF_SOLAR_TODAY_ENTITY): _entity_selector("sensor"),
-                vol.Required(CONF_SOLAR_TOMORROW_ENTITY): _entity_selector("sensor"),
-                vol.Required(CONF_SOLAR_DAY3_ENTITY): _entity_selector("sensor"),
-                vol.Required(CONF_SOFTWARE_RESERVE_PERCENT): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=0, max=30, step=1, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="%")
-                ),
-                vol.Required(CONF_CHARGE_EFFICIENCY_PERCENT): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=50, max=100, step=0.5, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="%")
-                ),
-                vol.Required(CONF_DISCHARGE_EFFICIENCY_PERCENT): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=50, max=100, step=0.5, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="%")
-                ),
-                vol.Required(CONF_MINIMUM_TRADE_MARGIN): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=0, max=1, step=0.01, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="EUR/kWh")
-                ),
-                vol.Required(CONF_MONITOR_ENERGYZERO_ENTITY): _entity_selector("sensor"),
-                vol.Required(CONF_MONITOR_STROOMVOORSPELLER_ENTITY): _entity_selector("sensor"),
-                vol.Required(CONF_MONITOR_SOLCAST_API_ENTITY): _entity_selector(),
-            }
+    def _current(self, key: str, default: Any) -> Any:
+        """Read option first, then original config-entry data, then default."""
+        return self.config_entry.options.get(
+            key, self.config_entry.data.get(key, default)
         )
 
+    def _options_schema(self, values: dict[str, Any] | None = None) -> vol.Schema:
+        """Return the smallest stable options schema needed for alpha40.8."""
+        values = values or {}
+
+        def value(key: str, default: Any) -> Any:
+            return values.get(key, self._current(key, default))
+
+        return vol.Schema(
+            {
+                vol.Optional(
+                    CONF_ELECTRICAL_PROFILE,
+                    default=value(CONF_ELECTRICAL_PROFILE, DEFAULT_ELECTRICAL_PROFILE),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(
+                                value=ELECTRICAL_PROFILE_DEDICATED, label="Eigen groep"
+                            ),
+                            selector.SelectOptionDict(
+                                value=ELECTRICAL_PROFILE_SHARED,
+                                label="Geen eigen groep / gedeelde groep",
+                            ),
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(
+                    CONF_MAX_CHARGE_POWER_W,
+                    default=value(
+                        CONF_MAX_CHARGE_POWER_W, DEFAULT_SHARED_MAX_POWER_W
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=100,
+                        max=ABSOLUTE_MAX_CHARGE_POWER_W,
+                        step=100,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="W",
+                    )
+                ),
+                vol.Optional(
+                    CONF_MAX_DISCHARGE_POWER_W,
+                    default=value(
+                        CONF_MAX_DISCHARGE_POWER_W, DEFAULT_SHARED_MAX_POWER_W
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=100,
+                        max=ABSOLUTE_MAX_DISCHARGE_POWER_W,
+                        step=100,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="W",
+                    )
+                ),
+                vol.Optional(
+                    CONF_MARKET_PRICE_ARCHITECTURE_ENABLED,
+                    default=value(CONF_MARKET_PRICE_ARCHITECTURE_ENABLED, False),
+                ): selector.BooleanSelector(),
+                vol.Optional(
+                    CONF_MARKET_PRICE_ENTITY,
+                    default=value(CONF_MARKET_PRICE_ENTITY, DEFAULT_MARKET_PRICE_ENTITY),
+                ): _entity_selector("sensor"),
+                vol.Optional(
+                    CONF_IMPORT_MARKUP_PER_KWH,
+                    default=value(
+                        CONF_IMPORT_MARKUP_PER_KWH, DEFAULT_IMPORT_MARKUP_PER_KWH
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=-1.0,
+                        max=1.0,
+                        step=0.0001,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_EXPORT_MARKUP_PER_KWH,
+                    default=value(
+                        CONF_EXPORT_MARKUP_PER_KWH, DEFAULT_EXPORT_MARKUP_PER_KWH
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=-1.0,
+                        max=1.0,
+                        step=0.0001,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_TARIFF_RESOLUTION,
+                    default=value(CONF_TARIFF_RESOLUTION, DEFAULT_TARIFF_RESOLUTION),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(
+                                value=TARIFF_RESOLUTION_HOURLY, label="Per uur"
+                            ),
+                            selector.SelectOptionDict(
+                                value=TARIFF_RESOLUTION_QUARTER_HOURLY,
+                                label="Per kwartier",
+                            ),
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+            }
+        )
