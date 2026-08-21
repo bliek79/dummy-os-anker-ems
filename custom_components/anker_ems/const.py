@@ -2,7 +2,7 @@ from __future__ import annotations
 
 DOMAIN = "anker_ems"
 NAME = "Dummy OS EMS"
-VERSION = "0.0.1-alpha.46.1"
+VERSION = "0.0.1-alpha.47"
 
 CONF_SIMULATION_MODE = "simulation_mode"
 
@@ -47,7 +47,7 @@ TARIFF_RESOLUTION_QUARTER_HOURLY = "quarter_hourly"
 DEFAULT_TARIFF_RESOLUTION = TARIFF_RESOLUTION_HOURLY
 DEFAULT_MARKET_PRICE_ENTITY = "sensor.stroomvoorspeller_data"
 DEFAULT_IMPORT_MARKUP_PER_KWH = 0.1288
-DEFAULT_EXPORT_MARKUP_PER_KWH = 0.0
+DEFAULT_EXPORT_MARKUP_PER_KWH = 0.1288
 
 CONF_KNOWN_PRICE_ENTITY = "known_price_entity"
 CONF_FORECAST_PRICE_ENTITY = "forecast_price_entity"

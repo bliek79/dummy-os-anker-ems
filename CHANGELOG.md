@@ -1,3 +1,25 @@
+## 0.0.1-alpha.47 - 2026-08-21
+
+### Options Flow rebuild - stap 6: exportmarkup
+- Alpha46.1 is live geslaagd: de HA-veilige numerieke invoer voor `import_markup_per_kwh` opent zonder 400-fout en blijft na opslaan op `0.1288 €/kWh` staan.
+- Daarmee is de eerdere 400-fout reproduceerbaar herleid tot de fijnmazige Home Assistant `NumberSelector`-opbouw voor markupvelden.
+- Alpha47 behoudt de zes live gevalideerde velden en voegt uitsluitend `export_markup_per_kwh` toe.
+- Exportmarkup gebruikt exact dezelfde veilige Voluptuous float-validatie als de importmarkup (`vol.Coerce(float)` + bereik -1.0 t/m 2.0).
+- De actuele exportmarkup voor deze installatie is ingesteld op `0.1288 €/kWh`.
+- Bestaande opgeslagen exportmarkup krijgt voorrang; fallback is `0.1288`.
+- Importmarkup blijft `0.1288 €/kWh` en alle eerder bewezen Options blijven behouden.
+- Uur-/kwartierresolutie is nog niet toegevoegd en volgt als afzonderlijke vervolgstap.
+- Geen wijziging aan Plan72, Scheduler, Safety Guard, Execution Controller of fysieke batterijbesturing.
+
+### Live validatie
+1. Controleer dat Home Assistant `0.0.1-alpha.47` toont.
+2. Open **Configureren**.
+3. Verwacht zeven velden; onderaan staan **Importmarkup** en **Exportmarkup**.
+4. Voor de huidige installatie verwacht je voor beide `0.1288 €/kWh`.
+5. Klik **Verzenden** en open **Configureren** opnieuw.
+6. Controleer dat beide markupwaarden behouden blijven.
+7. Indien succesvol: de volgende stap voegt uitsluitend de keuze **60 minuten / 15 minuten** toe.
+
 ## 0.0.1-alpha.46.1 - 2026-08-21
 
 - Reparatie van de Options Flow na de live vastgestelde 400-fout in alpha46.

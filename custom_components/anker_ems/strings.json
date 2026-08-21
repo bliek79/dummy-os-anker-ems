@@ -62,14 +62,15 @@
     "step": {
       "init": {
         "title": "EMS instellingen - stap 5 importmarkup",
-        "description": "Alpha46 behoudt de vijf live gevalideerde velden en voegt uitsluitend de importmarkup toe. Huidige importmarkup: €0,1288/kWh. Exportmarkup en uur-/kwartierresolutie volgen in afzonderlijke vervolgstappen.",
+        "description": "Alpha47 behoudt de zes live gevalideerde velden en voegt uitsluitend de exportmarkup toe via dezelfde HA-veilige numerieke invoer. Huidige import- en exportmarkup: €0,1288/kWh. Uur-/kwartierresolutie volgt in de volgende stap.",
         "data": {
           "electrical_profile": "Aansluitprofiel",
           "max_charge_power_w": "Maximaal laadvermogen",
           "max_discharge_power_w": "Maximaal ontlaadvermogen",
           "market_price_architecture_enabled": "Nieuwe marktprijsarchitectuur gebruiken",
           "market_price_entity": "Marktprijsbron",
-          "import_markup_per_kwh": "Importmarkup (€/kWh)"
+          "import_markup_per_kwh": "Importmarkup (€/kWh)",
+          "export_markup_per_kwh": "Exportmarkup (€/kWh)"
         }
       }
     },

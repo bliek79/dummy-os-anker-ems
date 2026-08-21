@@ -245,7 +245,7 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Alpha46: add import markup to the validated price architecture fields."""
+        """Alpha47: add export markup using the HA-safe numeric schema."""
         current_profile = self.config_entry.options.get(
             CONF_ELECTRICAL_PROFILE,
             self.config_entry.data.get(
@@ -296,6 +296,15 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
                 ),
             )
         )
+        current_export_markup_per_kwh = float(
+            self.config_entry.options.get(
+                CONF_EXPORT_MARKUP_PER_KWH,
+                self.config_entry.data.get(
+                    CONF_EXPORT_MARKUP_PER_KWH,
+                    DEFAULT_EXPORT_MARKUP_PER_KWH,
+                ),
+            )
+        )
 
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -325,6 +334,9 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
                         ),
                         CONF_IMPORT_MARKUP_PER_KWH: float(
                             user_input[CONF_IMPORT_MARKUP_PER_KWH]
+                        ),
+                        CONF_EXPORT_MARKUP_PER_KWH: float(
+                            user_input[CONF_EXPORT_MARKUP_PER_KWH]
                         ),
                     }
                 )
@@ -385,6 +397,13 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
                 vol.Required(
                     CONF_IMPORT_MARKUP_PER_KWH,
                     default=current_import_markup_per_kwh,
+                ): vol.All(
+                    vol.Coerce(float),
+                    vol.Range(min=-1.0, max=2.0),
+                ),
+                vol.Required(
+                    CONF_EXPORT_MARKUP_PER_KWH,
+                    default=current_export_markup_per_kwh,
                 ): vol.All(
                     vol.Coerce(float),
                     vol.Range(min=-1.0, max=2.0),
