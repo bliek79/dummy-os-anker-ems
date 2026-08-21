@@ -9,6 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import config_validation as cv
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -47,6 +48,9 @@ from .entity_naming import async_migrate_entity_ids
 
 _LOGGER = logging.getLogger(__name__)
 _SCHEDULED_RETRY_SECONDS = 10
+
+# Dummy OS EMS is configured exclusively through Config Flow.
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
