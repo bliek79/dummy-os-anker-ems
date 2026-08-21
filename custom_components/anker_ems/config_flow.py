@@ -205,9 +205,20 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
 
     def _options_schema(self, values: dict[str, Any]) -> vol.Schema:
         options = self.config_entry.options
-        profile = str(values.get(CONF_ELECTRICAL_PROFILE, options.get(CONF_ELECTRICAL_PROFILE, self.config_entry.data.get(CONF_ELECTRICAL_PROFILE, DEFAULT_ELECTRICAL_PROFILE))))
-        default_charge = int(values.get(CONF_MAX_CHARGE_POWER_W, options.get(CONF_MAX_CHARGE_POWER_W, self.config_entry.data.get(CONF_MAX_CHARGE_POWER_W, DEFAULT_SHARED_MAX_POWER_W))))
-        default_discharge = int(values.get(CONF_MAX_DISCHARGE_POWER_W, options.get(CONF_MAX_DISCHARGE_POWER_W, self.config_entry.data.get(CONF_MAX_DISCHARGE_POWER_W, DEFAULT_SHARED_MAX_POWER_W))))
+        data = self.config_entry.data
+
+        def current(key: str, default: Any) -> Any:
+            return values.get(key, options.get(key, data.get(key, default)))
+
+        profile = str(current(CONF_ELECTRICAL_PROFILE, DEFAULT_ELECTRICAL_PROFILE))
+        default_charge = int(current(CONF_MAX_CHARGE_POWER_W, DEFAULT_SHARED_MAX_POWER_W))
+        default_discharge = int(current(CONF_MAX_DISCHARGE_POWER_W, DEFAULT_SHARED_MAX_POWER_W))
+        market_enabled = bool(current(CONF_MARKET_PRICE_ARCHITECTURE_ENABLED, False))
+        market_entity = str(current(CONF_MARKET_PRICE_ENTITY, DEFAULT_MARKET_PRICE_ENTITY))
+        import_markup = float(current(CONF_IMPORT_MARKUP_PER_KWH, DEFAULT_IMPORT_MARKUP_PER_KWH))
+        export_markup = float(current(CONF_EXPORT_MARKUP_PER_KWH, DEFAULT_EXPORT_MARKUP_PER_KWH))
+        tariff_resolution = str(current(CONF_TARIFF_RESOLUTION, DEFAULT_TARIFF_RESOLUTION))
+
         return vol.Schema(
             {
                 vol.Optional(CONF_ELECTRICAL_PROFILE, default=profile): selector.SelectSelector(
@@ -225,97 +236,43 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(CONF_MAX_DISCHARGE_POWER_W, default=default_discharge): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=100, max=ABSOLUTE_MAX_DISCHARGE_POWER_W, step=100, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="W")
                 ),
-                vol.Optional(
-                    CONF_MARKET_PRICE_ARCHITECTURE_ENABLED,
-    CONF_MARKET_PRICE_ENTITY,
-    CONF_IMPORT_MARKUP_PER_KWH,
-    CONF_EXPORT_MARKUP_PER_KWH,
-    CONF_TARIFF_RESOLUTION,
-    TARIFF_RESOLUTION_HOURLY,
-    TARIFF_RESOLUTION_QUARTER_HOURLY,
-    DEFAULT_TARIFF_RESOLUTION,
-    DEFAULT_MARKET_PRICE_ENTITY,
-    DEFAULT_IMPORT_MARKUP_PER_KWH,
-    DEFAULT_EXPORT_MARKUP_PER_KWH,
-    CONF_KNOWN_PRICE_ENTITY,
-                    default=options.get(CONF_KNOWN_PRICE_ENTITY, DEFAULT_KNOWN_PRICE_ENTITY),
-                ): _entity_selector("sensor"),
-                vol.Optional(
-                    CONF_FORECAST_PRICE_ENTITY,
-                    default=options.get(CONF_FORECAST_PRICE_ENTITY, DEFAULT_FORECAST_PRICE_ENTITY),
-                ): _entity_selector("sensor"),
-                vol.Optional(
-                    CONF_HOME_FORECAST_ENTITY,
-                    default=options.get(CONF_HOME_FORECAST_ENTITY, DEFAULT_HOME_FORECAST_ENTITY),
-                ): _entity_selector("sensor"),
-                vol.Optional(
-                    CONF_SOLAR_TODAY_ENTITY,
-                    default=options.get(CONF_SOLAR_TODAY_ENTITY, DEFAULT_SOLAR_TODAY_ENTITY),
-                ): _entity_selector("sensor"),
-                vol.Optional(
-                    CONF_SOLAR_TOMORROW_ENTITY,
-                    default=options.get(CONF_SOLAR_TOMORROW_ENTITY, DEFAULT_SOLAR_TOMORROW_ENTITY),
-                ): _entity_selector("sensor"),
-                vol.Optional(
-                    CONF_SOLAR_DAY3_ENTITY,
-                    default=options.get(CONF_SOLAR_DAY3_ENTITY, DEFAULT_SOLAR_DAY3_ENTITY),
-                ): _entity_selector("sensor"),
-                vol.Optional(
-                    CONF_SOFTWARE_RESERVE_PERCENT,
-                    default=options.get(
-                        CONF_SOFTWARE_RESERVE_PERCENT, DEFAULT_SOFTWARE_RESERVE_PERCENT
-                    ),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0, max=30, step=1, mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="%"
+                vol.Optional(CONF_MARKET_PRICE_ARCHITECTURE_ENABLED, default=market_enabled): selector.BooleanSelector(),
+                vol.Optional(CONF_MARKET_PRICE_ENTITY, default=market_entity): _entity_selector("sensor"),
+                vol.Optional(CONF_IMPORT_MARKUP_PER_KWH, default=import_markup): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=-1.0, max=1.0, step=0.0001, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="EUR/kWh")
+                ),
+                vol.Optional(CONF_EXPORT_MARKUP_PER_KWH, default=export_markup): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=-1.0, max=1.0, step=0.0001, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="EUR/kWh")
+                ),
+                vol.Optional(CONF_TARIFF_RESOLUTION, default=tariff_resolution): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value=TARIFF_RESOLUTION_HOURLY, label="Per uur"),
+                            selector.SelectOptionDict(value=TARIFF_RESOLUTION_QUARTER_HOURLY, label="Per kwartier"),
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
                     )
                 ),
-                vol.Optional(
-                    CONF_CHARGE_EFFICIENCY_PERCENT,
-                    default=options.get(
-                        CONF_CHARGE_EFFICIENCY_PERCENT, DEFAULT_CHARGE_EFFICIENCY_PERCENT
-                    ),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=50, max=100, step=1, mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="%"
-                    )
+                vol.Optional(CONF_KNOWN_PRICE_ENTITY, default=current(CONF_KNOWN_PRICE_ENTITY, DEFAULT_KNOWN_PRICE_ENTITY)): _entity_selector("sensor"),
+                vol.Optional(CONF_FORECAST_PRICE_ENTITY, default=current(CONF_FORECAST_PRICE_ENTITY, DEFAULT_FORECAST_PRICE_ENTITY)): _entity_selector("sensor"),
+                vol.Optional(CONF_HOME_FORECAST_ENTITY, default=current(CONF_HOME_FORECAST_ENTITY, DEFAULT_HOME_FORECAST_ENTITY)): _entity_selector("sensor"),
+                vol.Optional(CONF_SOLAR_TODAY_ENTITY, default=current(CONF_SOLAR_TODAY_ENTITY, DEFAULT_SOLAR_TODAY_ENTITY)): _entity_selector("sensor"),
+                vol.Optional(CONF_SOLAR_TOMORROW_ENTITY, default=current(CONF_SOLAR_TOMORROW_ENTITY, DEFAULT_SOLAR_TOMORROW_ENTITY)): _entity_selector("sensor"),
+                vol.Optional(CONF_SOLAR_DAY3_ENTITY, default=current(CONF_SOLAR_DAY3_ENTITY, DEFAULT_SOLAR_DAY3_ENTITY)): _entity_selector("sensor"),
+                vol.Optional(CONF_SOFTWARE_RESERVE_PERCENT, default=float(current(CONF_SOFTWARE_RESERVE_PERCENT, DEFAULT_SOFTWARE_RESERVE_PERCENT))): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=0, max=30, step=1, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="%")
                 ),
-                vol.Optional(
-                    CONF_DISCHARGE_EFFICIENCY_PERCENT,
-                    default=options.get(
-                        CONF_DISCHARGE_EFFICIENCY_PERCENT, DEFAULT_DISCHARGE_EFFICIENCY_PERCENT
-                    ),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=50, max=100, step=1, mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="%"
-                    )
+                vol.Optional(CONF_CHARGE_EFFICIENCY_PERCENT, default=float(current(CONF_CHARGE_EFFICIENCY_PERCENT, DEFAULT_CHARGE_EFFICIENCY_PERCENT))): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=50, max=100, step=0.5, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="%")
                 ),
-                vol.Optional(
-                    CONF_MINIMUM_TRADE_MARGIN,
-                    default=options.get(
-                        CONF_MINIMUM_TRADE_MARGIN, DEFAULT_MINIMUM_TRADE_MARGIN
-                    ),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0, max=1, step=0.01, mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="€/kWh"
-                    )
+                vol.Optional(CONF_DISCHARGE_EFFICIENCY_PERCENT, default=float(current(CONF_DISCHARGE_EFFICIENCY_PERCENT, DEFAULT_DISCHARGE_EFFICIENCY_PERCENT))): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=50, max=100, step=0.5, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="%")
                 ),
-                vol.Optional(
-                    CONF_MONITOR_ENERGYZERO_ENTITY,
-                    default=options.get(CONF_MONITOR_ENERGYZERO_ENTITY, DEFAULT_MONITOR_ENERGYZERO_ENTITY),
-                ): _entity_selector("sensor"),
-                vol.Optional(
-                    CONF_MONITOR_STROOMVOORSPELLER_ENTITY,
-                    default=options.get(CONF_MONITOR_STROOMVOORSPELLER_ENTITY, DEFAULT_MONITOR_STROOMVOORSPELLER_ENTITY),
-                ): _entity_selector("sensor"),
-                vol.Optional(
-                    CONF_MONITOR_SOLCAST_API_ENTITY,
-                    default=options.get(CONF_MONITOR_SOLCAST_API_ENTITY, DEFAULT_MONITOR_SOLCAST_API_ENTITY),
-                ): _entity_selector("sensor"),
+                vol.Optional(CONF_MINIMUM_TRADE_MARGIN, default=float(current(CONF_MINIMUM_TRADE_MARGIN, DEFAULT_MINIMUM_TRADE_MARGIN))): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=0, max=1, step=0.01, mode=selector.NumberSelectorMode.BOX, unit_of_measurement="EUR/kWh")
+                ),
+                vol.Optional(CONF_MONITOR_ENERGYZERO_ENTITY, default=current(CONF_MONITOR_ENERGYZERO_ENTITY, DEFAULT_MONITOR_ENERGYZERO_ENTITY)): _entity_selector("sensor"),
+                vol.Optional(CONF_MONITOR_STROOMVOORSPELLER_ENTITY, default=current(CONF_MONITOR_STROOMVOORSPELLER_ENTITY, DEFAULT_MONITOR_STROOMVOORSPELLER_ENTITY)): _entity_selector("sensor"),
+                vol.Optional(CONF_MONITOR_SOLCAST_API_ENTITY, default=current(CONF_MONITOR_SOLCAST_API_ENTITY, DEFAULT_MONITOR_SOLCAST_API_ENTITY)): _entity_selector(),
             }
         )
-

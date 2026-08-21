@@ -45,7 +45,7 @@
     "step": {
       "init": {
         "title": "EMS instellingen",
-        "description": "Pas marktprijsbron, import-/exportopslag, tariefresolutie, forecasts, reserve, rendement en centrale elektrische vermogenslimieten aan. Alpha40.4 laat de nieuwe prijslaag bewust opt-in en houdt zware forecast-attributen buiten Recorder.",
+        "description": "Pas marktprijsbron, import-/exportopslag, tariefresolutie, forecasts, reserve, rendement en centrale elektrische vermogenslimieten aan. Alpha40.5 herstelt de Options Flow en voegt een Anker Control Path Readiness Guard toe. De nieuwe prijslaag blijft opt-in en zware forecast-attributen blijven buiten Recorder.",
         "data": {
           "known_price_entity": "Bekende/all-in prijzen",
           "forecast_price_entity": "Prijsforecast",

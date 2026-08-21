@@ -518,6 +518,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return
         if physical_test.data.get("active"):
             return
+        readiness = execution.control_path_readiness()
+        if readiness.get("ready") is not True:
+            return
         if automatic_mode_switch_task is not None and not automatic_mode_switch_task.done():
             return
 

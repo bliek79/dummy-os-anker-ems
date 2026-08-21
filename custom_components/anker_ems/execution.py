@@ -20,6 +20,7 @@ _EXTERNAL_MODE = "third_party_control"
 _SELF_MODE = "self_consumption"
 _MODE_WAIT_SECONDS = 20
 _MONITOR_INTERVAL_SECONDS = 5
+_CONTROL_PATH_STABLE_SECONDS = 60
 
 
 class AnkerEmsExecutionController:
@@ -62,6 +63,10 @@ class AnkerEmsExecutionController:
             "auto_mode_switch_completed_at": None,
             "auto_mode_switch_last_identity": None,
             "auto_mode_switch_last_result": None,
+            "control_path_ready": False,
+            "control_path_ready_reason": "Nog niet gecontroleerd",
+            "control_path_stable_seconds": 0,
+            "control_path_required_stable_seconds": _CONTROL_PATH_STABLE_SECONDS,
         }
 
     def attach_coordinator(self, coordinator: Any) -> None:
@@ -110,6 +115,62 @@ class AnkerEmsExecutionController:
         if not power.startswith("number."):
             raise HomeAssistantError("Vermogenssetpoint moet een number-entiteit zijn")
         return mode, direction, power
+
+    def control_path_readiness(self) -> dict[str, Any]:
+        """Return startup readiness for the configured Anker control path.
+
+        Alpha40.5 deliberately requires every control entity to be available and
+        stable for 60 seconds before any automatic mode-switch transaction may
+        issue even the zero-power guard. This accommodates the relatively slow
+        Anker integration startup without relying on a blind fixed post-restart
+        timer.
+        """
+        try:
+            mode_entity, direction_entity, power_entity = self._entity_ids()
+        except HomeAssistantError as err:
+            return {
+                "ready": False,
+                "reason": str(err),
+                "stable_seconds": 0,
+                "required_stable_seconds": _CONTROL_PATH_STABLE_SECONDS,
+                "entities": {},
+            }
+
+        now = dt_util.now()
+        details: dict[str, Any] = {}
+        stable_values: list[float] = []
+        blockers: list[str] = []
+        for key, entity_id in (
+            ("operating_mode", mode_entity),
+            ("action_direction", direction_entity),
+            ("power_setpoint", power_entity),
+        ):
+            state = self.hass.states.get(entity_id)
+            available = state is not None and state.state not in {"unknown", "unavailable"}
+            stable_s = 0.0
+            if available and state is not None:
+                changed = state.last_changed
+                stable_s = max(0.0, (now - changed).total_seconds())
+                stable_values.append(stable_s)
+            if not available:
+                blockers.append(f"{key}_unavailable")
+            elif stable_s < _CONTROL_PATH_STABLE_SECONDS:
+                blockers.append(f"{key}_not_stable")
+            details[key] = {
+                "entity_id": entity_id,
+                "available": available,
+                "state": None if state is None else state.state,
+                "stable_seconds": round(stable_s, 1),
+            }
+
+        stable_seconds = min(stable_values) if len(stable_values) == 3 else 0.0
+        return {
+            "ready": not blockers,
+            "reason": "control_path_ready" if not blockers else ",".join(blockers),
+            "stable_seconds": round(stable_seconds, 1),
+            "required_stable_seconds": _CONTROL_PATH_STABLE_SECONDS,
+            "entities": details,
+        }
 
     async def _wait_for_external_controls(self) -> None:
         """Wait until external mode and its dependent control entities are live."""
@@ -499,6 +560,20 @@ class AnkerEmsExecutionController:
         if not identity or detail.get("origin") != "automatic_72h_planner":
             raise HomeAssistantError("Geen geldige automatische planner identity geselecteerd")
         if identity == self._state.get("auto_mode_switch_last_identity"):
+            return False
+
+        readiness = self.control_path_readiness()
+        self._state.update({
+            "control_path_ready": bool(readiness.get("ready")),
+            "control_path_ready_reason": readiness.get("reason"),
+            "control_path_stable_seconds": readiness.get("stable_seconds", 0),
+            "control_path_required_stable_seconds": readiness.get("required_stable_seconds", _CONTROL_PATH_STABLE_SECONDS),
+        })
+        await self._async_save()
+        if not readiness.get("ready"):
+            # Normal startup condition: do not touch the battery and do not mark
+            # the planner identity as failed/handled. A later coordinator update
+            # may retry after the Anker control path has become stable.
             return False
 
         mode_entity, _direction_entity, power_entity = self._entity_ids()

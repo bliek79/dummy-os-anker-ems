@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.0.1-alpha.40.5
+
+- Herstelt de Options Flow / Configureren-pagina voor de alpha40.3 prijsarchitectuur.
+- Marktprijsbron, importmarkup, exportmarkup en uur-/kwartierresolutie zijn weer configureerbaar.
+- Voegt een Control Path Readiness Guard toe voor de trager opstartende Anker-besturing.
+- Automatische mode-switch raakt de batterij pas aan nadat modus, richting en vermogenssetpoint minimaal 60 seconden beschikbaar en stabiel zijn.
+- Een nog niet gereed control path wordt als normale startup-conditie behandeld en markeert de planneractie niet als mislukt.
+- Bestaande Plan72- en forecast Recorder-optimalisaties blijven behouden.
+- Geen uitbreiding van niet-nul automatische laad-/ontlaadbesturing; alpha40 fysieke scope blijft ongewijzigd.
+- Aantal entiteiten blijft 105.
+
 ## 0.0.1-alpha.40.4 - Forecast Recorder Optimization
 
 - Fixes repeated Recorder warnings for `sensor.dummy_os_ems_forecast_status` exceeding Home Assistant's 16,384-byte state-attribute limit.
