@@ -5,7 +5,11 @@
 > **Status:** experimental alpha  
 > **Domain:** `anker_ems`  
 > **Minimum Home Assistant:** 2026.7.0  
-> **Current version:** `0.0.1-alpha.51.1`
+> **Current version:** `0.0.1-alpha.52`
+
+### Alpha52 - Two-Stage Control Path Readiness
+
+Alpha52 separates Anker control readiness into a pre-mode and post-mode stage. While the Solarbank is in `self_consumption`, only the operating-mode entity must be available and stable. Direction and power-setpoint become mandatory only after `third_party_control` is active. This removes the circular readiness dependency observed on live hardware. Automatic physical execution remains disabled; the release is shadow-only.
 
 The integration combines battery status, electricity prices, solar forecast, home-consumption forecast, safety limits and user choices into one local EMS layer. The architecture is deliberately split into planning, persistent plan storage, scheduling, safety validation and physical execution.
 

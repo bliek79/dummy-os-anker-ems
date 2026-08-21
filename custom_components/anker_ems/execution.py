@@ -118,13 +118,20 @@ class AnkerEmsExecutionController:
         return mode, direction, power
 
     def control_path_readiness(self) -> dict[str, Any]:
-        """Return startup readiness for the configured Anker control path.
+        """Return two-stage readiness for the configured Anker control path.
 
-        Alpha40.5 deliberately requires every control entity to be available and
-        stable for 60 seconds before any automatic mode-switch transaction may
-        issue even the zero-power guard. This accommodates the relatively slow
-        Anker integration startup without relying on a blind fixed post-restart
-        timer.
+        Alpha52 removes the circular readiness dependency discovered on the live
+        Solarbank Max AC: while the battery is in ``self_consumption`` the Anker
+        integration can intentionally expose direction and power-setpoint as
+        unavailable. Those controls are therefore post-mode requirements.
+
+        Stage 1 (pre-mode) requires only a configured, available and stable
+        operating-mode select. Stage 2 (post-mode) is evaluated only while the
+        device is actually in ``third_party_control`` and then requires direction
+        and power-setpoint to be available and stable for 60 seconds.
+
+        ``ready`` intentionally means "safe to reach the mode-switch boundary"
+        while still in self-consumption. It does not permit physical execution.
         """
         try:
             mode_entity, direction_entity, power_entity = self._entity_ids()
@@ -134,42 +141,86 @@ class AnkerEmsExecutionController:
                 "reason": str(err),
                 "stable_seconds": 0,
                 "required_stable_seconds": _CONTROL_PATH_STABLE_SECONDS,
+                "pre_mode_ready": False,
+                "pre_mode_reason": str(err),
+                "pre_mode_stable_seconds": 0,
+                "post_mode_ready": False,
+                "post_mode_reason": "control_path_not_configured",
+                "post_mode_stable_seconds": 0,
+                "post_mode_required": False,
                 "entities": {},
             }
 
         now = dt_util.now()
         details: dict[str, Any] = {}
-        stable_values: list[float] = []
-        blockers: list[str] = []
-        for key, entity_id in (
-            ("operating_mode", mode_entity),
-            ("action_direction", direction_entity),
-            ("power_setpoint", power_entity),
-        ):
+
+        def entity_detail(key: str, entity_id: str) -> dict[str, Any]:
             state = self.hass.states.get(entity_id)
             available = state is not None and state.state not in {"unknown", "unavailable"}
             stable_s = 0.0
             if available and state is not None:
-                changed = state.last_changed
-                stable_s = max(0.0, (now - changed).total_seconds())
-                stable_values.append(stable_s)
-            if not available:
-                blockers.append(f"{key}_unavailable")
-            elif stable_s < _CONTROL_PATH_STABLE_SECONDS:
-                blockers.append(f"{key}_not_stable")
-            details[key] = {
+                stable_s = max(0.0, (now - state.last_changed).total_seconds())
+            result = {
                 "entity_id": entity_id,
                 "available": available,
                 "state": None if state is None else state.state,
                 "stable_seconds": round(stable_s, 1),
             }
+            details[key] = result
+            return result
 
-        stable_seconds = min(stable_values) if len(stable_values) == 3 else 0.0
+        mode = entity_detail("operating_mode", mode_entity)
+        direction = entity_detail("action_direction", direction_entity)
+        power = entity_detail("power_setpoint", power_entity)
+
+        pre_blockers: list[str] = []
+        if not mode["available"]:
+            pre_blockers.append("operating_mode_unavailable")
+        elif mode["stable_seconds"] < _CONTROL_PATH_STABLE_SECONDS:
+            pre_blockers.append("operating_mode_not_stable")
+        pre_mode_ready = not pre_blockers
+        pre_mode_reason = "pre_mode_ready" if pre_mode_ready else ",".join(pre_blockers)
+        pre_mode_stable = mode["stable_seconds"] if mode["available"] else 0.0
+
+        external_active = mode["available"] and mode["state"] == _EXTERNAL_MODE
+        post_blockers: list[str] = []
+        if not external_active:
+            post_mode_ready = False
+            post_mode_reason = "awaiting_third_party_control"
+            post_mode_stable = 0.0
+        else:
+            for key, item in (("action_direction", direction), ("power_setpoint", power)):
+                if not item["available"]:
+                    post_blockers.append(f"{key}_unavailable")
+                elif item["stable_seconds"] < _CONTROL_PATH_STABLE_SECONDS:
+                    post_blockers.append(f"{key}_not_stable")
+            post_mode_ready = not post_blockers
+            post_mode_reason = "post_mode_ready" if post_mode_ready else ",".join(post_blockers)
+            post_mode_stable = (
+                min(direction["stable_seconds"], power["stable_seconds"])
+                if direction["available"] and power["available"]
+                else 0.0
+            )
+
+        ready = pre_mode_ready and (post_mode_ready if external_active else True)
+        reason = (
+            "control_path_ready"
+            if ready
+            else (post_mode_reason if external_active else pre_mode_reason)
+        )
+        stable_seconds = post_mode_stable if external_active else pre_mode_stable
         return {
-            "ready": not blockers,
-            "reason": "control_path_ready" if not blockers else ",".join(blockers),
+            "ready": ready,
+            "reason": reason,
             "stable_seconds": round(stable_seconds, 1),
             "required_stable_seconds": _CONTROL_PATH_STABLE_SECONDS,
+            "pre_mode_ready": pre_mode_ready,
+            "pre_mode_reason": pre_mode_reason,
+            "pre_mode_stable_seconds": round(pre_mode_stable, 1),
+            "post_mode_ready": post_mode_ready,
+            "post_mode_reason": post_mode_reason,
+            "post_mode_stable_seconds": round(post_mode_stable, 1),
+            "post_mode_required": external_active,
             "entities": details,
         }
 

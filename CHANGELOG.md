@@ -1,3 +1,14 @@
+## 0.0.1-alpha.52
+
+- Added two-stage Anker control-path readiness for automatic execution shadow validation.
+- Pre-mode readiness now requires only the operating-mode select to be configured, available and stable for 60 seconds.
+- Direction and power-setpoint are treated as post-mode requirements while the device remains in self_consumption.
+- Added explicit `pre_mode_ready`, `pre_mode_reason`, `post_mode_ready`, `post_mode_reason`, and post-mode-required diagnostics.
+- Added control-entity detail diagnostics to the Automatic Execution Shadow sensor.
+- `awaiting_third_party_control` is now reported instead of treating unavailable direction/setpoint in self_consumption as a control-path failure.
+- Automatic physical execution remains deliberately disabled; shadow execution only.
+- Updated integration version to 0.0.1-alpha.52.
+
 ## 0.0.1-alpha.51.1
 
 - Naming correction before first install: the new arm switch is now `Dummy OS EMS Automatic Execution` instead of the accidental Dutch label.

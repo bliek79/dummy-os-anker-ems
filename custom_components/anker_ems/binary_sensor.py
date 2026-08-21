@@ -447,5 +447,10 @@ class AnkerEmsAutomaticExecutionReady(_AnkerEmsBinarySensorBase):
             "purpose": data.get("auto_shadow_purpose"),
             "power_w": data.get("auto_shadow_power_w"),
             "target_soc": data.get("auto_shadow_target_soc"),
+            "pre_mode_ready": data.get("auto_shadow_pre_mode_ready", False),
+            "pre_mode_reason": data.get("auto_shadow_pre_mode_reason"),
+            "post_mode_ready": data.get("auto_shadow_post_mode_ready", False),
+            "post_mode_reason": data.get("auto_shadow_post_mode_reason"),
+            "post_mode_required": data.get("auto_shadow_post_mode_required", False),
             "physical_execution_enabled": False,
         }

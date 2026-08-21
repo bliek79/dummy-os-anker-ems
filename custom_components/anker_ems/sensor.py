@@ -116,6 +116,14 @@ def _auto_shadow_attrs(data: dict[str, Any]) -> dict[str, Any]:
         "control_path_ready": data.get("auto_shadow_control_path_ready", False),
         "control_path_reason": data.get("auto_shadow_control_path_reason"),
         "control_path_stable_seconds": data.get("auto_shadow_control_path_stable_seconds"),
+        "pre_mode_ready": data.get("auto_shadow_pre_mode_ready", False),
+        "pre_mode_reason": data.get("auto_shadow_pre_mode_reason"),
+        "pre_mode_stable_seconds": data.get("auto_shadow_pre_mode_stable_seconds", 0),
+        "post_mode_ready": data.get("auto_shadow_post_mode_ready", False),
+        "post_mode_reason": data.get("auto_shadow_post_mode_reason"),
+        "post_mode_stable_seconds": data.get("auto_shadow_post_mode_stable_seconds", 0),
+        "post_mode_required": data.get("auto_shadow_post_mode_required", False),
+        "control_entities": data.get("auto_shadow_control_entities", {}),
         "note": data.get("auto_shadow_note"),
     }
 

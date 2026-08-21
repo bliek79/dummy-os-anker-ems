@@ -175,7 +175,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.async_request_refresh()
 
     def _automatic_execution_shadow(self, data: dict[str, Any]) -> dict[str, Any]:
-        """Build the final non-actuating command that alpha51 would execute.
+        """Build the final non-actuating command that alpha52 would execute.
 
         This is the authoritative shadow gate used to prove the whole automatic
         chain before any non-zero automatic battery command is enabled.
@@ -278,8 +278,16 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "auto_shadow_control_path_ready": bool(readiness.get("ready")),
             "auto_shadow_control_path_reason": readiness.get("reason"),
             "auto_shadow_control_path_stable_seconds": readiness.get("stable_seconds", 0),
+            "auto_shadow_pre_mode_ready": bool(readiness.get("pre_mode_ready")),
+            "auto_shadow_pre_mode_reason": readiness.get("pre_mode_reason"),
+            "auto_shadow_pre_mode_stable_seconds": readiness.get("pre_mode_stable_seconds", 0),
+            "auto_shadow_post_mode_ready": bool(readiness.get("post_mode_ready")),
+            "auto_shadow_post_mode_reason": readiness.get("post_mode_reason"),
+            "auto_shadow_post_mode_stable_seconds": readiness.get("post_mode_stable_seconds", 0),
+            "auto_shadow_post_mode_required": bool(readiness.get("post_mode_required")),
+            "auto_shadow_control_entities": readiness.get("entities", {}),
             "auto_shadow_note": (
-                "Alpha51 berekent het definitieve automatische batterijcommando maar verstuurt bewust geen niet-nul commando."
+                "Alpha52 gebruikt two-stage control-path readiness; fysieke automatische uitvoering blijft uit."
             ),
         }
 
