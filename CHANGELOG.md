@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.0.1-alpha.40.7
+
+### Config flow hardening
+- Rebuilt the Options Flow using Home Assistant's current `self.config_entry` and `add_suggested_values_to_schema` pattern.
+- Added the required `@callback` marker to `async_get_options_flow`.
+- Separated optional EMS tuning from setup-critical Anker source reconfiguration.
+- Reconfigure now uses `async_update_and_abort`, avoiding a double reload with the existing config-entry update listener on HA 2026.6+.
+- Added `translations/nl.json` with the same flow structure as `strings.json`.
+- Preserves alpha40.5 Control Path Readiness and alpha40.4 Recorder optimizations.
+- No expansion of automatic non-zero battery actuation.
+
 ## 0.0.1-alpha.40.6 - Reconfigure Flow Fix
 
 - Added a native Home Assistant `async_step_reconfigure` flow for the pencil/edit action.
