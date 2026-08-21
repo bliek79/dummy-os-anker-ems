@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.0.1-alpha.40.4 - Forecast Recorder Optimization
+
+- Fixes repeated Recorder warnings for `sensor.dummy_os_ems_forecast_status` exceeding Home Assistant's 16,384-byte state-attribute limit.
+- Keeps the full live `forecast` attribute available on Forecast Status for diagnostics, but marks it as unrecorded so Recorder stores only the compact attributes.
+- Preserves the alpha40.2 Plan72 recorder optimization; both heavy live payloads (`plan` and `forecast`) are now excluded from history.
+- Replaces the stale Alpha27 Plan72 note with a version-neutral description of the current execution-buffer/reserve behavior.
+- Preserves the alpha40.3 supplier-independent price architecture, separate import/export markups and hourly/quarter-hour tariff-resolution setting.
+- No change to the alpha40 controlled physical mode-switch scope; automatic non-zero charge/discharge execution remains disabled.
+- No entities are added or removed; entity count remains 105.
+
 ## 0.0.1-alpha.40.3 - Price Architecture Foundation
 
 - Adds opt-in supplier-independent market-price architecture using `sensor.stroomvoorspeller_data`.

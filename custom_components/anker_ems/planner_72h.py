@@ -669,8 +669,8 @@ def build_72h_plan_preview(
         "auto_plan_72h_observational_only": True,
         "auto_plan_72h_execution_enabled": False,
         "auto_plan_72h_note": (
-            "Alpha27 behoudt de 2 procentpunt uitvoeringsbuffer en plant toekomstige "
-            "reservepieken nu vóór hun echte einde-van-uur deadline vooruit. "
-            "Er worden nog geen planslots gevuld en geen fysieke commando's uitgevoerd."
+            "Dummy OS EMS Plan72 gebruikt de 2 procentpunt uitvoeringsbuffer, "
+            "dynamische reserve en vooruitkijkende reserveplanning. Automatische "
+            "laad/ontlaaduitvoering blijft buiten de huidige fysieke alpha-scope."
         ),
     }

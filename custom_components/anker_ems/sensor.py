@@ -863,7 +863,7 @@ async def async_setup_entry(
 
 class AnkerEmsSensor(CoordinatorEntity[AnkerEmsCoordinator], SensorEntity):
     entity_description: AnkerEmsSensorDescription
-    _unrecorded_attributes = frozenset({"plan"})
+    _unrecorded_attributes = frozenset({"plan", "forecast"})
 
     def __init__(
         self,
