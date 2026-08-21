@@ -1,3 +1,23 @@
+## 0.0.1-alpha.43 - 2026-08-21
+
+### Options Flow rebuild - stap 2: centrale vermogenslimieten
+- Alpha42 is live geslaagd: `electrical_profile` opent, slaat op en blijft behouden na opnieuw openen.
+- Behoudt `electrical_profile` en voegt uitsluitend `max_charge_power_w` en `max_discharge_power_w` toe.
+- Huidige eigen-groepwaarden blijven 3200 W laden en 3200 W ontladen.
+- NumberSelectors gebruiken 100 W stappen en de absolute technische bovengrens uit de centrale constants.
+- Bij `shared_group` blijft de bestaande 800 W fail-safe via validatie van kracht.
+- Bestaande verborgen options blijven behouden bij opslaan.
+- Geen wijzigingen aan Plan72, prijslogica, Plan Store, Scheduler, Safety Guard, Execution Controller of fysieke batterijbesturing.
+
+### Live validatie
+1. Controleer dat Home Assistant `0.0.1-alpha.43` toont.
+2. Open **Configureren**.
+3. Verwacht drie velden: **Aansluitprofiel**, **Maximaal laadvermogen** en **Maximaal ontlaadvermogen**.
+4. Voor de huidige installatie verwacht: **Eigen groep**, **3200 W**, **3200 W**.
+5. Klik **Verzenden** en open **Configureren** opnieuw.
+6. Controleer dat alle drie waarden behouden blijven.
+7. Indien succesvol: alpha44 voegt als volgende losse stap alleen de schakelaar voor de nieuwe marktprijsarchitectuur toe.
+
 ## 0.0.1-alpha.42 - 2026-08-21
 
 ### Options Flow rebuild - stap 1: aansluitprofiel

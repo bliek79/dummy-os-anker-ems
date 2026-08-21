@@ -245,18 +245,7 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Alpha42: reintroduce only the electrical profile field.
-
-        Alpha41 proved that the Options Flow route itself works on Home
-        Assistant 2026.8.2. Alpha42 adds exactly one real EMS field using the
-        same selector type as the original configuration flow. Existing
-        options remain preserved when the form is submitted.
-        """
-        if user_input is not None:
-            merged = dict(self.config_entry.options)
-            merged.update(user_input)
-            return self.async_create_entry(title="", data=merged)
-
+        """Alpha43: add charge/discharge limits to the validated profile field."""
         current_profile = self.config_entry.options.get(
             CONF_ELECTRICAL_PROFILE,
             self.config_entry.data.get(
@@ -264,6 +253,48 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
                 DEFAULT_ELECTRICAL_PROFILE,
             ),
         )
+        current_charge = self.config_entry.options.get(
+            CONF_MAX_CHARGE_POWER_W,
+            self.config_entry.data.get(
+                CONF_MAX_CHARGE_POWER_W,
+                DEFAULT_SHARED_MAX_POWER_W
+                if current_profile == ELECTRICAL_PROFILE_SHARED
+                else DEFAULT_DEDICATED_MAX_CHARGE_POWER_W,
+            ),
+        )
+        current_discharge = self.config_entry.options.get(
+            CONF_MAX_DISCHARGE_POWER_W,
+            self.config_entry.data.get(
+                CONF_MAX_DISCHARGE_POWER_W,
+                DEFAULT_SHARED_MAX_POWER_W
+                if current_profile == ELECTRICAL_PROFILE_SHARED
+                else DEFAULT_DEDICATED_MAX_DISCHARGE_POWER_W,
+            ),
+        )
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            profile = str(user_input[CONF_ELECTRICAL_PROFILE])
+            charge = int(user_input[CONF_MAX_CHARGE_POWER_W])
+            discharge = int(user_input[CONF_MAX_DISCHARGE_POWER_W])
+            profile_cap = (
+                DEFAULT_SHARED_MAX_POWER_W
+                if profile == ELECTRICAL_PROFILE_SHARED
+                else min(ABSOLUTE_MAX_CHARGE_POWER_W, ABSOLUTE_MAX_DISCHARGE_POWER_W)
+            )
+
+            if charge > profile_cap or discharge > profile_cap:
+                errors["base"] = "power_above_profile_limit"
+            else:
+                merged = dict(self.config_entry.options)
+                merged.update(
+                    {
+                        CONF_ELECTRICAL_PROFILE: profile,
+                        CONF_MAX_CHARGE_POWER_W: charge,
+                        CONF_MAX_DISCHARGE_POWER_W: discharge,
+                    }
+                )
+                return self.async_create_entry(title="", data=merged)
 
         schema = vol.Schema(
             {
@@ -285,6 +316,30 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
                         mode=selector.SelectSelectorMode.DROPDOWN,
                     )
                 ),
+                vol.Required(
+                    CONF_MAX_CHARGE_POWER_W,
+                    default=current_charge,
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=100,
+                        max=ABSOLUTE_MAX_CHARGE_POWER_W,
+                        step=100,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="W",
+                    )
+                ),
+                vol.Required(
+                    CONF_MAX_DISCHARGE_POWER_W,
+                    default=current_discharge,
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=100,
+                        max=ABSOLUTE_MAX_DISCHARGE_POWER_W,
+                        step=100,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="W",
+                    )
+                ),
             }
         )
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

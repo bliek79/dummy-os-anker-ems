@@ -61,15 +61,17 @@
   "options": {
     "step": {
       "init": {
-        "title": "EMS instellingen - stap 1 aansluitprofiel",
-        "description": "Alpha42 bouwt de Options Flow gecontroleerd terug op. Deze stap voegt alleen het echte aansluitprofiel toe. Als dit scherm opent, is ook deze selector op Home Assistant 2026.8.2 gevalideerd.",
+        "title": "EMS instellingen - stap 2 vermogenslimieten",
+        "description": "Alpha43 voegt na het gevalideerde aansluitprofiel alleen de centrale laad- en ontlaadlimiet toe. Voor een eigen groep zijn de huidige projectwaarden 3200 W laden en 3200 W ontladen.",
         "data": {
-          "electrical_profile": "Aansluitprofiel"
+          "electrical_profile": "Aansluitprofiel",
+          "max_charge_power_w": "Maximaal laadvermogen",
+          "max_discharge_power_w": "Maximaal ontlaadvermogen"
         }
       }
     },
     "error": {
-      "power_above_profile_limit": "Zonder eigen groep mag laden en ontladen maximaal 800 W zijn."
+      "power_above_profile_limit": "Bij een gedeelde groep mag laden en ontladen maximaal 800 W zijn."
     }
   }
 }
