@@ -1,3 +1,15 @@
+# Changelog
+
+## 0.0.1-alpha.49.3
+
+- Herstelt de Options Flow naar de door Home Assistant voorgeschreven `init`-stap.
+- Verwijdert de tijdelijke `settings`-redirect uit alpha49.1/49.2.
+- Verwijdert `strings.json`; custom integrations gebruiken runtimebestanden in `translations/`.
+- Houdt volledige `translations/nl.json` en `translations/en.json` aan met Nederlandse/Engelse veldlabels.
+- Voegt een compatibele `config.step.init`-mirror toe als fallback naast `options.step.init`.
+- Verwijdert meegeleverde `__pycache__`/`.pyc`-bestanden uit de release.
+- Geen wijziging aan opgeslagen waarden, plannerlogica of fysieke batterijbesturing.
+
 ## 0.0.1-alpha.49.2 - 2026-08-21
 
 - Fixes Options Flow field translations for the custom integration by adding the required `translations/en.json` baseline.

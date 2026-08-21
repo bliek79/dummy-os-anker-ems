@@ -48,18 +48,7 @@
           "action_direction_entity": "Charge/discharge selection",
           "power_setpoint_entity": "Power setpoint"
         }
-      }
-    },
-    "abort": {
-      "already_configured": "Dummy OS EMS is already configured.",
-      "reconfigure_successful": "Dummy OS EMS has been updated and will reload."
-    },
-    "error": {
-      "power_above_profile_limit": "The selected power limit exceeds the allowed limit for the selected electrical profile."
-    }
-  },
-  "options": {
-    "step": {
+      },
       "init": {
         "title": "EMS settings",
         "description": "Manage the electrical limits and price settings for Dummy OS EMS. Import and export markup are added to the selected market price source; price resolution can be set to 60 or 15 minutes.",
@@ -73,8 +62,19 @@
           "export_markup_per_kwh": "Export markup (€/kWh)",
           "tariff_resolution": "Price resolution"
         }
-      },
-      "settings": {
+      }
+    },
+    "abort": {
+      "already_configured": "Dummy OS EMS is already configured.",
+      "reconfigure_successful": "Dummy OS EMS has been updated and will reload."
+    },
+    "error": {
+      "power_above_profile_limit": "The selected power limit exceeds the allowed limit for the selected electrical profile."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
         "title": "EMS settings",
         "description": "Manage the electrical limits and price settings for Dummy OS EMS. Import and export markup are added to the selected market price source; price resolution can be set to 60 or 15 minutes.",
         "data": {

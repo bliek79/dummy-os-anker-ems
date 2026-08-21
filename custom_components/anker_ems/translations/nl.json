@@ -48,18 +48,7 @@
           "action_direction_entity": "Laad/ontlaadkeuze",
           "power_setpoint_entity": "Vermogensinstelling"
         }
-      }
-    },
-    "abort": {
-      "already_configured": "Dummy OS EMS is al geconfigureerd.",
-      "reconfigure_successful": "Dummy OS EMS is bijgewerkt en wordt opnieuw geladen."
-    },
-    "error": {
-      "power_above_profile_limit": "De gekozen vermogenslimiet is hoger dan toegestaan voor het geselecteerde aansluitprofiel."
-    }
-  },
-  "options": {
-    "step": {
+      },
       "init": {
         "title": "EMS instellingen",
         "description": "Beheer de elektrische limieten en prijsinstellingen van Dummy OS EMS. Import- en exportmarkup worden opgeteld bij de gekozen marktprijsbron; de prijsresolutie kan op 60 of 15 minuten worden ingesteld.",
@@ -73,8 +62,19 @@
           "export_markup_per_kwh": "Exportmarkup (€/kWh)",
           "tariff_resolution": "Prijsresolutie"
         }
-      },
-      "settings": {
+      }
+    },
+    "abort": {
+      "already_configured": "Dummy OS EMS is al geconfigureerd.",
+      "reconfigure_successful": "Dummy OS EMS is bijgewerkt en wordt opnieuw geladen."
+    },
+    "error": {
+      "power_above_profile_limit": "De gekozen vermogenslimiet is hoger dan toegestaan voor het geselecteerde aansluitprofiel."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
         "title": "EMS instellingen",
         "description": "Beheer de elektrische limieten en prijsinstellingen van Dummy OS EMS. Import- en exportmarkup worden opgeteld bij de gekozen marktprijsbron; de prijsresolutie kan op 60 of 15 minuten worden ingesteld.",
         "data": {
