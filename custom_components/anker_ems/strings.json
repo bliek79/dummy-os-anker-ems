@@ -61,13 +61,14 @@
   "options": {
     "step": {
       "init": {
-        "title": "EMS instellingen - stap 3 prijsarchitectuur",
-        "description": "Alpha44 voegt aan de drie gevalideerde basisvelden uitsluitend de schakelaar voor de leverancier-onafhankelijke marktprijsarchitectuur toe. De prijsbron, import-/exportmarkup en uur-/kwartierresolutie volgen pas in afzonderlijke vervolgstappen.",
+        "title": "EMS instellingen - stap 4 marktprijsbron",
+        "description": "Alpha45 behoudt de vier live gevalideerde velden en voegt uitsluitend de marktprijsbron toe. Import-/exportmarkup en uur-/kwartierresolutie volgen pas in afzonderlijke vervolgstappen.",
         "data": {
           "electrical_profile": "Aansluitprofiel",
           "max_charge_power_w": "Maximaal laadvermogen",
           "max_discharge_power_w": "Maximaal ontlaadvermogen",
-          "market_price_architecture_enabled": "Nieuwe marktprijsarchitectuur gebruiken"
+          "market_price_architecture_enabled": "Nieuwe marktprijsarchitectuur gebruiken",
+          "market_price_entity": "Marktprijsbron"
         }
       }
     },

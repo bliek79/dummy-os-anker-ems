@@ -245,7 +245,7 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Alpha44: add the market-price architecture switch to the validated base fields."""
+        """Alpha45: add the market-price entity to the validated price architecture fields."""
         current_profile = self.config_entry.options.get(
             CONF_ELECTRICAL_PROFILE,
             self.config_entry.data.get(
@@ -280,6 +280,13 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
                 ),
             )
         )
+        current_market_price_entity = self.config_entry.options.get(
+            CONF_MARKET_PRICE_ENTITY,
+            self.config_entry.data.get(
+                CONF_MARKET_PRICE_ENTITY,
+                DEFAULT_MARKET_PRICE_ENTITY,
+            ),
+        )
 
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -303,6 +310,9 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
                         CONF_MAX_DISCHARGE_POWER_W: discharge,
                         CONF_MARKET_PRICE_ARCHITECTURE_ENABLED: bool(
                             user_input[CONF_MARKET_PRICE_ARCHITECTURE_ENABLED]
+                        ),
+                        CONF_MARKET_PRICE_ENTITY: str(
+                            user_input[CONF_MARKET_PRICE_ENTITY]
                         ),
                     }
                 )
@@ -356,6 +366,10 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
                     CONF_MARKET_PRICE_ARCHITECTURE_ENABLED,
                     default=current_market_price_architecture_enabled,
                 ): bool,
+                vol.Required(
+                    CONF_MARKET_PRICE_ENTITY,
+                    default=current_market_price_entity,
+                ): _entity_selector("sensor"),
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

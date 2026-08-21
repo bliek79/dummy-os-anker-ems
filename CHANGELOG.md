@@ -1,3 +1,23 @@
+## 0.0.1-alpha.45 - 2026-08-21
+
+### Options Flow rebuild - stap 4: marktprijsbron
+- Alpha44 is live geslaagd: de marktprijsarchitectuur-schakelaar opent correct, slaat op en blijft aangevinkt na opnieuw openen.
+- Behoudt de vier gevalideerde velden en voegt uitsluitend `market_price_entity` toe.
+- De marktprijsbron gebruikt een Home Assistant EntitySelector beperkt tot het domein `sensor`.
+- Bestaande waarde wordt gelezen uit options, met fallback naar config-entry data en daarna `sensor.stroomvoorspeller_data`.
+- Bestaande verborgen options blijven behouden bij opslaan.
+- Nog geen importmarkup, exportmarkup of uur-/kwartierresolutie zichtbaar; die worden daarna één voor één teruggebracht.
+- Geen wijzigingen aan Plan72, prijsberekening, Plan Store, Scheduler, Safety Guard, Execution Controller of fysieke batterijbesturing.
+
+### Live validatie
+1. Controleer dat Home Assistant `0.0.1-alpha.45` toont.
+2. Open **Configureren**.
+3. Verwacht vijf velden: **Aansluitprofiel**, **Maximaal laadvermogen**, **Maximaal ontlaadvermogen**, **Nieuwe marktprijsarchitectuur gebruiken** en **Marktprijsbron**.
+4. Voor de huidige installatie verwacht: **Eigen groep**, **3200 W**, **3200 W**, schakelaar aangevinkt en marktprijsbron `sensor.stroomvoorspeller_data` wanneer die nog niet eerder anders is opgeslagen.
+5. Klik **Verzenden** en open **Configureren** opnieuw.
+6. Controleer dat alle vijf waarden behouden blijven.
+7. Indien succesvol: alpha46 voegt als volgende losse stap uitsluitend de importmarkup toe.
+
 ## 0.0.1-alpha.44 - 2026-08-21
 
 ### Options Flow rebuild - stap 3: marktprijsarchitectuur-schakelaar
