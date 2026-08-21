@@ -62,7 +62,7 @@
     "step": {
       "init": {
         "title": "EMS instellingen",
-        "description": "Alpha40.8 gebruikt bewust een minimale Options Flow om Configureren stabiel te herstellen. Stel hier de centrale vermogenslimieten en leverancier-onafhankelijke prijslaag in.",
+        "description": "Alpha40.9 gebruikt bewust een minimale Options Flow om Configureren stabiel te herstellen. Stel hier de centrale vermogenslimieten en leverancier-onafhankelijke prijslaag in.",
         "data": {
           "electrical_profile": "Aansluitprofiel",
           "max_charge_power_w": "Maximaal laadvermogen",

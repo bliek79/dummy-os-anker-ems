@@ -230,10 +230,11 @@ class AnkerEmsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     @staticmethod
+    @callback
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
-        """Return a deliberately minimal, proven Options Flow."""
+        """Return the Options Flow using the HA 2026.8 callback contract."""
         return AnkerEmsOptionsFlow()
 
 

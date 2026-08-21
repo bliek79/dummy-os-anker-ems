@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.0.1-alpha.40.9 - HA 2026.8 Options Flow Callback Fix
+
+- Restores the required Home Assistant `@callback` decorator on `async_get_options_flow`, which was documented in alpha40.7 but accidentally missing again in alpha40.8.
+- Keeps the alpha40.8 minimal Options Flow and its eight core fields unchanged.
+- Synchronizes the internal `const.py` version with the manifest; alpha40.8 incorrectly still reported alpha40.7 internally.
+- No planner, safety, scheduler, execution, entity-count or physical-control behavior is changed.
+- Validation target: Home Assistant Core 2026.8.2.
+
 ## 0.0.1-alpha.40.7
 
 ### Config flow hardening
