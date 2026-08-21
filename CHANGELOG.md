@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.0.1-alpha.50 - 2026-08-21
+
+### Functionele prijslaag
+- Activeert de ingestelde marktprijsbron, importmarkup en exportmarkup als primaire prijslaag voor de EMS-forecast en planner.
+- Corrigeert quarter-hour brondata: vier kwartierprijzen binnen hetzelfde uur worden nu gemiddeld naar één uurprijs in plaats van dat de laatste kwartierwaarde stilzwijgend het hele uur overschrijft.
+- Bekende marktprijzen houden voor hetzelfde uur voorrang op forecastprijzen.
+- Corrigeert bronvalidatie: wanneer de nieuwe marktprijsarchitectuur geldige data levert, wordt de prijsbron niet meer ten onrechte als ontbrekend gemarkeerd omdat de legacy prijsentiteiten leeg zijn.
+- Voegt diagnostiek toe voor ruwe marktprijsregels, geaggregeerde uren en kwartierdekking.
+- De 72-uursplanner blijft bewust op uurblokken draaien; bij gekozen 15-minutenprijsresolutie wordt de marktprijslaag veilig naar uurprijzen geaggregeerd. Een echte 15-minutenplanner volgt pas in een aparte functionele migratie.
+- Geen cosmetische wijzigingen en geen wijziging aan fysieke uitvoering.
+
 ## 0.0.1-alpha.49.3
 
 - Herstelt de Options Flow naar de door Home Assistant voorgeschreven `init`-stap.

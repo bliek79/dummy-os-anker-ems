@@ -376,6 +376,61 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         rows.extend(self._iter_market_rows(attrs.get("forecast"), "forecast"))
         return rows
 
+    @staticmethod
+    def _aggregate_market_rows_hourly(
+        rows: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], dict[str, int]]:
+        """Aggregate market-price rows to the hourly planner layer.
+
+        The external market source may contain hourly or quarter-hourly values.
+        The planner is still hourly, so quarter-hour values are combined into a
+        single arithmetic mean per hour. Known prices always take precedence
+        over forecast prices for the same hour.
+        """
+        grouped: dict[tuple[datetime, str], list[float]] = {}
+        for row in rows:
+            hour = _hour_key(row.get("time"))
+            price = _as_float(row.get("market_price"))
+            if hour is None or price is None:
+                continue
+            source_kind = str(row.get("source_kind") or "forecast")
+            grouped.setdefault((hour, source_kind), []).append(price)
+
+        hours = sorted({hour for hour, _source in grouped})
+        aggregated: list[dict[str, Any]] = []
+        full_quarter_hours = 0
+        partial_quarter_hours = 0
+        max_points_per_hour = 0
+
+        for hour in hours:
+            source_kind = "known" if (hour, "known") in grouped else "forecast"
+            values = grouped.get((hour, source_kind), [])
+            if not values:
+                continue
+            point_count = len(values)
+            max_points_per_hour = max(max_points_per_hour, point_count)
+            if point_count >= 4:
+                full_quarter_hours += 1
+            elif point_count > 1:
+                partial_quarter_hours += 1
+            aggregated.append(
+                {
+                    "time": hour.isoformat(),
+                    "market_price": sum(values) / point_count,
+                    "source_kind": source_kind,
+                    "source_point_count": point_count,
+                }
+            )
+
+        diagnostics = {
+            "raw_rows": len(rows),
+            "hourly_rows": len(aggregated),
+            "full_quarter_hours": full_quarter_hours,
+            "partial_quarter_hours": partial_quarter_hours,
+            "max_points_per_hour": max_points_per_hour,
+        }
+        return aggregated, diagnostics
+
     def _forecast_entity_ids(self) -> dict[str, str]:
         return {
             "market_price": self._entity_id(CONF_MARKET_PRICE_ENTITY, DEFAULT_MARKET_PRICE_ENTITY) or "",
@@ -390,7 +445,12 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _build_forecast(self) -> dict[str, Any]:
         entity_ids = self._forecast_entity_ids()
         price_settings = self._price_architecture_settings()
-        market_rows = self._stroomvoorspeller_market_rows(entity_ids["market_price"]) if price_settings["enabled"] else []
+        raw_market_rows = (
+            self._stroomvoorspeller_market_rows(entity_ids["market_price"])
+            if price_settings["enabled"]
+            else []
+        )
+        market_rows, market_row_diagnostics = self._aggregate_market_rows_hourly(raw_market_rows)
         known_rows = self._rows(entity_ids["known_price"], "prices")
         price_rows = self._rows(entity_ids["forecast_price"], "forecasts")
         home_rows = self._rows(entity_ids["home"], "forecasts")
@@ -421,9 +481,10 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if price_settings["enabled"] and market_rows:
             import_markup = float(price_settings["import_markup"])
             export_markup = float(price_settings["export_markup"])
-            # Alpha40.3 foundation: planner remains hourly. Quarter-hour is stored
-            # as a requested resolution but is only considered operational when
-            # the planner itself is migrated to 15-minute blocks in a later step.
+            # The planner remains hourly. If the market source contains
+            # quarter-hour values they are averaged above into the matching
+            # hourly planner slot, preventing the previous last-quarter-wins
+            # behaviour.
             for row in market_rows:
                 hour = _hour_key(row.get("time"))
                 if hour not in slots:
@@ -510,7 +571,10 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
         missing_sources: list[str] = []
-        if not known_rows and not price_rows:
+        if price_settings["enabled"]:
+            if not market_rows:
+                missing_sources.append("price")
+        elif not known_rows and not price_rows:
             missing_sources.append("price")
         if not home_rows:
             missing_sources.append("home")
@@ -531,11 +595,24 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "price_architecture_enabled": bool(price_settings["enabled"]),
             "price_architecture_source": entity_ids.get("market_price") if price_settings["enabled"] else "legacy_known_plus_forecast",
             "price_architecture_market_rows": len(market_rows),
+            "price_architecture_raw_market_rows": market_row_diagnostics["raw_rows"],
+            "price_architecture_hourly_market_rows": market_row_diagnostics["hourly_rows"],
+            "price_architecture_full_quarter_hours": market_row_diagnostics["full_quarter_hours"],
+            "price_architecture_partial_quarter_hours": market_row_diagnostics["partial_quarter_hours"],
+            "price_architecture_max_points_per_hour": market_row_diagnostics["max_points_per_hour"],
             "price_architecture_import_markup_per_kwh": price_settings["import_markup"],
             "price_architecture_export_markup_per_kwh": price_settings["export_markup"],
             "price_architecture_requested_resolution": price_settings["resolution"],
             "price_architecture_effective_resolution": TARIFF_RESOLUTION_HOURLY,
-            "price_architecture_quarter_hour_ready": False,
+            "price_architecture_quarter_hour_ready": bool(
+                price_settings["resolution"] == TARIFF_RESOLUTION_QUARTER_HOURLY
+                and market_row_diagnostics["full_quarter_hours"] >= 24
+            ),
+            "price_architecture_resolution_note": (
+                "quarter_hour_source_aggregated_to_hourly_planner"
+                if price_settings["resolution"] == TARIFF_RESOLUTION_QUARTER_HOURLY
+                else "hourly_planner"
+            ),
             "forecast": forecast,
         }
 
