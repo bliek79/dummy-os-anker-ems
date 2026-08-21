@@ -5,7 +5,7 @@
 > **Status:** experimental alpha  
 > **Domain:** `anker_ems`  
 > **Minimum Home Assistant:** 2026.7.0  
-> **Current version:** `0.0.1-alpha.51`
+> **Current version:** `0.0.1-alpha.51.1`
 
 The integration combines battery status, electricity prices, solar forecast, home-consumption forecast, safety limits and user choices into one local EMS layer. The architecture is deliberately split into planning, persistent plan storage, scheduling, safety validation and physical execution.
 
@@ -262,8 +262,8 @@ See `LICENSE` and `NOTICE.md` in this repository. Dummy OS EMS is experimental s
 Alpha40.5 retains the opt-in Stroomvoorspeller market-price layer with separate import/export markups. The hourly planner remains the effective resolution in this alpha; quarter-hour selection is stored for the next planner-resolution step. Legacy price sources remain available as fallback until live validation is complete.
 
 
-## Alpha51 - Automatic Execution Shadow Gate
+## Alpha51.1 - Automatic Execution Shadow Gate
 
-Alpha51 adds the final non-actuating automatic execution chain. It exposes a native `Dummy OS EMS Automatische uitvoering` arm switch, an automatic-execution readiness binary sensor, and a shadow command sensor. The arm switch is fail-safe OFF on a fresh install and restores the last user choice after startup. Even when armed, alpha51 **never sends an automatic non-zero battery command**.
+Alpha51.1 adds the final non-actuating automatic execution chain. It exposes a native `Dummy OS EMS Automatic Execution` arm switch, an automatic-execution readiness binary sensor, and a shadow command sensor. The arm switch is fail-safe OFF on a fresh install and restores the last user choice after startup. Even when armed, alpha51.1 **never sends an automatic non-zero battery command**.
 
 The shadow gate requires the planner bridge, pre-start validator, safety handoff, execution handoff, final live revalidation, stable Anker control path, valid execution buffer, and no manual override. Trading actions additionally require known day-ahead prices; forecast prices may inform reserve planning but cannot authorize physical trade execution.

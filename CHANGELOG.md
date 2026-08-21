@@ -1,15 +1,19 @@
-## 0.0.1-alpha.51
+## 0.0.1-alpha.51.1
 
-- Added native `Dummy OS EMS Automatische uitvoering` fail-safe arm switch.
+- Naming correction before first install: the new arm switch is now `Dummy OS EMS Automatic Execution` instead of the accidental Dutch label.
+- This ensures Home Assistant creates the intended entity ID `switch.dummy_os_ems_automatic_execution` on first install rather than a temporary Dutch entity ID.
+- No planner, safety, scheduler, or physical execution logic changed.
+
+- Added native `Dummy OS EMS Automatic Execution` fail-safe arm switch.
 - Added final end-to-end automatic execution shadow gate.
 - Added `Dummy OS EMS Automatic Execution Ready` binary sensor.
 - Added `Dummy OS EMS Automatic Execution Shadow` diagnostic command sensor.
 - Manual execution has priority over future automatic execution.
 - Trading execution is blocked unless every price source hour is `known`.
 - Control path must be available and stable before shadow readiness can become true.
-- Automatic physical non-zero execution remains deliberately disabled in alpha51.
+- Automatic physical non-zero execution remains deliberately disabled in alpha51.1.
 - Persist planner price-source confidence into planner-owned plan slots.
-- Updated integration version to 0.0.1-alpha.51.
+- Updated integration version to 0.0.1-alpha.51.1.
 
 # Changelog
 

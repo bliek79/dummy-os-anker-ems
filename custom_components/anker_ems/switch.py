@@ -30,7 +30,7 @@ class AnkerEmsAutomaticExecutionArm(
     but the integration still refuses every automatic non-zero physical command.
     """
 
-    _attr_name = "Dummy OS EMS Automatische uitvoering"
+    _attr_name = "Dummy OS EMS Automatic Execution"
     _attr_icon = "mdi:robot"
 
     def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
