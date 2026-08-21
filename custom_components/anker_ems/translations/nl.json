@@ -61,15 +61,17 @@
   "options": {
     "step": {
       "init": {
-        "title": "EMS instellingen - stap 5 importmarkup",
-        "description": "Alpha46 behoudt de vijf live gevalideerde velden en voegt uitsluitend de importmarkup toe. Huidige importmarkup: €0,1288/kWh. Exportmarkup en uur-/kwartierresolutie volgen in afzonderlijke vervolgstappen.",
+        "title": "EMS instellingen",
+        "description": "Beheer de elektrische limieten en prijsinstellingen van Dummy OS EMS. Import- en exportmarkup worden opgeteld bij de gekozen marktprijsbron; de prijsresolutie kan op 60 of 15 minuten worden ingesteld.",
         "data": {
           "electrical_profile": "Aansluitprofiel",
           "max_charge_power_w": "Maximaal laadvermogen",
           "max_discharge_power_w": "Maximaal ontlaadvermogen",
-          "market_price_architecture_enabled": "Nieuwe marktprijsarchitectuur gebruiken",
+          "market_price_architecture_enabled": "Marktprijsarchitectuur gebruiken",
           "market_price_entity": "Marktprijsbron",
-          "import_markup_per_kwh": "Importmarkup (€/kWh)"
+          "import_markup_per_kwh": "Importmarkup (€/kWh)",
+          "export_markup_per_kwh": "Exportmarkup (€/kWh)",
+          "tariff_resolution": "Prijsresolutie"
         }
       }
     },

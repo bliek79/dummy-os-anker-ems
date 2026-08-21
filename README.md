@@ -5,7 +5,7 @@
 > **Status:** experimental alpha  
 > **Domain:** `anker_ems`  
 > **Minimum Home Assistant:** 2026.7.0  
-> **Current version:** `0.0.1-alpha.48`
+> **Current version:** `0.0.1-alpha.49`
 
 The integration combines battery status, electricity prices, solar forecast, home-consumption forecast, safety limits and user choices into one local EMS layer. The architecture is deliberately split into planning, persistent plan storage, scheduling, safety validation and physical execution.
 
@@ -55,6 +55,10 @@ The current alpha supports:
 - centralized configurable charge/discharge power limits based on the electrical connection profile;
 - optimized Plan72 refresh policy: hourly between 05:00 and 22:00 plus event-driven/start-critical refreshes; no periodic overnight refreshes;
 - Recorder-safe live payload handling: the large Plan72 `plan` and Forecast Status `forecast` attributes are excluded from history while remaining available live to the dashboard/diagnostics.
+
+### Price configuration
+
+The Home Assistant **Configure** dialog exposes the validated price architecture settings: market-price source, separate import/export markups and 60-/15-minute tariff resolution. The current default markups are **€0.1288/kWh** for both import and export. Quarter-hour resolution is stored as an architecture input; planner execution remains unchanged until the dedicated resolution-aware planner step is implemented and validated.
 
 **Automatic charge/discharge execution is still disabled.** Alpha40.5 retains the alpha40 physical scope and may only validate the operating-mode transition for a fully approved automatic plan. It never selects charge/discharge direction and never applies a non-zero automatic power setpoint.
 

@@ -239,13 +239,13 @@ class AnkerEmsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
-    """Stepwise Options Flow rebuild for Home Assistant 2026.8.x."""
+    """Stable Dummy OS EMS Options Flow for Home Assistant 2026.8.x."""
 
     async def async_step_init(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Alpha48: add tariff resolution selection to the validated Options Flow."""
+        """Show the validated EMS settings without diagnostic/test wording."""
         current_profile = self.config_entry.options.get(
             CONF_ELECTRICAL_PROFILE,
             self.config_entry.data.get(

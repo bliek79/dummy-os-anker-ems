@@ -61,13 +61,13 @@
   "options": {
     "step": {
       "init": {
-        "title": "EMS instellingen - stap 7 tijdresolutie",
-        "description": "Alpha48 behoudt de zeven live gevalideerde velden en voegt uitsluitend de prijsresolutie toe. Kies 60 minuten voor uurprijzen of 15 minuten voor kwartierprijzen. De plannerlogica wordt in deze stap nog niet aangepast.",
+        "title": "EMS instellingen",
+        "description": "Beheer de elektrische limieten en prijsinstellingen van Dummy OS EMS. Import- en exportmarkup worden opgeteld bij de gekozen marktprijsbron; de prijsresolutie kan op 60 of 15 minuten worden ingesteld.",
         "data": {
           "electrical_profile": "Aansluitprofiel",
           "max_charge_power_w": "Maximaal laadvermogen",
           "max_discharge_power_w": "Maximaal ontlaadvermogen",
-          "market_price_architecture_enabled": "Nieuwe marktprijsarchitectuur gebruiken",
+          "market_price_architecture_enabled": "Marktprijsarchitectuur gebruiken",
           "market_price_entity": "Marktprijsbron",
           "import_markup_per_kwh": "Importmarkup (€/kWh)",
           "export_markup_per_kwh": "Exportmarkup (€/kWh)",

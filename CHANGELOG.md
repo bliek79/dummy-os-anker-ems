@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.0.1-alpha.49 - 2026-08-21
+
+### Options Flow productieteksten en vertalingen
+- Alpha48 is live gevalideerd: 60- en 15-minutenresolutie openen, slaan op en blijven na opnieuw openen behouden.
+- Verwijdert alle tijdelijke alpha-, stap- en diagnostische teksten uit de zichtbare Options Flow.
+- Titel is nu definitief **EMS instellingen**.
+- Beschrijving is herschreven als normale gebruikersuitleg voor elektrische limieten en prijsinstellingen.
+- Hernoemt **Nieuwe marktprijsarchitectuur gebruiken** naar **Marktprijsarchitectuur gebruiken**.
+- Synchroniseert `translations/nl.json` met de actuele Options Flow, inclusief exportmarkup en prijsresolutie. Hierdoor verschijnen geen technische sleutel-namen meer wanneer Home Assistant de Nederlandse vertaling gebruikt.
+- Behoudt exact dezelfde acht gevalideerde velden en dezelfde opslaglogica uit alpha48.
+- Import- en exportmarkup blijven `0.1288 €/kWh`; bestaande opgeslagen waarden blijven leidend.
+- Geen wijziging aan prijsberekening, planner, Scheduler, Safety Guard, Execution Controller of fysieke batterijbesturing.
+
+### Live validatie
+1. Controleer dat Home Assistant `0.0.1-alpha.49` toont.
+2. Open **Configureren**.
+3. Verwacht de titel **EMS instellingen**, zonder alpha-/test-/staptekst.
+4. Controleer dat alle acht velden duidelijke Nederlandse labels hebben.
+5. Klik **Verzenden** en open **Configureren** opnieuw.
+6. Controleer dat alle eerder opgeslagen waarden ongewijzigd behouden blijven.
+
 ## 0.0.1-alpha.48
 
 - Behoudt alle live gevalideerde Options Flow-velden uit alpha47.
