@@ -245,7 +245,7 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Alpha45: add the market-price entity to the validated price architecture fields."""
+        """Alpha46: add import markup to the validated price architecture fields."""
         current_profile = self.config_entry.options.get(
             CONF_ELECTRICAL_PROFILE,
             self.config_entry.data.get(
@@ -287,6 +287,15 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
                 DEFAULT_MARKET_PRICE_ENTITY,
             ),
         )
+        current_import_markup_per_kwh = float(
+            self.config_entry.options.get(
+                CONF_IMPORT_MARKUP_PER_KWH,
+                self.config_entry.data.get(
+                    CONF_IMPORT_MARKUP_PER_KWH,
+                    DEFAULT_IMPORT_MARKUP_PER_KWH,
+                ),
+            )
+        )
 
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -313,6 +322,9 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
                         ),
                         CONF_MARKET_PRICE_ENTITY: str(
                             user_input[CONF_MARKET_PRICE_ENTITY]
+                        ),
+                        CONF_IMPORT_MARKUP_PER_KWH: float(
+                            user_input[CONF_IMPORT_MARKUP_PER_KWH]
                         ),
                     }
                 )
@@ -370,6 +382,18 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
                     CONF_MARKET_PRICE_ENTITY,
                     default=current_market_price_entity,
                 ): _entity_selector("sensor"),
+                vol.Required(
+                    CONF_IMPORT_MARKUP_PER_KWH,
+                    default=current_import_markup_per_kwh,
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=-1.0,
+                        max=2.0,
+                        step=0.0001,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="€/kWh",
+                    )
+                ),
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

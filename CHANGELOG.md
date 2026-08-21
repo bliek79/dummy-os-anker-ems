@@ -1,3 +1,26 @@
+## 0.0.1-alpha.46 - 2026-08-21
+
+### Options Flow rebuild - stap 5: importmarkup
+- Alpha45 is live geslaagd: `market_price_entity` opent correct, slaat op en blijft op `sensor.stroomvoorspeller_data` staan na opnieuw openen.
+- Behoudt de vijf gevalideerde velden en voegt uitsluitend `import_markup_per_kwh` toe.
+- De actuele importmarkup voor deze installatie is ingesteld op `0.1288 €/kWh`.
+- Het veld gebruikt een Home Assistant NumberSelector met vier decimalen nauwkeurigheid (`step=0.0001`).
+- Toegestaan bereik: `-1.0` tot `2.0 €/kWh`, zodat ook negatieve of hogere contractcorrecties later mogelijk blijven.
+- Bestaande waarde wordt gelezen uit options, met fallback naar config-entry data en daarna `0.1288`.
+- De door de gebruiker opgegeven actuele exportmarkup is eveneens `0.1288 €/kWh`, maar blijft in alpha46 bewust nog verborgen; die volgt als losse alpha47-stap.
+- Bestaande verborgen options blijven behouden bij opslaan.
+- Nog geen exportmarkup of uur-/kwartierresolutie zichtbaar.
+- Geen wijzigingen aan Plan72, prijsberekening, Plan Store, Scheduler, Safety Guard, Execution Controller of fysieke batterijbesturing.
+
+### Live validatie
+1. Controleer dat Home Assistant `0.0.1-alpha.46` toont.
+2. Open **Configureren**.
+3. Verwacht zes velden: **Aansluitprofiel**, **Maximaal laadvermogen**, **Maximaal ontlaadvermogen**, **Nieuwe marktprijsarchitectuur gebruiken**, **Marktprijsbron** en **Importmarkup**.
+4. Voor de huidige installatie verwacht: **Eigen groep**, **3200 W**, **3200 W**, schakelaar aangevinkt, `sensor.stroomvoorspeller_data` en importmarkup `0.1288 €/kWh`.
+5. Klik **Verzenden** en open **Configureren** opnieuw.
+6. Controleer dat alle zes waarden behouden blijven.
+7. Indien succesvol: alpha47 voegt als volgende losse stap uitsluitend de exportmarkup toe, met actuele waarde `0.1288 €/kWh`.
+
 ## 0.0.1-alpha.45 - 2026-08-21
 
 ### Options Flow rebuild - stap 4: marktprijsbron
