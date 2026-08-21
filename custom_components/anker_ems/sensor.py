@@ -93,6 +93,33 @@ def _execution_attrs(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+
+def _auto_shadow_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "armed": data.get("auto_shadow_armed", False),
+        "technical_ready": data.get("auto_shadow_technical_ready", False),
+        "execution_permitted": data.get("auto_shadow_execution_permitted", False),
+        "physical_control": data.get("auto_shadow_physical_control", False),
+        "selected_slot": data.get("auto_shadow_selected_slot"),
+        "planner_identity": data.get("auto_shadow_planner_identity"),
+        "action": data.get("auto_shadow_action"),
+        "purpose": data.get("auto_shadow_purpose"),
+        "power_w": data.get("auto_shadow_power_w"),
+        "target_soc": data.get("auto_shadow_target_soc"),
+        "max_runtime_h": data.get("auto_shadow_max_runtime_h"),
+        "start_time": data.get("auto_shadow_start_time"),
+        "price_sources": data.get("auto_shadow_price_sources", []),
+        "all_prices_known": data.get("auto_shadow_all_prices_known", False),
+        "manual_override_active": data.get("auto_shadow_manual_override_active", False),
+        "blockers": data.get("auto_shadow_blockers", []),
+        "warnings": data.get("auto_shadow_warnings", []),
+        "control_path_ready": data.get("auto_shadow_control_path_ready", False),
+        "control_path_reason": data.get("auto_shadow_control_path_reason"),
+        "control_path_stable_seconds": data.get("auto_shadow_control_path_stable_seconds"),
+        "note": data.get("auto_shadow_note"),
+    }
+
+
 def _source_monitor_attrs(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "sources": data.get("source_monitor_sources", {}),
@@ -418,6 +445,12 @@ def _controller_attrs(data: dict[str, Any]) -> dict[str, Any]:
 
 
 SENSORS: tuple[AnkerEmsSensorDescription, ...] = (
+    AnkerEmsSensorDescription(
+        key="automatic_execution_shadow",
+        name="Dummy OS EMS Automatic Execution Shadow",
+        value_fn=lambda d: d.get("auto_shadow_status") or "idle",
+        attrs_fn=_auto_shadow_attrs,
+    ),
     AnkerEmsSensorDescription(
         key="status",
         name='Dummy OS EMS Status',

@@ -35,6 +35,7 @@ async def async_setup_entry(
             AnkerEmsAutoPlan72hValid(coordinator, entry),
             AnkerEmsAutoPlan72hExecutionBufferSafe(coordinator, entry),
             AnkerEmsAutoBridgeValid(coordinator, entry),
+            AnkerEmsAutomaticExecutionReady(coordinator, entry),
         ]
     )
 
@@ -419,4 +420,32 @@ class AnkerEmsAutoBridgeValid(_AnkerEmsBinarySensorBase):
             "prestart_signature_match": data.get("auto_prestart_current_signature_match", False),
             "execution_enabled": data.get("auto_bridge_execution_enabled", False),
             "observational_only": data.get("auto_bridge_observational_only", True),
+        }
+
+
+class AnkerEmsAutomaticExecutionReady(_AnkerEmsBinarySensorBase):
+    _attr_name = "Dummy OS EMS Automatic Execution Ready"
+
+    def __init__(self, coordinator: AnkerEmsCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry)
+        self._attr_unique_id = f"{entry.entry_id}_automatic_execution_ready"
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self.coordinator.data.get("auto_shadow_technical_ready"))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        data = self.coordinator.data
+        return {
+            "armed": data.get("auto_shadow_armed", False),
+            "status": data.get("auto_shadow_status"),
+            "blockers": data.get("auto_shadow_blockers", []),
+            "warnings": data.get("auto_shadow_warnings", []),
+            "selected_slot": data.get("auto_shadow_selected_slot"),
+            "action": data.get("auto_shadow_action"),
+            "purpose": data.get("auto_shadow_purpose"),
+            "power_w": data.get("auto_shadow_power_w"),
+            "target_soc": data.get("auto_shadow_target_soc"),
+            "physical_execution_enabled": False,
         }

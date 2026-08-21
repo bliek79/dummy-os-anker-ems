@@ -2,7 +2,7 @@ from __future__ import annotations
 
 DOMAIN = "anker_ems"
 NAME = "Dummy OS EMS"
-VERSION = "0.0.1-alpha.50"
+VERSION = "0.0.1-alpha.51"
 
 CONF_SIMULATION_MODE = "simulation_mode"
 
@@ -86,7 +86,7 @@ DEFAULT_MONITOR_ENERGYZERO_ENTITY = "sensor.battery_control_energy_prices"
 DEFAULT_MONITOR_STROOMVOORSPELLER_ENTITY = "sensor.stroomvoorspeller_data"
 DEFAULT_MONITOR_SOLCAST_API_ENTITY = "sensor.solcast_pv_forecast_api_laatst_geraadpleegd"
 
-PLATFORMS = ["sensor", "binary_sensor", "select", "number", "datetime"]
+PLATFORMS = ["sensor", "binary_sensor", "select", "number", "datetime", "switch"]
 
 PLAN_SLOT_COUNT = 3
 

@@ -490,8 +490,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     entry.async_on_unload(coordinator.async_add_listener(_scheduler_execution_listener))
 
-    # Alpha40: when an automatic planner plan becomes fully start-ready and all
-    # observer gates are green, physically validate only the mode transition.
+    # Alpha51 keeps the entire automatic chain shadow-only. The legacy Alpha40
+    # mode-switch transaction remains available in code for controlled testing,
+    # but the automatic listener is hard-gated by auto_shadow_execution_permitted.
+    # No automatic Home Assistant control service may run in this release.
     # The transaction applies a 0 W guard, switches to third_party_control,
     # revalidates, and immediately returns to self_consumption. It never selects
     # a charge/discharge direction or sends non-zero power.
@@ -501,6 +503,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     def _automatic_mode_switch_listener() -> None:
         nonlocal automatic_mode_switch_task
         data = coordinator.data or {}
+        if data.get("auto_shadow_execution_permitted") is not True:
+            return
         if data.get("auto_mode_switch_preview_ready") is not True:
             return
         if data.get("auto_final_revalidation_safe") is not True:

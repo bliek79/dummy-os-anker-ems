@@ -130,6 +130,10 @@ def _build_candidate(segment: list[dict[str, Any]], now_utc: datetime, max_charg
         for value in (_as_float(item.get("price")) for item in segment)
         if value is not None
     ]
+    price_sources = sorted({
+        str(item.get("price_source") or "unknown") for item in segment
+    })
+    all_prices_known = bool(price_sources) and price_sources == ["known"]
 
     return {
         "action": action,
@@ -147,6 +151,8 @@ def _build_candidate(segment: list[dict[str, Any]], now_utc: datetime, max_charg
         "source_hours": [item["parsed_time"].isoformat() for item in segment],
         "price_min": round(min(prices), 5) if prices else None,
         "price_max": round(max(prices), 5) if prices else None,
+        "price_sources": price_sources,
+        "all_prices_known": all_prices_known,
         "soc_start": _as_float(first.get("soc_start")),
         "soc_end": target_soc,
         "execution_reserve_start_soc": _as_float(first.get("execution_reserve_floor_start_soc")),

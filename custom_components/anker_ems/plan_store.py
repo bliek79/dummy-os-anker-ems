@@ -39,6 +39,8 @@ DEFAULT_PLAN: dict[str, Any] = {
     "planner_generated_at": None,
     "planner_identity": None,
     "planner_signature": None,
+    "price_sources": [],
+    "all_prices_known": False,
 }
 
 
@@ -205,6 +207,8 @@ class AnkerEmsPlanStore:
                 new_plan["planner_generated_at"] = now_iso
                 new_plan["planner_identity"] = proposal.get("planner_identity")
                 new_plan["planner_signature"] = proposal.get("planner_signature")
+                new_plan["price_sources"] = list(proposal.get("price_sources") or [])
+                new_plan["all_prices_known"] = bool(proposal.get("all_prices_known"))
 
                 # Do not write persistent storage every coordinator poll. The
                 # bridge signature changes only when the actual planner proposal
