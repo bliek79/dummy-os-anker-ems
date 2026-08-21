@@ -245,7 +245,14 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Show the validated EMS settings without diagnostic/test wording."""
+        """Enter the production settings step using a fresh translation key."""
+        return await self.async_step_settings(user_input)
+
+    async def async_step_settings(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show the validated EMS settings with production labels."""
         current_profile = self.config_entry.options.get(
             CONF_ELECTRICAL_PROFILE,
             self.config_entry.data.get(
@@ -440,4 +447,4 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
                 ),
             }
         )
-        return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
+        return self.async_show_form(step_id="settings", data_schema=schema, errors=errors)

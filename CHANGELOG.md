@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.0.1-alpha.49.1 - 2026-08-21
+
+### Fixed
+- Options Flow gebruikt nu een nieuwe productie-step-id `settings` in plaats van de historisch gecachte `init`-weergave.
+- Hierdoor vraagt Home Assistant de actuele titel, beschrijving en veldlabels opnieuw op en kunnen oude alpha46/diagnostische teksten niet meer aan de bestaande `init`-vertalingssleutel blijven hangen.
+- De werkende configuratie en opslag uit alpha49 blijven inhoudelijk ongewijzigd.
+- `init` blijft intern als compatibele ingang bestaan en verwijst direct door naar `settings`.
+
+### Validation
+- Python compile-check: geslaagd.
+- JSON-validatie: geslaagd.
+- ZIP-integriteitscontrole: geslaagd.
+
 ## 0.0.1-alpha.49 - 2026-08-21
 
 ### Options Flow productieteksten en vertalingen
