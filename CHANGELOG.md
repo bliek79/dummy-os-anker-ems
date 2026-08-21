@@ -1,3 +1,14 @@
+## 0.0.1-alpha.46.1 - 2026-08-21
+
+- Reparatie van de Options Flow na de live vastgestelde 400-fout in alpha46.
+- Oorzaak geïsoleerd tot de `NumberSelector` voor `import_markup_per_kwh` met `step=0.0001` en/of de selector-unit in Home Assistant 2026.8.
+- Vervangt uitsluitend dat markupveld door een eenvoudige Voluptuous float-validatie (`vol.Coerce(float)` + bereik -1.0 t/m 2.0).
+- De opgeslagen waarde blijft een echte float; standaard blijft `0.1288` €/kWh.
+- De unit staat nu in het veldlabel in plaats van in de NumberSelector.
+- Alle in alpha45 bewezen velden en opslaglogica blijven ongewijzigd.
+- Exportmarkup en 15/60-minutenkeuze zijn nog niet toegevoegd.
+- Geen wijziging aan planner, scheduler, safety guard, execution controller of fysieke batterijbesturing.
+
 ## 0.0.1-alpha.46 - 2026-08-21
 
 ### Options Flow rebuild - stap 5: importmarkup

@@ -69,7 +69,7 @@
           "max_discharge_power_w": "Maximaal ontlaadvermogen",
           "market_price_architecture_enabled": "Nieuwe marktprijsarchitectuur gebruiken",
           "market_price_entity": "Marktprijsbron",
-          "import_markup_per_kwh": "Importmarkup"
+          "import_markup_per_kwh": "Importmarkup (€/kWh)"
         }
       }
     },

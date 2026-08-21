@@ -385,14 +385,9 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
                 vol.Required(
                     CONF_IMPORT_MARKUP_PER_KWH,
                     default=current_import_markup_per_kwh,
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=-1.0,
-                        max=2.0,
-                        step=0.0001,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="€/kWh",
-                    )
+                ): vol.All(
+                    vol.Coerce(float),
+                    vol.Range(min=-1.0, max=2.0),
                 ),
             }
         )
