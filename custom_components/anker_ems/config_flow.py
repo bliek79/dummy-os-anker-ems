@@ -245,7 +245,7 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Alpha47: add export markup using the HA-safe numeric schema."""
+        """Alpha48: add tariff resolution selection to the validated Options Flow."""
         current_profile = self.config_entry.options.get(
             CONF_ELECTRICAL_PROFILE,
             self.config_entry.data.get(
@@ -305,6 +305,15 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
                 ),
             )
         )
+        current_tariff_resolution = str(
+            self.config_entry.options.get(
+                CONF_TARIFF_RESOLUTION,
+                self.config_entry.data.get(
+                    CONF_TARIFF_RESOLUTION,
+                    DEFAULT_TARIFF_RESOLUTION,
+                ),
+            )
+        )
 
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -337,6 +346,9 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
                         ),
                         CONF_EXPORT_MARKUP_PER_KWH: float(
                             user_input[CONF_EXPORT_MARKUP_PER_KWH]
+                        ),
+                        CONF_TARIFF_RESOLUTION: str(
+                            user_input[CONF_TARIFF_RESOLUTION]
                         ),
                     }
                 )
@@ -407,6 +419,24 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
                 ): vol.All(
                     vol.Coerce(float),
                     vol.Range(min=-1.0, max=2.0),
+                ),
+                vol.Required(
+                    CONF_TARIFF_RESOLUTION,
+                    default=current_tariff_resolution,
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(
+                                value=TARIFF_RESOLUTION_HOURLY,
+                                label="60 minuten",
+                            ),
+                            selector.SelectOptionDict(
+                                value=TARIFF_RESOLUTION_QUARTER_HOURLY,
+                                label="15 minuten",
+                            ),
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
                 ),
             }
         )

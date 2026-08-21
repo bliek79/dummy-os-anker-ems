@@ -61,8 +61,8 @@
   "options": {
     "step": {
       "init": {
-        "title": "EMS instellingen - stap 5 importmarkup",
-        "description": "Alpha47 behoudt de zes live gevalideerde velden en voegt uitsluitend de exportmarkup toe via dezelfde HA-veilige numerieke invoer. Huidige import- en exportmarkup: €0,1288/kWh. Uur-/kwartierresolutie volgt in de volgende stap.",
+        "title": "EMS instellingen - stap 7 tijdresolutie",
+        "description": "Alpha48 behoudt de zeven live gevalideerde velden en voegt uitsluitend de prijsresolutie toe. Kies 60 minuten voor uurprijzen of 15 minuten voor kwartierprijzen. De plannerlogica wordt in deze stap nog niet aangepast.",
         "data": {
           "electrical_profile": "Aansluitprofiel",
           "max_charge_power_w": "Maximaal laadvermogen",
@@ -70,7 +70,8 @@
           "market_price_architecture_enabled": "Nieuwe marktprijsarchitectuur gebruiken",
           "market_price_entity": "Marktprijsbron",
           "import_markup_per_kwh": "Importmarkup (€/kWh)",
-          "export_markup_per_kwh": "Exportmarkup (€/kWh)"
+          "export_markup_per_kwh": "Exportmarkup (€/kWh)",
+          "tariff_resolution": "Prijsresolutie"
         }
       }
     },

@@ -1,3 +1,15 @@
+# Changelog
+
+## 0.0.1-alpha.48
+
+- Behoudt alle live gevalideerde Options Flow-velden uit alpha47.
+- Voegt uitsluitend `tariff_resolution` toe als veilige dropdown.
+- Keuzes: `hourly` (60 minuten) en `quarter_hourly` (15 minuten).
+- Standaard blijft 60 minuten voor bestaande installaties zonder opgeslagen keuze.
+- Opgeslagen keuze krijgt altijd voorrang bij opnieuw openen van Configureren.
+- Geen wijziging aan planner-, scheduler-, Safety Guard-, Execution Controller- of fysieke batterijlogica.
+- Import- en exportmarkup blijven HA-veilig via Voluptuous floatvalidatie en staan standaard op 0,1288 €/kWh.
+
 ## 0.0.1-alpha.47 - 2026-08-21
 
 ### Options Flow rebuild - stap 6: exportmarkup
