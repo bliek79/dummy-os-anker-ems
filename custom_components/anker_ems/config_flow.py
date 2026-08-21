@@ -245,7 +245,7 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Alpha43: add charge/discharge limits to the validated profile field."""
+        """Alpha44: add the market-price architecture switch to the validated base fields."""
         current_profile = self.config_entry.options.get(
             CONF_ELECTRICAL_PROFILE,
             self.config_entry.data.get(
@@ -271,6 +271,15 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
                 else DEFAULT_DEDICATED_MAX_DISCHARGE_POWER_W,
             ),
         )
+        current_market_price_architecture_enabled = bool(
+            self.config_entry.options.get(
+                CONF_MARKET_PRICE_ARCHITECTURE_ENABLED,
+                self.config_entry.data.get(
+                    CONF_MARKET_PRICE_ARCHITECTURE_ENABLED,
+                    False,
+                ),
+            )
+        )
 
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -292,6 +301,9 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
                         CONF_ELECTRICAL_PROFILE: profile,
                         CONF_MAX_CHARGE_POWER_W: charge,
                         CONF_MAX_DISCHARGE_POWER_W: discharge,
+                        CONF_MARKET_PRICE_ARCHITECTURE_ENABLED: bool(
+                            user_input[CONF_MARKET_PRICE_ARCHITECTURE_ENABLED]
+                        ),
                     }
                 )
                 return self.async_create_entry(title="", data=merged)
@@ -340,6 +352,10 @@ class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
                         unit_of_measurement="W",
                     )
                 ),
+                vol.Required(
+                    CONF_MARKET_PRICE_ARCHITECTURE_ENABLED,
+                    default=current_market_price_architecture_enabled,
+                ): bool,
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

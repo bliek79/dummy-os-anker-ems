@@ -1,3 +1,23 @@
+## 0.0.1-alpha.44 - 2026-08-21
+
+### Options Flow rebuild - stap 3: marktprijsarchitectuur-schakelaar
+- Alpha43 is live geslaagd: aansluitprofiel en beide vermogenslimieten openen correct met **Eigen groep**, **3200 W laden** en **3200 W ontladen**.
+- Behoudt de drie gevalideerde basisvelden en voegt uitsluitend `market_price_architecture_enabled` toe.
+- De schakelaar leest de bestaande waarde uit options, met fallback naar config-entry data en daarna `false`.
+- Bestaande verborgen options blijven behouden bij opslaan.
+- Nog geen prijsbron, importmarkup, exportmarkup of uur-/kwartierresolutie zichtbaar; die worden daarna één voor één teruggebracht.
+- Geen wijzigingen aan Plan72, prijsberekening, Plan Store, Scheduler, Safety Guard, Execution Controller of fysieke batterijbesturing.
+
+### Live validatie
+1. Controleer dat Home Assistant `0.0.1-alpha.44` toont.
+2. Open **Configureren**.
+3. Verwacht vier velden: **Aansluitprofiel**, **Maximaal laadvermogen**, **Maximaal ontlaadvermogen** en **Nieuwe marktprijsarchitectuur gebruiken**.
+4. Voor de huidige installatie verwacht: **Eigen groep**, **3200 W**, **3200 W**.
+5. De nieuwe schakelaar mag uit staan wanneer hij nog niet eerder was opgeslagen.
+6. Klik **Verzenden** en open **Configureren** opnieuw.
+7. Controleer dat alle vier waarden behouden blijven.
+8. Indien succesvol: alpha45 voegt als volgende losse stap de marktprijsbron toe.
+
 ## 0.0.1-alpha.43 - 2026-08-21
 
 ### Options Flow rebuild - stap 2: centrale vermogenslimieten
