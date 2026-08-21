@@ -61,17 +61,10 @@
   "options": {
     "step": {
       "init": {
-        "title": "EMS instellingen",
-        "description": "Alpha40.9 gebruikt bewust een minimale Options Flow om Configureren stabiel te herstellen. Stel hier de centrale vermogenslimieten en leverancier-onafhankelijke prijslaag in.",
+        "title": "EMS instellingen - diagnostische minimale flow",
+        "description": "Alpha40.10 test de Home Assistant 2026.8 Options Flow met één eenvoudig veld. Als dit scherm opent, zit de eerdere 400-fout in de uitgebreide schema-opbouw en niet in de flowroute zelf.",
         "data": {
-          "electrical_profile": "Aansluitprofiel",
-          "max_charge_power_w": "Maximaal laadvermogen",
-          "max_discharge_power_w": "Maximaal ontlaadvermogen",
-          "market_price_architecture_enabled": "Leverancier-onafhankelijke prijslaag gebruiken",
-          "market_price_entity": "Marktprijsbron (Stroomvoorspeller)",
-          "import_markup_per_kwh": "Importopslag / correctie in €/kWh",
-          "export_markup_per_kwh": "Exportopslag / correctie in €/kWh",
-          "tariff_resolution": "Tariefresolutie"
+          "market_price_architecture_enabled": "Diagnostische testoptie (prijslaag)"
         }
       }
     },

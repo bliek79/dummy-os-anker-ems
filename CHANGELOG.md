@@ -1,4 +1,4 @@
-## 0.0.1-alpha.40.10 - 2026-08-21
+## 0.0.1-alpha.41 - 2026-08-21
 
 ### Options Flow isolation recovery
 - Bevestigt alpha40.9 als nog niet opgelost: Home Assistant 2026.8.2 bleef `400 Bad Request` geven voordat het formulier verscheen.
@@ -9,7 +9,7 @@
 - Doel: onderscheid maken tussen een fout in de HA Options Flow route/registratie en een fout in de uitgebreide alpha40.8/40.9 schema-opbouw.
 
 ### Live validatie
-1. Controleer dat Home Assistant `0.0.1-alpha.40.10` toont.
+1. Controleer dat Home Assistant `0.0.1-alpha.41` toont.
 2. Klik op **Configureren**.
 3. Verwacht: het formulier opent met exact één testoptie.
 4. Niet opslaan is voldoende voor deze eerste test.

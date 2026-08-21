@@ -239,147 +239,32 @@ class AnkerEmsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
-    """Minimal Options Flow for electrical and price architecture settings."""
+    """Diagnostic minimal Options Flow for Home Assistant 2026.8.x."""
 
     async def async_step_init(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Manage the stable core options only."""
-        errors: dict[str, str] = {}
+        """Open the smallest possible options form.
 
+        Alpha40.10 intentionally removes selectors, config-entry reads and all
+        multi-field validation from form creation. This isolates the HA options
+        flow route itself from the previous schema. Existing options are only
+        touched when the user explicitly submits the form.
+        """
         if user_input is not None:
-            profile = str(user_input.get(CONF_ELECTRICAL_PROFILE, DEFAULT_ELECTRICAL_PROFILE))
-            charge = int(user_input.get(CONF_MAX_CHARGE_POWER_W, DEFAULT_SHARED_MAX_POWER_W))
-            discharge = int(user_input.get(CONF_MAX_DISCHARGE_POWER_W, DEFAULT_SHARED_MAX_POWER_W))
-            profile_cap = (
-                DEFAULT_SHARED_MAX_POWER_W
-                if profile == ELECTRICAL_PROFILE_SHARED
-                else ABSOLUTE_MAX_CHARGE_POWER_W
-            )
-            if charge > profile_cap or discharge > profile_cap:
-                errors["base"] = "power_above_profile_limit"
-            else:
-                merged = dict(self.config_entry.options)
-                merged.update(user_input)
-                return self.async_create_entry(title="", data=merged)
+            merged = dict(self.config_entry.options)
+            merged.update(user_input)
+            return self.async_create_entry(title="", data=merged)
 
         return self.async_show_form(
             step_id="init",
-            data_schema=self._options_schema(user_input),
-            errors=errors,
-        )
-
-    def _current(self, key: str, default: Any) -> Any:
-        """Read option first, then original config-entry data, then default."""
-        return self.config_entry.options.get(
-            key, self.config_entry.data.get(key, default)
-        )
-
-    def _options_schema(self, values: dict[str, Any] | None = None) -> vol.Schema:
-        """Return the smallest stable options schema needed for alpha40.8."""
-        values = values or {}
-
-        def value(key: str, default: Any) -> Any:
-            return values.get(key, self._current(key, default))
-
-        return vol.Schema(
-            {
-                vol.Optional(
-                    CONF_ELECTRICAL_PROFILE,
-                    default=value(CONF_ELECTRICAL_PROFILE, DEFAULT_ELECTRICAL_PROFILE),
-                ): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[
-                            selector.SelectOptionDict(
-                                value=ELECTRICAL_PROFILE_DEDICATED, label="Eigen groep"
-                            ),
-                            selector.SelectOptionDict(
-                                value=ELECTRICAL_PROFILE_SHARED,
-                                label="Geen eigen groep / gedeelde groep",
-                            ),
-                        ],
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Optional(
-                    CONF_MAX_CHARGE_POWER_W,
-                    default=value(
-                        CONF_MAX_CHARGE_POWER_W, DEFAULT_SHARED_MAX_POWER_W
-                    ),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=100,
-                        max=ABSOLUTE_MAX_CHARGE_POWER_W,
-                        step=100,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="W",
-                    )
-                ),
-                vol.Optional(
-                    CONF_MAX_DISCHARGE_POWER_W,
-                    default=value(
-                        CONF_MAX_DISCHARGE_POWER_W, DEFAULT_SHARED_MAX_POWER_W
-                    ),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=100,
-                        max=ABSOLUTE_MAX_DISCHARGE_POWER_W,
-                        step=100,
-                        mode=selector.NumberSelectorMode.BOX,
-                        unit_of_measurement="W",
-                    )
-                ),
-                vol.Optional(
-                    CONF_MARKET_PRICE_ARCHITECTURE_ENABLED,
-                    default=value(CONF_MARKET_PRICE_ARCHITECTURE_ENABLED, False),
-                ): selector.BooleanSelector(),
-                vol.Optional(
-                    CONF_MARKET_PRICE_ENTITY,
-                    default=value(CONF_MARKET_PRICE_ENTITY, DEFAULT_MARKET_PRICE_ENTITY),
-                ): _entity_selector("sensor"),
-                vol.Optional(
-                    CONF_IMPORT_MARKUP_PER_KWH,
-                    default=value(
-                        CONF_IMPORT_MARKUP_PER_KWH, DEFAULT_IMPORT_MARKUP_PER_KWH
-                    ),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=-1.0,
-                        max=1.0,
-                        step=0.0001,
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Optional(
-                    CONF_EXPORT_MARKUP_PER_KWH,
-                    default=value(
-                        CONF_EXPORT_MARKUP_PER_KWH, DEFAULT_EXPORT_MARKUP_PER_KWH
-                    ),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=-1.0,
-                        max=1.0,
-                        step=0.0001,
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Optional(
-                    CONF_TARIFF_RESOLUTION,
-                    default=value(CONF_TARIFF_RESOLUTION, DEFAULT_TARIFF_RESOLUTION),
-                ): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[
-                            selector.SelectOptionDict(
-                                value=TARIFF_RESOLUTION_HOURLY, label="Per uur"
-                            ),
-                            selector.SelectOptionDict(
-                                value=TARIFF_RESOLUTION_QUARTER_HOURLY,
-                                label="Per kwartier",
-                            ),
-                        ],
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-            }
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_MARKET_PRICE_ARCHITECTURE_ENABLED,
+                        default=False,
+                    ): bool,
+                }
+            ),
         )
