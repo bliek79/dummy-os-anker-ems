@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.0.1-alpha.40.2 - Plan72 Refresh & Recorder Optimization
+
+- Keeps the coordinator on its fast 10-second cadence for live safety, Scheduler and execution state, while caching the expensive 72-hour planner result.
+- Limits periodic 72-hour planner recalculation to at most once per local hour between 05:00 and 22:00.
+- Disables periodic 72-hour planner recalculation between 22:00 and 05:00.
+- Allows immediate extra planner recalculation on relevant source-content changes, forecast recovery, integration startup and start-critical automatic-plan transitions.
+- Counts an event-driven refresh inside the active hour as that hour's periodic refresh to avoid a redundant second calculation.
+- Keeps the full live `plan` payload only on `sensor.dummy_os_ems_plan72_hours`; the remaining Plan72 sensors now expose compact summary attributes.
+- Marks the large `plan` attribute as unrecorded using Home Assistant's supported entity-level recorder exclusion, while keeping it available live for the dashboard graph.
+- Adds Plan72 refresh diagnostics: policy, cached state, refresh reason, last refresh time and refresh count today.
+- Preserves alpha40.1 planner-outage persistence behavior and alpha40 controlled physical mode-switch scope.
+- No entities are added or removed; entity count remains 105.
+
 ## 0.0.1-alpha.40.1 - Planner Outage Persistence Fix
 
 - Preserves existing planner-owned concept/pending plans when planner, forecast or execution-buffer gates are temporarily unavailable.

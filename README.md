@@ -5,7 +5,7 @@
 > **Status:** experimental alpha  
 > **Domain:** `anker_ems`  
 > **Minimum Home Assistant:** 2026.7.0  
-> **Current version:** `0.0.1-alpha.40.1`
+> **Current version:** `0.0.1-alpha.40.2`
 
 The integration combines battery status, electricity prices, solar forecast, home-consumption forecast, safety limits and user choices into one local EMS layer. The architecture is deliberately split into planning, persistent plan storage, scheduling, safety validation and physical execution.
 
@@ -52,9 +52,11 @@ The current alpha supports:
 - non-actuating Safety Guard -> Execution Controller handoff preview with final execution prerequisites;
 - final live revalidation and explicit mode-switch transaction preview;
 - controlled physical mode-switch validation for a fully approved automatic plan: 0 W guard -> `third_party_control` -> post-mode revalidation -> immediate safe return to `self_consumption`;
-- centralized configurable charge/discharge power limits based on the electrical connection profile.
+- centralized configurable charge/discharge power limits based on the electrical connection profile;
+- optimized Plan72 refresh policy: hourly between 05:00 and 22:00 plus event-driven/start-critical refreshes; no periodic overnight refreshes;
+- Recorder-safe Plan72 dashboard payload handling: the large live `plan` attribute is excluded from history while remaining available to the dashboard.
 
-**Automatic charge/discharge execution is still disabled.** Alpha40 may physically validate only the operating-mode transition for a fully approved automatic plan. It never selects charge/discharge direction and never applies a non-zero automatic power setpoint.
+**Automatic charge/discharge execution is still disabled.** Alpha40.2 retains the alpha40 physical scope and may only validate the operating-mode transition for a fully approved automatic plan. It never selects charge/discharge direction and never applies a non-zero automatic power setpoint.
 
 ## Pre-start safety model
 

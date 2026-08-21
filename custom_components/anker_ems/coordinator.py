@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from copy import deepcopy
 import logging
 from typing import Any, Iterable
 
@@ -141,6 +142,112 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.physical_test = physical_test
         self.execution = execution
         self.source_monitor = source_monitor
+        self._cached_72h_plan: dict[str, Any] | None = None
+        self._last_plan_source_token: str | None = None
+        self._last_plan_refresh_at: datetime | None = None
+        self._last_plan_refresh_reason: str | None = None
+        self._last_plan_periodic_bucket: str | None = None
+        self._last_plan_start_critical_key: str | None = None
+        self._last_forecast_ready: bool | None = None
+        self._plan_refresh_count_date = dt_util.now().date()
+        self._plan_refresh_count_today = 0
+
+
+    @staticmethod
+    def _planner_source_token(data: dict[str, Any]) -> str:
+        """Return a stable token for content changes relevant to the 72h planner."""
+        sources = data.get("source_monitor_sources") or {}
+        relevant = (
+            "solcast_forecast",
+            "stroomvoorspeller",
+            "energyzero_prices",
+            "price_forecast",
+        )
+        return "|".join(
+            f"{name}:{(sources.get(name) or {}).get('last_content_change') or ''}"
+            for name in relevant
+        )
+
+    def _planner_start_critical_key(self, scheduler_data: dict[str, Any]) -> str | None:
+        """Return a one-shot key when an automatic plan enters a start-critical phase."""
+        slots = scheduler_data.get("scheduler_slots") or {}
+        selected_slot = scheduler_data.get("scheduler_selected_slot")
+        if isinstance(selected_slot, int):
+            detail = slots.get(selected_slot) or slots.get(str(selected_slot)) or {}
+            if detail.get("origin") == "automatic_72h_planner":
+                identity = detail.get("planner_identity") or f"slot_{selected_slot}"
+                return f"due:{identity}"
+
+        next_slot = scheduler_data.get("scheduler_next_future_slot")
+        next_start_raw = scheduler_data.get("scheduler_next_future_start")
+        if not isinstance(next_slot, int) or not next_start_raw:
+            return None
+        detail = slots.get(next_slot) or slots.get(str(next_slot)) or {}
+        if detail.get("origin") != "automatic_72h_planner":
+            return None
+        next_start = _parse_datetime(next_start_raw)
+        if next_start is None:
+            return None
+        now_utc = dt_util.utcnow().astimezone(dt_util.UTC)
+        minutes = (next_start - now_utc).total_seconds() / 60.0
+        if 0.0 < minutes <= 15.0:
+            identity = detail.get("planner_identity") or f"slot_{next_slot}"
+            return f"near:{identity}"
+        return None
+
+    def _should_refresh_72h_plan(
+        self,
+        data: dict[str, Any],
+        scheduler_data: dict[str, Any],
+    ) -> tuple[bool, str, str, str | None]:
+        """Apply alpha40.2 planner refresh policy.
+
+        The coordinator itself remains fast for live safety/execution state, while
+        the expensive 72-hour planner is refreshed at most once per local hour
+        between 05:00 and 22:00, plus immediate event-driven exceptions.
+        """
+        now_local = dt_util.now()
+        if self._plan_refresh_count_date != now_local.date():
+            self._plan_refresh_count_date = now_local.date()
+            self._plan_refresh_count_today = 0
+
+        source_token = self._planner_source_token(data)
+        hour_bucket = now_local.strftime("%Y-%m-%dT%H")
+        start_key = self._planner_start_critical_key(scheduler_data)
+        forecast_ready = bool(data.get("forecast_ready"))
+
+        if self._cached_72h_plan is None:
+            return True, "startup", source_token, start_key
+
+        if source_token != self._last_plan_source_token:
+            return True, "source_content_changed", source_token, start_key
+
+        if self._last_forecast_ready is False and forecast_ready:
+            return True, "forecast_recovered", source_token, start_key
+
+        if start_key is not None and start_key != self._last_plan_start_critical_key:
+            return True, "start_critical", source_token, start_key
+
+        if 5 <= now_local.hour <= 22 and hour_bucket != self._last_plan_periodic_bucket:
+            return True, "hourly_window", source_token, start_key
+
+        return False, "cached", source_token, start_key
+
+    def _planner_refresh_metadata(self, reason: str) -> dict[str, Any]:
+        return {
+            "auto_plan_72h_refresh_policy": "hourly_05_22_plus_events",
+            "auto_plan_72h_refresh_cached": reason == "cached",
+            "auto_plan_72h_refresh_reason": reason,
+            "auto_plan_72h_last_refreshed_at": (
+                self._last_plan_refresh_at.isoformat()
+                if self._last_plan_refresh_at is not None
+                else None
+            ),
+            "auto_plan_72h_refresh_count_today": self._plan_refresh_count_today,
+            "auto_plan_72h_periodic_window": "05:00-22:00",
+            "auto_plan_72h_periodic_max_per_hour": 1,
+            "auto_plan_72h_event_refresh_enabled": True,
+        }
 
     @property
     def simulation_mode(self) -> bool:
@@ -389,6 +496,11 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "power_setpoint_w": self._number(CONF_POWER_SETPOINT_ENTITY),
         }
         data.update(self._build_forecast())
+        # Source Monitor remains fast and observes every coordinator cycle. It
+        # supplies content-change timestamps used to trigger event-driven 72h
+        # refreshes without polling the heavy planner every 10 seconds.
+        data.update(await self.source_monitor.async_observe(self._source_monitor_specs()))
+
         reserve_percent = self.entry.options.get(
             CONF_SOFTWARE_RESERVE_PERCENT, DEFAULT_SOFTWARE_RESERVE_PERCENT
         )
@@ -415,8 +527,19 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             max_charge_power_w=self.max_charge_power_w,
         )
         data.update(planner_preview)
-        data.update(
-            build_72h_plan_preview(
+
+        # Scheduler timing is cheap and remains live. It is also used as an
+        # exception trigger so the 72h planner gets one fresh calculation when
+        # an automatic action enters the final 15-minute decision window or
+        # becomes start-ready.
+        scheduler_snapshot = self.scheduler.evaluate(
+            self.max_charge_power_w, self.max_discharge_power_w
+        )
+        refresh, refresh_reason, source_token, start_key = self._should_refresh_72h_plan(
+            data, scheduler_snapshot
+        )
+        if refresh:
+            self._cached_72h_plan = build_72h_plan_preview(
                 data.get("forecast", []),
                 energy_need,
                 planner_preview,
@@ -426,9 +549,24 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 max_charge_power_w=self.max_charge_power_w,
                 max_discharge_power_w=self.max_discharge_power_w,
             )
-        )
-        data.update(await self.source_monitor.async_observe(self._source_monitor_specs()))
-        data.update(self.scheduler.evaluate(self.max_charge_power_w, self.max_discharge_power_w))
+            now_local = dt_util.now()
+            self._last_plan_refresh_at = now_local
+            self._last_plan_refresh_reason = refresh_reason
+            self._last_plan_source_token = source_token
+            self._last_forecast_ready = bool(data.get("forecast_ready"))
+            self._last_plan_start_critical_key = start_key
+            self._plan_refresh_count_today += 1
+            if 5 <= now_local.hour <= 22:
+                # Any event-driven refresh during this hour also satisfies the
+                # hourly periodic refresh, preventing a redundant second pass.
+                self._last_plan_periodic_bucket = now_local.strftime("%Y-%m-%dT%H")
+        else:
+            self._last_forecast_ready = bool(data.get("forecast_ready"))
+
+        if self._cached_72h_plan is not None:
+            data.update(deepcopy(self._cached_72h_plan))
+        data.update(self._planner_refresh_metadata(refresh_reason))
+        data.update(scheduler_snapshot)
         bridge = build_planner_action_bridge(data)
         data.update(bridge)
 

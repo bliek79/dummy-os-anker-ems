@@ -162,7 +162,7 @@ def _planner_preview_attrs(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _auto_plan_72h_attrs(data: dict[str, Any]) -> dict[str, Any]:
+def _auto_plan_72h_summary_attrs(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "valid": data.get("auto_plan_72h_valid", False),
         "reason": data.get("auto_plan_72h_reason"),
@@ -198,9 +198,22 @@ def _auto_plan_72h_attrs(data: dict[str, Any]) -> dict[str, Any]:
         "discharge_efficiency_percent": data.get("auto_plan_72h_discharge_efficiency_percent"),
         "observational_only": data.get("auto_plan_72h_observational_only", True),
         "execution_enabled": data.get("auto_plan_72h_execution_enabled", False),
-        "plan": data.get("auto_plan_72h_plan", []),
+        "refresh_policy": data.get("auto_plan_72h_refresh_policy"),
+        "refresh_cached": data.get("auto_plan_72h_refresh_cached", False),
+        "refresh_reason": data.get("auto_plan_72h_refresh_reason"),
+        "last_refreshed_at": data.get("auto_plan_72h_last_refreshed_at"),
+        "refresh_count_today": data.get("auto_plan_72h_refresh_count_today", 0),
+        "periodic_window": data.get("auto_plan_72h_periodic_window"),
+        "periodic_max_per_hour": data.get("auto_plan_72h_periodic_max_per_hour", 1),
+        "event_refresh_enabled": data.get("auto_plan_72h_event_refresh_enabled", True),
         "note": data.get("auto_plan_72h_note"),
     }
+
+
+def _auto_plan_72h_chart_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    attrs = _auto_plan_72h_summary_attrs(data)
+    attrs["plan"] = data.get("auto_plan_72h_plan", [])
+    return attrs
 
 
 def _auto_bridge_attrs(data: dict[str, Any]) -> dict[str, Any]:
@@ -638,63 +651,63 @@ SENSORS: tuple[AnkerEmsSensorDescription, ...] = (
         key="auto_plan_72h_status",
         name='Dummy OS EMS Plan72 Status',
         value_fn=lambda d: d.get("auto_plan_72h_status"),
-        attrs_fn=_auto_plan_72h_attrs,
+        attrs_fn=_auto_plan_72h_summary_attrs,
     ),
     AnkerEmsSensorDescription(
         key="auto_plan_72h_hours",
         name='Dummy OS EMS Plan72 Hours',
         native_unit_of_measurement="h",
         value_fn=lambda d: d.get("auto_plan_72h_count"),
-        attrs_fn=_auto_plan_72h_attrs,
+        attrs_fn=_auto_plan_72h_chart_attrs,
     ),
     AnkerEmsSensorDescription(
         key="auto_plan_72h_end_soc",
         name='Dummy OS EMS Plan72 End SOC',
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda d: d.get("auto_plan_72h_end_soc"),
-        attrs_fn=_auto_plan_72h_attrs,
+        attrs_fn=_auto_plan_72h_summary_attrs,
     ),
     AnkerEmsSensorDescription(
         key="auto_plan_72h_min_soc",
         name='Dummy OS EMS Plan72 Minimum SOC',
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda d: d.get("auto_plan_72h_min_soc"),
-        attrs_fn=_auto_plan_72h_attrs,
+        attrs_fn=_auto_plan_72h_summary_attrs,
     ),
     AnkerEmsSensorDescription(
         key="auto_plan_72h_dynamic_reserve_now",
         name='Dummy OS EMS Plan72 Reserve',
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda d: d.get("auto_plan_72h_reserve_floor_soc"),
-        attrs_fn=_auto_plan_72h_attrs,
+        attrs_fn=_auto_plan_72h_summary_attrs,
     ),
     AnkerEmsSensorDescription(
         key="auto_plan_72h_dynamic_reserve_max",
         name='Dummy OS EMS Plan72 Maximum Reserve',
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda d: d.get("auto_plan_72h_dynamic_reserve_max_soc"),
-        attrs_fn=_auto_plan_72h_attrs,
+        attrs_fn=_auto_plan_72h_summary_attrs,
     ),
     AnkerEmsSensorDescription(
         key="auto_plan_72h_execution_reserve_now",
         name='Dummy OS EMS Plan72 Execution Reserve',
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda d: d.get("auto_plan_72h_execution_reserve_floor_soc"),
-        attrs_fn=_auto_plan_72h_attrs,
+        attrs_fn=_auto_plan_72h_summary_attrs,
     ),
     AnkerEmsSensorDescription(
         key="auto_plan_72h_execution_headroom_min",
         name='Dummy OS EMS Plan72 Execution Margin',
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda d: d.get("auto_plan_72h_min_execution_headroom_soc"),
-        attrs_fn=_auto_plan_72h_attrs,
+        attrs_fn=_auto_plan_72h_summary_attrs,
     ),
     AnkerEmsSensorDescription(
         key="auto_plan_72h_execution_buffer_breach_hours",
         name='Dummy OS EMS Plan72 Buffer Breach',
         native_unit_of_measurement="h",
         value_fn=lambda d: d.get("auto_plan_72h_execution_buffer_breach_hours"),
-        attrs_fn=_auto_plan_72h_attrs,
+        attrs_fn=_auto_plan_72h_summary_attrs,
     ),
     AnkerEmsSensorDescription(
         key="auto_plan_72h_solar_horizon_status",
@@ -704,49 +717,49 @@ SENSORS: tuple[AnkerEmsSensorDescription, ...] = (
             if d.get("auto_plan_72h_solar_horizon_complete")
             else "onvolledig"
         ),
-        attrs_fn=_auto_plan_72h_attrs,
+        attrs_fn=_auto_plan_72h_summary_attrs,
     ),
     AnkerEmsSensorDescription(
         key="auto_plan_72h_solar_horizon_incomplete_hours",
         name='Dummy OS EMS Plan72 Missing Solar Hours',
         native_unit_of_measurement="h",
         value_fn=lambda d: d.get("auto_plan_72h_solar_horizon_incomplete_hours"),
-        attrs_fn=_auto_plan_72h_attrs,
+        attrs_fn=_auto_plan_72h_summary_attrs,
     ),
     AnkerEmsSensorDescription(
         key="auto_plan_72h_solar_charge",
         name='Dummy OS EMS Plan72 Solar Charge',
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         value_fn=lambda d: d.get("auto_plan_72h_solar_charge_kwh"),
-        attrs_fn=_auto_plan_72h_attrs,
+        attrs_fn=_auto_plan_72h_summary_attrs,
     ),
     AnkerEmsSensorDescription(
         key="auto_plan_72h_grid_safety_charge",
         name='Dummy OS EMS Plan72 Safety Charge',
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         value_fn=lambda d: d.get("auto_plan_72h_grid_safety_charge_kwh"),
-        attrs_fn=_auto_plan_72h_attrs,
+        attrs_fn=_auto_plan_72h_summary_attrs,
     ),
     AnkerEmsSensorDescription(
         key="auto_plan_72h_grid_trade_charge",
         name='Dummy OS EMS Plan72 Trade Charge',
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         value_fn=lambda d: d.get("auto_plan_72h_grid_trade_charge_kwh"),
-        attrs_fn=_auto_plan_72h_attrs,
+        attrs_fn=_auto_plan_72h_summary_attrs,
     ),
     AnkerEmsSensorDescription(
         key="auto_plan_72h_home_discharge",
         name='Dummy OS EMS Plan72 Home Discharge',
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         value_fn=lambda d: d.get("auto_plan_72h_home_discharge_kwh"),
-        attrs_fn=_auto_plan_72h_attrs,
+        attrs_fn=_auto_plan_72h_summary_attrs,
     ),
     AnkerEmsSensorDescription(
         key="auto_plan_72h_grid_trade_discharge",
         name='Dummy OS EMS Plan72 Grid Discharge',
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         value_fn=lambda d: d.get("auto_plan_72h_grid_trade_discharge_kwh"),
-        attrs_fn=_auto_plan_72h_attrs,
+        attrs_fn=_auto_plan_72h_summary_attrs,
     ),
     AnkerEmsSensorDescription(
         key="source_monitor",
@@ -842,6 +855,7 @@ async def async_setup_entry(
 
 class AnkerEmsSensor(CoordinatorEntity[AnkerEmsCoordinator], SensorEntity):
     entity_description: AnkerEmsSensorDescription
+    _unrecorded_attributes = frozenset({"plan"})
 
     def __init__(
         self,
