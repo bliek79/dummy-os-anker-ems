@@ -341,7 +341,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Flatten common Stroomvoorspeller today/tomorrow/forecast payload shapes."""
         rows: list[dict[str, Any]] = []
         time_keys = ("time", "timestamp", "datetime", "start", "period_start", "periodStart")
-        price_keys = ("market_price", "marketPrice", "market_predicted", "price", "value", "predicted")
+        price_keys = ("market", "market_price", "marketPrice", "market_predicted", "price", "value", "predicted")
 
         def walk(value: Any) -> None:
             if isinstance(value, list):

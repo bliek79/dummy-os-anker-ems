@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.0.1-alpha.50.1 - 2026-08-21
+
+### Stroomvoorspeller parserfix
+- Leest nu expliciet het veld `market` uit `today.hours` en `tomorrow.hours` van `sensor.stroomvoorspeller_data`.
+- Hierdoor kan de nieuwe prijsarchitectuur de echte marktprijsregels daadwerkelijk vullen in plaats van terug te vallen op legacy bekende/forecastprijzen.
+- Import- en exportprijs blijven worden berekend als marktprijs plus de afzonderlijk ingestelde markup.
+- Geen wijziging aan plannerstrategie, reserveberekening of fysieke batterijuitvoering.
+
 ## 0.0.1-alpha.50 - 2026-08-21
 
 ### Functionele prijslaag
