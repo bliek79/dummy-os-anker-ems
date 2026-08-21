@@ -1,3 +1,24 @@
+## 0.0.1-alpha.42 - 2026-08-21
+
+### Options Flow rebuild - stap 1: aansluitprofiel
+- Alpha41 is live geslaagd: de diagnostische minimale Options Flow opent op Home Assistant Core 2026.8.2.
+- Verwijdert het tijdelijke diagnostische booleanveld uit de Options Flow.
+- Brengt als eerste echte instelling uitsluitend `electrical_profile` terug.
+- Gebruikt hiervoor de bestaande Home Assistant `SelectSelector` met `dedicated_group` en `shared_group`.
+- Leest de huidige waarde veilig uit `config_entry.options`, met fallback naar `config_entry.data` en daarna de standaardwaarde.
+- Bij opslaan worden bestaande verborgen options behouden.
+- Geen wijzigingen aan Plan72, prijslogica, Plan Store, Scheduler, Safety Guard, Execution Controller of fysieke batterijbesturing.
+
+### Live validatie
+1. Controleer dat Home Assistant `0.0.1-alpha.42` toont.
+2. Open **Configureren**.
+3. Verwacht precies één veld: **Aansluitprofiel**.
+4. Voor de huidige installatie hoort **Eigen groep** geselecteerd te zijn.
+5. Sla de instelling op en open **Configureren** opnieuw.
+6. Verwacht dat **Eigen groep** behouden blijft.
+7. Indien opnieuw `400 Bad Request`: de `SelectSelector`/waardeopbouw van `electrical_profile` is de eerstvolgende verdachte.
+8. Indien succesvol: alpha43 brengt uitsluitend de twee vermogenslimieten terug.
+
 ## 0.0.1-alpha.41 - 2026-08-21
 
 ### Options Flow isolation recovery

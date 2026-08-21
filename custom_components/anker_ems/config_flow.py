@@ -239,32 +239,52 @@ class AnkerEmsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class AnkerEmsOptionsFlow(config_entries.OptionsFlow):
-    """Diagnostic minimal Options Flow for Home Assistant 2026.8.x."""
+    """Stepwise Options Flow rebuild for Home Assistant 2026.8.x."""
 
     async def async_step_init(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Open the smallest possible options form.
+        """Alpha42: reintroduce only the electrical profile field.
 
-        Alpha40.10 intentionally removes selectors, config-entry reads and all
-        multi-field validation from form creation. This isolates the HA options
-        flow route itself from the previous schema. Existing options are only
-        touched when the user explicitly submits the form.
+        Alpha41 proved that the Options Flow route itself works on Home
+        Assistant 2026.8.2. Alpha42 adds exactly one real EMS field using the
+        same selector type as the original configuration flow. Existing
+        options remain preserved when the form is submitted.
         """
         if user_input is not None:
             merged = dict(self.config_entry.options)
             merged.update(user_input)
             return self.async_create_entry(title="", data=merged)
 
-        return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(
-                        CONF_MARKET_PRICE_ARCHITECTURE_ENABLED,
-                        default=False,
-                    ): bool,
-                }
+        current_profile = self.config_entry.options.get(
+            CONF_ELECTRICAL_PROFILE,
+            self.config_entry.data.get(
+                CONF_ELECTRICAL_PROFILE,
+                DEFAULT_ELECTRICAL_PROFILE,
             ),
         )
+
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_ELECTRICAL_PROFILE,
+                    default=current_profile,
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(
+                                value=ELECTRICAL_PROFILE_DEDICATED,
+                                label="Eigen groep",
+                            ),
+                            selector.SelectOptionDict(
+                                value=ELECTRICAL_PROFILE_SHARED,
+                                label="Geen eigen groep / gedeelde groep",
+                            ),
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(step_id="init", data_schema=schema)

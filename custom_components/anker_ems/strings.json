@@ -61,10 +61,10 @@
   "options": {
     "step": {
       "init": {
-        "title": "EMS instellingen - diagnostische minimale flow",
-        "description": "Alpha40.10 test de Home Assistant 2026.8 Options Flow met één eenvoudig veld. Als dit scherm opent, zit de eerdere 400-fout in de uitgebreide schema-opbouw en niet in de flowroute zelf.",
+        "title": "EMS instellingen - stap 1 aansluitprofiel",
+        "description": "Alpha42 bouwt de Options Flow gecontroleerd terug op. Deze stap voegt alleen het echte aansluitprofiel toe. Als dit scherm opent, is ook deze selector op Home Assistant 2026.8.2 gevalideerd.",
         "data": {
-          "market_price_architecture_enabled": "Diagnostische testoptie (prijslaag)"
+          "electrical_profile": "Aansluitprofiel"
         }
       }
     },
