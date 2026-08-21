@@ -32,10 +32,48 @@
           "max_charge_power_w": "Maximaal laadvermogen",
           "max_discharge_power_w": "Maximaal ontlaadvermogen"
         }
+      },
+      "reconfigure": {
+        "title": "Dummy OS EMS opnieuw configureren",
+        "description": "Wijzig Anker-bronnen, vermogenslimieten en EMS-prijsinstellingen in dezelfde bestaande configuratie. De entry wordt na opslaan veilig herladen.",
+        "data": {
+          "simulation_mode": "Simulatiemodus",
+          "soc_entity": "SOC sensor",
+          "device_status_entity": "Apparaatstatus sensor",
+          "charge_power_entity": "Laadvermogen sensor",
+          "discharge_power_entity": "Ontlaadvermogen sensor",
+          "grid_import_power_entity": "Netafname vermogen (optioneel)",
+          "grid_export_power_entity": "Netexport vermogen (optioneel)",
+          "operating_mode_entity": "Bedrijfsmodus",
+          "action_direction_entity": "Laad/ontlaadkeuze",
+          "power_setpoint_entity": "Vermogensinstelling",
+          "electrical_profile": "Aansluitprofiel",
+          "max_charge_power_w": "Maximaal laadvermogen",
+          "max_discharge_power_w": "Maximaal ontlaadvermogen",
+          "market_price_architecture_enabled": "Leverancier-onafhankelijke prijslaag gebruiken",
+          "market_price_entity": "Marktprijsbron (Stroomvoorspeller)",
+          "import_markup_per_kwh": "Importopslag / correctie",
+          "export_markup_per_kwh": "Exportopslag / correctie",
+          "tariff_resolution": "Tariefresolutie",
+          "known_price_entity": "Bekende/all-in prijzen (legacy/fallback)",
+          "forecast_price_entity": "Prijsforecast (legacy/fallback)",
+          "home_forecast_entity": "Woningverbruiksforecast",
+          "solar_today_entity": "Solcast vandaag",
+          "solar_tomorrow_entity": "Solcast morgen",
+          "solar_day3_entity": "Solcast dag 3",
+          "software_reserve_percent": "Softwarematige veiligheidsreserve boven 5% SOC",
+          "charge_efficiency_percent": "Laadrendement",
+          "discharge_efficiency_percent": "Ontlaadrendement",
+          "minimum_trade_margin": "Minimale handelsmarge",
+          "monitor_energyzero_entity": "Bronmonitor EnergyZero (optioneel)",
+          "monitor_stroomvoorspeller_entity": "Bronmonitor Stroomvoorspeller",
+          "monitor_solcast_api_entity": "Bronmonitor Solcast API"
+        }
       }
     },
     "abort": {
-      "already_configured": "Dummy OS EMS is al geconfigureerd."
+      "already_configured": "Dummy OS EMS is al geconfigureerd.",
+      "reconfigure_successful": "Dummy OS EMS is bijgewerkt en wordt opnieuw geladen."
     },
     "error": {
       "power_above_profile_limit": "De gekozen vermogenslimiet is hoger dan toegestaan voor het geselecteerde aansluitprofiel."
@@ -45,7 +83,7 @@
     "step": {
       "init": {
         "title": "EMS instellingen",
-        "description": "Pas marktprijsbron, import-/exportopslag, tariefresolutie, forecasts, reserve, rendement en centrale elektrische vermogenslimieten aan. Alpha40.5 herstelt de Options Flow en voegt een Anker Control Path Readiness Guard toe. De nieuwe prijslaag blijft opt-in en zware forecast-attributen blijven buiten Recorder.",
+        "description": "Pas marktprijsbron, import-/exportopslag, tariefresolutie, forecasts, reserve, rendement en centrale elektrische vermogenslimieten aan. Alpha40.6 herstelt de Options Flow en voegt een Anker Control Path Readiness Guard toe. De nieuwe prijslaag blijft opt-in en zware forecast-attributen blijven buiten Recorder.",
         "data": {
           "known_price_entity": "Bekende/all-in prijzen",
           "forecast_price_entity": "Prijsforecast",

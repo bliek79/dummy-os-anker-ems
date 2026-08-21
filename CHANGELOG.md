@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.0.1-alpha.40.6 - Reconfigure Flow Fix
+
+- Added a native Home Assistant `async_step_reconfigure` flow for the pencil/edit action.
+- Reconfigure now exposes Anker source entities, electrical limits and the supplier-independent price settings in one form.
+- Existing config-entry data and options are preserved and updated in place; no duplicate EMS entry is created.
+- Successful changes schedule a reload of the same config entry.
+- Keeps alpha40.5 Control Path Readiness Guard and alpha40.4 Recorder optimizations unchanged.
+- Keeps the entity count at 105 and does not expand physical automatic power control.
+
+
 ## 0.0.1-alpha.40.5
 
 - Herstelt de Options Flow / Configureren-pagina voor de alpha40.3 prijsarchitectuur.
