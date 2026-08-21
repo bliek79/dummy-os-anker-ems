@@ -5,7 +5,7 @@
 > **Status:** experimental alpha  
 > **Domain:** `anker_ems`  
 > **Minimum Home Assistant:** 2026.7.0  
-> **Current version:** `0.0.1-alpha.40.2`
+> **Current version:** `0.0.1-alpha.40.3`
 
 The integration combines battery status, electricity prices, solar forecast, home-consumption forecast, safety limits and user choices into one local EMS layer. The architecture is deliberately split into planning, persistent plan storage, scheduling, safety validation and physical execution.
 
@@ -56,7 +56,7 @@ The current alpha supports:
 - optimized Plan72 refresh policy: hourly between 05:00 and 22:00 plus event-driven/start-critical refreshes; no periodic overnight refreshes;
 - Recorder-safe Plan72 dashboard payload handling: the large live `plan` attribute is excluded from history while remaining available to the dashboard.
 
-**Automatic charge/discharge execution is still disabled.** Alpha40.2 retains the alpha40 physical scope and may only validate the operating-mode transition for a fully approved automatic plan. It never selects charge/discharge direction and never applies a non-zero automatic power setpoint.
+**Automatic charge/discharge execution is still disabled.** Alpha40.3 retains the alpha40 physical scope and may only validate the operating-mode transition for a fully approved automatic plan. It never selects charge/discharge direction and never applies a non-zero automatic power setpoint.
 
 ## Pre-start safety model
 
@@ -253,3 +253,6 @@ Use:
 ## License and disclaimer
 
 See `LICENSE` and `NOTICE.md` in this repository. Dummy OS EMS is experimental software. Battery control can affect energy costs and equipment behaviour; validate configuration and safety limits before using physical control functions.
+
+### Supplier-independent price foundation
+Alpha40.3 adds an opt-in Stroomvoorspeller market-price layer with separate import/export markups. The hourly planner remains the effective resolution in this alpha; quarter-hour selection is stored for the next planner-resolution step. Legacy price sources remain available as fallback until live validation is complete.

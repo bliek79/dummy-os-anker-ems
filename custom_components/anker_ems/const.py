@@ -2,7 +2,7 @@ from __future__ import annotations
 
 DOMAIN = "anker_ems"
 NAME = "Dummy OS EMS"
-VERSION = "0.0.1-alpha.40.2"
+VERSION = "0.0.1-alpha.40.3"
 
 CONF_SIMULATION_MODE = "simulation_mode"
 
@@ -33,6 +33,21 @@ CONF_GRID_EXPORT_POWER_ENTITY = "grid_export_power_entity"
 CONF_OPERATING_MODE_ENTITY = "operating_mode_entity"
 CONF_ACTION_DIRECTION_ENTITY = "action_direction_entity"
 CONF_POWER_SETPOINT_ENTITY = "power_setpoint_entity"
+
+
+# Alpha40.3 supplier-independent market-price architecture.
+CONF_MARKET_PRICE_ARCHITECTURE_ENABLED = "market_price_architecture_enabled"
+CONF_MARKET_PRICE_ENTITY = "market_price_entity"
+CONF_IMPORT_MARKUP_PER_KWH = "import_markup_per_kwh"
+CONF_EXPORT_MARKUP_PER_KWH = "export_markup_per_kwh"
+CONF_TARIFF_RESOLUTION = "tariff_resolution"
+
+TARIFF_RESOLUTION_HOURLY = "hourly"
+TARIFF_RESOLUTION_QUARTER_HOURLY = "quarter_hourly"
+DEFAULT_TARIFF_RESOLUTION = TARIFF_RESOLUTION_HOURLY
+DEFAULT_MARKET_PRICE_ENTITY = "sensor.stroomvoorspeller_data"
+DEFAULT_IMPORT_MARKUP_PER_KWH = 0.0
+DEFAULT_EXPORT_MARKUP_PER_KWH = 0.0
 
 CONF_KNOWN_PRICE_ENTITY = "known_price_entity"
 CONF_FORECAST_PRICE_ENTITY = "forecast_price_entity"

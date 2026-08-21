@@ -70,21 +70,30 @@ def build_planner_preview(
     price_rows: list[dict[str, Any]] = []
     for raw in forecast:
         hour = _parse_time(raw.get("time"))
-        price = _as_float(raw.get("price"))
-        if hour is None or price is None or hour < current_hour:
+        import_price = _as_float(raw.get("import_price"))
+        if import_price is None:
+            import_price = _as_float(raw.get("price"))
+        export_price = _as_float(raw.get("export_price"))
+        if export_price is None:
+            export_price = import_price
+        if hour is None or import_price is None or export_price is None or hour < current_hour:
             continue
         price_rows.append(
             {
                 "time": hour,
-                "price": price,
+                "price": import_price,
+                "import_price": import_price,
+                "export_price": export_price,
                 "price_source": raw.get("price_source"),
+                "import_price_source": raw.get("import_price_source") or raw.get("price_source"),
+                "export_price_source": raw.get("export_price_source") or raw.get("price_source"),
                 "solar_kwh": _as_float(raw.get("solar_kwh")),
                 "home_consumption_kwh": _as_float(raw.get("home_consumption_kwh")),
             }
         )
     price_rows.sort(key=lambda item: item["time"])
 
-    prices = [row["price"] for row in price_rows]
+    prices = [row["import_price"] for row in price_rows]
     price_min = min(prices) if prices else None
     price_max = max(prices) if prices else None
     price_spread = (
@@ -94,7 +103,7 @@ def build_planner_preview(
     safety_candidates = [
         row for row in price_rows if first_usable is None or row["time"] < first_usable
     ]
-    safety_candidates.sort(key=lambda item: (item["price"], item["time"]))
+    safety_candidates.sort(key=lambda item: (item["import_price"], item["time"]))
 
     remaining = max(additional_kwh or 0.0, 0.0)
     selected_hours: list[dict[str, Any]] = []
@@ -112,7 +121,9 @@ def build_planner_preview(
         selected_hours.append(
             {
                 "time": row["time"].isoformat(),
-                "price": row["price"],
+                "price": row["import_price"],
+                "import_price": row["import_price"],
+                "export_price": row["export_price"],
                 "price_source": row["price_source"],
                 "max_battery_energy_kwh": round(capacity_kwh, 3),
                 "candidate_battery_energy_kwh": round(allocated, 3),
@@ -153,15 +164,15 @@ def build_planner_preview(
     # charge and discharge losses.
     best_trade: dict[str, Any] | None = None
     for i, charge_row in enumerate(price_rows):
-        effective_charge_cost = charge_row["price"] / roundtrip_eff
+        effective_charge_cost = charge_row["import_price"] / roundtrip_eff
         for discharge_row in price_rows[i + 1:]:
-            net_margin = discharge_row["price"] - effective_charge_cost
+            net_margin = discharge_row["export_price"] - effective_charge_cost
             if best_trade is None or net_margin > best_trade["net_margin"]:
                 best_trade = {
                     "charge_time": charge_row["time"],
-                    "charge_price": charge_row["price"],
+                    "charge_price": charge_row["import_price"],
                     "discharge_time": discharge_row["time"],
-                    "discharge_price": discharge_row["price"],
+                    "discharge_price": discharge_row["export_price"],
                     "effective_charge_cost": effective_charge_cost,
                     "net_margin": net_margin,
                 }
@@ -231,11 +242,13 @@ def build_planner_preview(
             "de ingestelde netto handelsmarge"
         )
 
-    cheapest_preview = sorted(price_rows, key=lambda item: (item["price"], item["time"]))[:6]
+    cheapest_preview = sorted(price_rows, key=lambda item: (item["import_price"], item["time"]))[:6]
     cheapest_preview = [
         {
             "time": row["time"].isoformat(),
-            "price": row["price"],
+            "price": row["import_price"],
+            "import_price": row["import_price"],
+            "export_price": row["export_price"],
             "price_source": row["price_source"],
         }
         for row in cheapest_preview

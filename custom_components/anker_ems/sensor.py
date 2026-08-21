@@ -206,6 +206,14 @@ def _auto_plan_72h_summary_attrs(data: dict[str, Any]) -> dict[str, Any]:
         "periodic_window": data.get("auto_plan_72h_periodic_window"),
         "periodic_max_per_hour": data.get("auto_plan_72h_periodic_max_per_hour", 1),
         "event_refresh_enabled": data.get("auto_plan_72h_event_refresh_enabled", True),
+        "price_architecture_enabled": data.get("price_architecture_enabled", False),
+        "price_architecture_source": data.get("price_architecture_source"),
+        "price_architecture_market_rows": data.get("price_architecture_market_rows"),
+        "import_markup_per_kwh": data.get("price_architecture_import_markup_per_kwh"),
+        "export_markup_per_kwh": data.get("price_architecture_export_markup_per_kwh"),
+        "tariff_resolution_requested": data.get("price_architecture_requested_resolution"),
+        "tariff_resolution_effective": data.get("price_architecture_effective_resolution"),
+        "quarter_hour_ready": data.get("price_architecture_quarter_hour_ready", False),
         "note": data.get("auto_plan_72h_note"),
     }
 

@@ -89,8 +89,12 @@ def build_72h_plan_preview(
         rows.append(
             {
                 "time": hour,
-                "price": _as_float(raw.get("price")),
+                "price": _as_float(raw.get("import_price")) if _as_float(raw.get("import_price")) is not None else _as_float(raw.get("price")),
+                "import_price": _as_float(raw.get("import_price")) if _as_float(raw.get("import_price")) is not None else _as_float(raw.get("price")),
+                "export_price": _as_float(raw.get("export_price")) if _as_float(raw.get("export_price")) is not None else (_as_float(raw.get("import_price")) if _as_float(raw.get("import_price")) is not None else _as_float(raw.get("price"))),
                 "price_source": raw.get("price_source"),
+                "import_price_source": raw.get("import_price_source") or raw.get("price_source"),
+                "export_price_source": raw.get("export_price_source") or raw.get("price_source"),
                 "solar_kwh": max(0.0, _as_float(raw.get("solar_kwh")) or 0.0),
                 "home_kwh": max(0.0, _as_float(raw.get("home_consumption_kwh")) or 0.0),
             }
@@ -243,7 +247,7 @@ def build_72h_plan_preview(
         for future in rows[from_index + 1:]:
             if until_time is not None and future["time"] > until_time:
                 break
-            future_price = future["price"]
+            future_price = future["import_price"]
             if reference_price is not None and future_price is not None and future_price <= reference_price:
                 continue
             need_output += max(0.0, future["home_kwh"] - future["solar_kwh"])
@@ -326,7 +330,7 @@ def build_72h_plan_preview(
             candidates: list[tuple[float, datetime, float]] = []
             for cand_idx in range(0, deadline_idx + 1):
                 cand = rows[cand_idx]
-                price = cand["price"]
+                price = cand["import_price"]
                 if price is None:
                     continue
                 fraction = _hour_fraction(cand["time"], now_utc)
@@ -442,8 +446,8 @@ def build_72h_plan_preview(
                 # Keep trade charging economically meaningful. If the expected
                 # sell price no longer clears the required margin, do not charge.
                 effective_charge_cost = (
-                    row["price"] / (charge_eff * discharge_eff)
-                    if row["price"] is not None
+                    row["import_price"] / (charge_eff * discharge_eff)
+                    if row["import_price"] is not None
                     else None
                 )
                 expected_margin = (
@@ -479,7 +483,7 @@ def build_72h_plan_preview(
         # Prefer battery for home use when the current price is at least as high
         # as the best buy price plus the requested trade margin, or when there is
         # no active future trade reservation.
-        current_price = row["price"]
+        current_price = row["import_price"]
         threshold_price = None
         if best_charge_price is not None:
             threshold_price = best_charge_price / (charge_eff * discharge_eff) + minimum_trade_margin
@@ -574,8 +578,12 @@ def build_72h_plan_preview(
         plan.append(
             {
                 "time": hour.isoformat(),
-                "price": row["price"],
+                "price": row["import_price"],
+                "import_price": row["import_price"],
+                "export_price": row["export_price"],
                 "price_source": row["price_source"],
+                "import_price_source": row["import_price_source"],
+                "export_price_source": row["export_price_source"],
                 "solar_kwh": round(solar, 3),
                 "home_consumption_kwh": round(home, 3),
                 "solar_to_home_kwh": round(solar_to_home, 3),

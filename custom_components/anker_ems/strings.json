@@ -45,7 +45,7 @@
     "step": {
       "init": {
         "title": "EMS instellingen",
-        "description": "Pas forecastbronnen, reserve, rendement en centrale elektrische vermogenslimieten aan.",
+        "description": "Pas marktprijsbron, import-/exportopslag, tariefresolutie, forecasts, reserve, rendement en centrale elektrische vermogenslimieten aan. Alpha40.3 laat de nieuwe prijslaag bewust opt-in.",
         "data": {
           "known_price_entity": "Bekende/all-in prijzen",
           "forecast_price_entity": "Prijsforecast",
@@ -56,7 +56,12 @@
           "software_reserve_percent": "Softwarematige veiligheidsreserve boven 5% SOC",
           "electrical_profile": "Aansluitprofiel",
           "max_charge_power_w": "Maximaal laadvermogen",
-          "max_discharge_power_w": "Maximaal ontlaadvermogen"
+          "max_discharge_power_w": "Maximaal ontlaadvermogen",
+          "market_price_architecture_enabled": "Nieuwe leverancier-onafhankelijke prijslaag gebruiken",
+          "market_price_entity": "Marktprijsbron (Stroomvoorspeller)",
+          "import_markup_per_kwh": "Importopslag / correctie",
+          "export_markup_per_kwh": "Exportopslag / correctie",
+          "tariff_resolution": "Tariefresolutie"
         }
       }
     },

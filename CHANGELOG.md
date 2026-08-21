@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.0.1-alpha.40.3 - Price Architecture Foundation
+
+- Adds opt-in supplier-independent market-price architecture using `sensor.stroomvoorspeller_data`.
+- Adds configurable import and export markup in Options Flow.
+- Adds tariff resolution selection (`hourly` / `quarter_hourly`).
+- Splits planner pricing into `market_price`, `import_price` and `export_price`.
+- Safety/grid charging uses import price; grid trade discharge uses export price.
+- Keeps the legacy EnergyZero + forecast price path as fail-safe fallback until the new price layer is explicitly enabled and live-validated.
+- Quarter-hour selection is persisted as architecture input, but alpha40.3 still runs the 72h planner effectively hourly; 15-minute planner execution is not enabled yet.
+- No change to alpha40/40.1 physical execution scope.
+
+
 ## 0.0.1-alpha.40.2 - Plan72 Refresh & Recorder Optimization
 
 - Keeps the coordinator on its fast 10-second cadence for live safety, Scheduler and execution state, while caching the expensive 72-hour planner result.

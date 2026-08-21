@@ -43,6 +43,17 @@ from .const import (
     CONF_OPERATING_MODE_ENTITY,
     CONF_ACTION_DIRECTION_ENTITY,
     CONF_POWER_SETPOINT_ENTITY,
+    CONF_MARKET_PRICE_ARCHITECTURE_ENABLED,
+    CONF_MARKET_PRICE_ENTITY,
+    CONF_IMPORT_MARKUP_PER_KWH,
+    CONF_EXPORT_MARKUP_PER_KWH,
+    CONF_TARIFF_RESOLUTION,
+    TARIFF_RESOLUTION_HOURLY,
+    TARIFF_RESOLUTION_QUARTER_HOURLY,
+    DEFAULT_TARIFF_RESOLUTION,
+    DEFAULT_MARKET_PRICE_ENTITY,
+    DEFAULT_IMPORT_MARKUP_PER_KWH,
+    DEFAULT_EXPORT_MARKUP_PER_KWH,
     CONF_KNOWN_PRICE_ENTITY,
     CONF_FORECAST_PRICE_ENTITY,
     CONF_HOME_FORECAST_ENTITY,
@@ -315,8 +326,59 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return []
         return [row for row in raw if isinstance(row, dict)]
 
+    def _price_architecture_settings(self) -> dict[str, Any]:
+        options = self.entry.options
+        return {
+            "enabled": bool(options.get(CONF_MARKET_PRICE_ARCHITECTURE_ENABLED, False)),
+            "market_entity": self._entity_id(CONF_MARKET_PRICE_ENTITY, DEFAULT_MARKET_PRICE_ENTITY) or "",
+            "import_markup": _as_float(options.get(CONF_IMPORT_MARKUP_PER_KWH, DEFAULT_IMPORT_MARKUP_PER_KWH)) or 0.0,
+            "export_markup": _as_float(options.get(CONF_EXPORT_MARKUP_PER_KWH, DEFAULT_EXPORT_MARKUP_PER_KWH)) or 0.0,
+            "resolution": str(options.get(CONF_TARIFF_RESOLUTION, DEFAULT_TARIFF_RESOLUTION)),
+        }
+
+    @staticmethod
+    def _iter_market_rows(raw: Any, source_kind: str) -> list[dict[str, Any]]:
+        """Flatten common Stroomvoorspeller today/tomorrow/forecast payload shapes."""
+        rows: list[dict[str, Any]] = []
+        time_keys = ("time", "timestamp", "datetime", "start", "period_start", "periodStart")
+        price_keys = ("market_price", "marketPrice", "market_predicted", "price", "value", "predicted")
+
+        def walk(value: Any) -> None:
+            if isinstance(value, list):
+                for item in value:
+                    walk(item)
+                return
+            if not isinstance(value, dict):
+                return
+            time_value = _first(value, time_keys)
+            price_value = _as_float(_first(value, price_keys))
+            if time_value is not None and price_value is not None:
+                rows.append({"time": time_value, "market_price": price_value, "source_kind": source_kind})
+            for key, item in value.items():
+                if key in time_keys or key in price_keys:
+                    continue
+                if isinstance(item, (list, dict)):
+                    walk(item)
+                elif isinstance(item, (int, float, str)):
+                    parsed_time = _parse_datetime(key)
+                    parsed_price = _as_float(item)
+                    if parsed_time is not None and parsed_price is not None:
+                        rows.append({"time": key, "market_price": parsed_price, "source_kind": source_kind})
+
+        walk(raw)
+        return rows
+
+    def _stroomvoorspeller_market_rows(self, entity_id: str) -> list[dict[str, Any]]:
+        attrs = self._attributes(entity_id)
+        rows: list[dict[str, Any]] = []
+        rows.extend(self._iter_market_rows(attrs.get("today"), "known"))
+        rows.extend(self._iter_market_rows(attrs.get("tomorrow"), "known"))
+        rows.extend(self._iter_market_rows(attrs.get("forecast"), "forecast"))
+        return rows
+
     def _forecast_entity_ids(self) -> dict[str, str]:
         return {
+            "market_price": self._entity_id(CONF_MARKET_PRICE_ENTITY, DEFAULT_MARKET_PRICE_ENTITY) or "",
             "known_price": self._entity_id(CONF_KNOWN_PRICE_ENTITY, DEFAULT_KNOWN_PRICE_ENTITY) or "",
             "forecast_price": self._entity_id(CONF_FORECAST_PRICE_ENTITY, DEFAULT_FORECAST_PRICE_ENTITY) or "",
             "home": self._entity_id(CONF_HOME_FORECAST_ENTITY, DEFAULT_HOME_FORECAST_ENTITY) or "",
@@ -327,6 +389,8 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _build_forecast(self) -> dict[str, Any]:
         entity_ids = self._forecast_entity_ids()
+        price_settings = self._price_architecture_settings()
+        market_rows = self._stroomvoorspeller_market_rows(entity_ids["market_price"]) if price_settings["enabled"] else []
         known_rows = self._rows(entity_ids["known_price"], "prices")
         price_rows = self._rows(entity_ids["forecast_price"], "forecasts")
         home_rows = self._rows(entity_ids["home"], "forecasts")
@@ -343,35 +407,77 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "price_min": None,
                 "price_max": None,
                 "price_source": None,
+                "market_price": None,
+                "import_price": None,
+                "export_price": None,
+                "import_price_source": None,
+                "export_price_source": None,
                 "solar_kwh": None,
                 "home_consumption_kwh": None,
             }
             for index in range(FORECAST_HORIZON_HOURS)
         }
 
-        for row in price_rows:
-            hour = _hour_key(_first(row, ("time", "timestamp", "datetime", "start")))
-            if hour not in slots:
-                continue
-            predicted = _as_float(_first(row, ("predicted", "all_in", "price", "value")))
-            lower = _as_float(_first(row, ("lower", "price_min", "min", "lower_bound")))
-            upper = _as_float(_first(row, ("upper", "price_max", "max", "upper_bound")))
-            slots[hour]["price"] = predicted
-            slots[hour]["price_min"] = lower if lower is not None else predicted
-            slots[hour]["price_max"] = upper if upper is not None else predicted
-            slots[hour]["price_source"] = "forecast" if predicted is not None else None
+        if price_settings["enabled"] and market_rows:
+            import_markup = float(price_settings["import_markup"])
+            export_markup = float(price_settings["export_markup"])
+            # Alpha40.3 foundation: planner remains hourly. Quarter-hour is stored
+            # as a requested resolution but is only considered operational when
+            # the planner itself is migrated to 15-minute blocks in a later step.
+            for row in market_rows:
+                hour = _hour_key(row.get("time"))
+                if hour not in slots:
+                    continue
+                market_price = _as_float(row.get("market_price"))
+                if market_price is None:
+                    continue
+                source_kind = str(row.get("source_kind") or "forecast")
+                if source_kind == "forecast" and slots[hour].get("price_source") == "known":
+                    continue
+                import_price = market_price + import_markup
+                export_price = market_price + export_markup
+                slots[hour]["market_price"] = market_price
+                slots[hour]["import_price"] = import_price
+                slots[hour]["export_price"] = export_price
+                slots[hour]["price"] = import_price
+                slots[hour]["price_min"] = import_price
+                slots[hour]["price_max"] = import_price
+                slots[hour]["price_source"] = source_kind
+                slots[hour]["import_price_source"] = source_kind
+                slots[hour]["export_price_source"] = source_kind
 
-        for row in known_rows:
-            hour = _hour_key(_first(row, ("timestamp", "time", "datetime", "start")))
-            if hour not in slots:
-                continue
-            price = _as_float(_first(row, ("price", "all_in", "predicted", "value")))
-            if price is None:
-                continue
-            slots[hour]["price"] = price
-            slots[hour]["price_min"] = price
-            slots[hour]["price_max"] = price
-            slots[hour]["price_source"] = "known"
+        if not (price_settings["enabled"] and market_rows):
+            for row in price_rows:
+                hour = _hour_key(_first(row, ("time", "timestamp", "datetime", "start")))
+                if hour not in slots:
+                    continue
+                predicted = _as_float(_first(row, ("predicted", "all_in", "price", "value")))
+                lower = _as_float(_first(row, ("lower", "price_min", "min", "lower_bound")))
+                upper = _as_float(_first(row, ("upper", "price_max", "max", "upper_bound")))
+                slots[hour]["price"] = predicted
+                slots[hour]["import_price"] = predicted
+                slots[hour]["export_price"] = predicted
+                slots[hour]["price_min"] = lower if lower is not None else predicted
+                slots[hour]["price_max"] = upper if upper is not None else predicted
+                slots[hour]["price_source"] = "forecast" if predicted is not None else None
+                slots[hour]["import_price_source"] = "forecast" if predicted is not None else None
+                slots[hour]["export_price_source"] = "forecast" if predicted is not None else None
+
+            for row in known_rows:
+                hour = _hour_key(_first(row, ("timestamp", "time", "datetime", "start")))
+                if hour not in slots:
+                    continue
+                price = _as_float(_first(row, ("price", "all_in", "predicted", "value")))
+                if price is None:
+                    continue
+                slots[hour]["price"] = price
+                slots[hour]["import_price"] = price
+                slots[hour]["export_price"] = price
+                slots[hour]["price_min"] = price
+                slots[hour]["price_max"] = price
+                slots[hour]["price_source"] = "known"
+                slots[hour]["import_price_source"] = "known"
+                slots[hour]["export_price_source"] = "known"
 
         for row in home_rows:
             hour = _hour_key(_first(row, ("time", "timestamp", "datetime", "start")))
@@ -422,6 +528,14 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "forecast_complete_hours": complete_count,
             "forecast_missing_sources": missing_sources,
             "forecast_sources": entity_ids,
+            "price_architecture_enabled": bool(price_settings["enabled"]),
+            "price_architecture_source": entity_ids.get("market_price") if price_settings["enabled"] else "legacy_known_plus_forecast",
+            "price_architecture_market_rows": len(market_rows),
+            "price_architecture_import_markup_per_kwh": price_settings["import_markup"],
+            "price_architecture_export_markup_per_kwh": price_settings["export_markup"],
+            "price_architecture_requested_resolution": price_settings["resolution"],
+            "price_architecture_effective_resolution": TARIFF_RESOLUTION_HOURLY,
+            "price_architecture_quarter_hour_ready": False,
             "forecast": forecast,
         }
 
@@ -469,7 +583,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             },
             "stroomvoorspeller": {
                 "entity_ids": [stroom_id],
-                "content": state_payload(stroom_id, ("today", "tomorrow", "hours", "prices")),
+                "content": state_payload(stroom_id, ("today", "tomorrow", "forecast", "hours", "prices", "updated")),
             },
             "price_forecast": {
                 "entity_ids": [forecast_ids["forecast_price"]],
