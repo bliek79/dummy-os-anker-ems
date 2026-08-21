@@ -1,0 +1,96 @@
+{
+  "title": "Dummy OS EMS",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Dummy OS EMS",
+        "description": "Select the existing Anker source and control entities. Physical control is only available through explicitly validated EMS paths.",
+        "data": {
+          "simulation_mode": "Simulation mode",
+          "soc_entity": "SOC sensor",
+          "device_status_entity": "Device status sensor",
+          "charge_power_entity": "Charge power sensor",
+          "discharge_power_entity": "Discharge power sensor",
+          "grid_import_power_entity": "Grid import power (optional)",
+          "grid_export_power_entity": "Grid export power (optional)",
+          "operating_mode_entity": "Operating mode",
+          "action_direction_entity": "Charge/discharge selection",
+          "power_setpoint_entity": "Power setpoint"
+        }
+      },
+      "electrical_setup": {
+        "title": "Electrical connection",
+        "description": "Choose how the battery is electrically connected. Without a dedicated circuit, Dummy OS EMS limits charging and discharging to 800 W.",
+        "data": {
+          "electrical_profile": "Electrical profile"
+        }
+      },
+      "power_limits": {
+        "title": "Power limits",
+        "description": "Set the maximum charge and discharge power. These limits are used centrally by the planner, Scheduler, Safety Guard and Execution Controller.",
+        "data": {
+          "max_charge_power_w": "Maximum charge power",
+          "max_discharge_power_w": "Maximum discharge power"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Dummy OS EMS",
+        "description": "Change only setup-critical Anker source and control entities. Regular EMS settings are available under Configure.",
+        "data": {
+          "simulation_mode": "Simulation mode",
+          "soc_entity": "SOC sensor",
+          "device_status_entity": "Device status sensor",
+          "charge_power_entity": "Charge power sensor",
+          "discharge_power_entity": "Discharge power sensor",
+          "grid_import_power_entity": "Grid import power (optional)",
+          "grid_export_power_entity": "Grid export power (optional)",
+          "operating_mode_entity": "Operating mode",
+          "action_direction_entity": "Charge/discharge selection",
+          "power_setpoint_entity": "Power setpoint"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Dummy OS EMS is already configured.",
+      "reconfigure_successful": "Dummy OS EMS has been updated and will reload."
+    },
+    "error": {
+      "power_above_profile_limit": "The selected power limit exceeds the allowed limit for the selected electrical profile."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "EMS settings",
+        "description": "Manage the electrical limits and price settings for Dummy OS EMS. Import and export markup are added to the selected market price source; price resolution can be set to 60 or 15 minutes.",
+        "data": {
+          "electrical_profile": "Electrical profile",
+          "max_charge_power_w": "Maximum charge power",
+          "max_discharge_power_w": "Maximum discharge power",
+          "market_price_architecture_enabled": "Use market price architecture",
+          "market_price_entity": "Market price source",
+          "import_markup_per_kwh": "Import markup (€/kWh)",
+          "export_markup_per_kwh": "Export markup (€/kWh)",
+          "tariff_resolution": "Price resolution"
+        }
+      },
+      "settings": {
+        "title": "EMS settings",
+        "description": "Manage the electrical limits and price settings for Dummy OS EMS. Import and export markup are added to the selected market price source; price resolution can be set to 60 or 15 minutes.",
+        "data": {
+          "electrical_profile": "Electrical profile",
+          "max_charge_power_w": "Maximum charge power",
+          "max_discharge_power_w": "Maximum discharge power",
+          "market_price_architecture_enabled": "Use market price architecture",
+          "market_price_entity": "Market price source",
+          "import_markup_per_kwh": "Import markup (€/kWh)",
+          "export_markup_per_kwh": "Export markup (€/kWh)",
+          "tariff_resolution": "Price resolution"
+        }
+      }
+    },
+    "error": {
+      "power_above_profile_limit": "On a shared circuit, charging and discharging may not exceed 800 W."
+    }
+  }
+}

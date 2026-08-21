@@ -1,3 +1,10 @@
+## 0.0.1-alpha.49.2 - 2026-08-21
+
+- Fixes Options Flow field translations for the custom integration by adding the required `translations/en.json` baseline.
+- Keeps the Dutch `translations/nl.json` translation and the `settings` step from alpha49.1.
+- No functional changes to stored settings, pricing logic, planner, Scheduler, Safety Guard or physical execution.
+- This specifically addresses raw field keys such as `electrical_profile`, `import_markup_per_kwh` and `tariff_resolution` being shown in Home Assistant.
+
 # Changelog
 
 ## 0.0.1-alpha.49.1 - 2026-08-21
