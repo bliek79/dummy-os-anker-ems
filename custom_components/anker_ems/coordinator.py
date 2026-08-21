@@ -369,11 +369,58 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return rows
 
     def _stroomvoorspeller_market_rows(self, entity_id: str) -> list[dict[str, Any]]:
+        """Return known hourly prices plus daily model forecast expanded hourly.
+
+        Stroomvoorspeller exposes exact day-ahead prices in ``today.hours`` and
+        ``tomorrow.hours``. Its longer horizon is deliberately coarser: each
+        item in ``forecast.days`` contains a daily average market estimate, not
+        an hourly curve. To keep the 72-hour EMS horizon usable without falling
+        back to the legacy Package 40 price forecast, expand that daily market
+        estimate across the local hours of the matching day. Exact known
+        today/tomorrow rows retain precedence during hourly aggregation.
+        """
         attrs = self._attributes(entity_id)
         rows: list[dict[str, Any]] = []
         rows.extend(self._iter_market_rows(attrs.get("today"), "known"))
         rows.extend(self._iter_market_rows(attrs.get("tomorrow"), "known"))
-        rows.extend(self._iter_market_rows(attrs.get("forecast"), "forecast"))
+
+        forecast = attrs.get("forecast")
+        if isinstance(forecast, dict):
+            days = forecast.get("days")
+            if isinstance(days, list):
+                for day in days:
+                    if not isinstance(day, dict):
+                        continue
+                    date_value = day.get("date")
+                    market_estimate = _as_float(
+                        _first(
+                            day,
+                            (
+                                "average_market_estimate",
+                                "market_estimate",
+                                "average_market",
+                                "market",
+                                "predicted",
+                            ),
+                        )
+                    )
+                    if not date_value or market_estimate is None:
+                        continue
+                    try:
+                        local_midnight = datetime.fromisoformat(str(date_value)).replace(
+                            tzinfo=dt_util.DEFAULT_TIME_ZONE
+                        )
+                    except ValueError:
+                        continue
+                    for hour_offset in range(24):
+                        rows.append(
+                            {
+                                "time": (local_midnight + timedelta(hours=hour_offset)).isoformat(),
+                                "market_price": market_estimate,
+                                "source_kind": "forecast",
+                            }
+                        )
+
         return rows
 
     @staticmethod

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.0.1-alpha.50.2 - 2026-08-21
+
+- Functional market-price horizon fix: Stroomvoorspeller `forecast.days` is now used when exact `today`/`tomorrow` prices are unavailable.
+- Daily `average_market_estimate` values are expanded over the corresponding local day so the 72-hour planner no longer receives `null` prices outside the published day-ahead window.
+- Exact known `today.hours` / `tomorrow.hours` prices keep precedence over the daily model estimate.
+- Import and export markups remain independently applied by Dummy OS EMS.
+- No physical execution changes; automatic execution remains disabled in this alpha.
+
 ## 0.0.1-alpha.50.1 - 2026-08-21
 
 ### Stroomvoorspeller parserfix
