@@ -1,3 +1,21 @@
+## 0.0.1-alpha.40.10 - 2026-08-21
+
+### Options Flow isolation recovery
+- Bevestigt alpha40.9 als nog niet opgelost: Home Assistant 2026.8.2 bleef `400 Bad Request` geven voordat het formulier verscheen.
+- Brengt de Options Flow terug tot de kleinst mogelijke bruikbare vorm met één gewone boolean en zonder selectors of config-entry reads tijdens form creation.
+- Houdt `@staticmethod` + `@callback` op `async_get_options_flow()`, overeenkomstig de actuele Home Assistant Options Flow API.
+- Bestaande options worden alleen bij expliciet opslaan gemerged en blijven anders onaangeraakt.
+- Geen wijzigingen aan Plan72, Automatic Plan Bridge, Plan Store, Scheduler, Safety Guard, Execution Controller of fysieke batterijbesturing.
+- Doel: onderscheid maken tussen een fout in de HA Options Flow route/registratie en een fout in de uitgebreide alpha40.8/40.9 schema-opbouw.
+
+### Live validatie
+1. Controleer dat Home Assistant `0.0.1-alpha.40.10` toont.
+2. Klik op **Configureren**.
+3. Verwacht: het formulier opent met exact één testoptie.
+4. Niet opslaan is voldoende voor deze eerste test.
+5. Indien nog steeds 400: probleem zit vóór de schema-opbouw; volgende stap is flowregistratie/config-entry-route onderzoeken.
+6. Indien het formulier opent: probleem zit in de uitgebreide options-schema-opbouw; daarna velden één voor één terugbrengen.
+
 # Changelog
 
 ## 0.0.1-alpha.40.9 - HA 2026.8 Options Flow Callback Fix
