@@ -124,7 +124,9 @@ class AnkerEmsPlanStore:
 
 
 
-    async def async_release_expired_automatic_plans(self) -> dict[str, Any]:
+    async def async_release_expired_automatic_plans(
+        self, scheduler_expired_slots: set[int] | None = None
+    ) -> dict[str, Any]:
         """Release planner-owned pending slots after their complete start window.
 
         This lifecycle cleanup is independent of planner/forecast write gates. A
@@ -135,6 +137,7 @@ class AnkerEmsPlanStore:
         now = dt_util.now()
         now_iso = now.isoformat()
         released_slots: list[int] = []
+        scheduler_expired_slots = scheduler_expired_slots or set()
 
         for slot in range(1, PLAN_SLOT_COUNT + 1):
             plan = self._plans[slot]
@@ -152,7 +155,9 @@ class AnkerEmsPlanStore:
                 delay_min = max(0.0, float(plan.get("max_start_delay_min", 0) or 0))
             except (TypeError, ValueError):
                 delay_min = 0.0
-            if now <= start + timedelta(minutes=delay_min):
+            time_window_expired = now > start + timedelta(minutes=delay_min)
+            scheduler_marks_expired = slot in scheduler_expired_slots
+            if not time_window_expired and not scheduler_marks_expired:
                 continue
 
             empty = deepcopy(DEFAULT_PLAN)
@@ -169,6 +174,7 @@ class AnkerEmsPlanStore:
         return {
             "changed": bool(released_slots),
             "released_slots": released_slots,
+            "scheduler_expired_slots": sorted(scheduler_expired_slots),
         }
 
     async def async_sync_automatic_plans(

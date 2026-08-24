@@ -1,3 +1,16 @@
+## 0.0.1-alpha.53
+
+- Fixes automatic plan-slot expiry reconciliation using the Scheduler's own `verlopen` decision as the primary release signal.
+- Planner-owned `pending` slots that the Scheduler marks expired are released in the same coordinator cycle, so the Automatic Plan Bridge can reuse the slot immediately.
+- Keeps an independent timestamp/window expiry check in the Plan Store as a fallback.
+- Manual plans are never automatically cleared by this reconciliation.
+- Re-evaluates the Scheduler after cleanup before Bridge evaluation, preventing a stale expired slot from remaining visible/occupied until a later poll.
+- Adds diagnostics `scheduler_expired_slots`, `expired_release_changed`, and `expired_released_slots` to the bridge diagnostics.
+- Leaves the native Stroomvoorspeller 168-hour price path from alpha52.3 unchanged.
+- Leaves Plan72 strategy, execution-buffer rules, manual priority, three-slot capacity and Anker two-stage control-path readiness unchanged.
+- Automatic physical execution remains disabled/shadow-only.
+- README remains release-independent.
+
 ## 0.0.1-alpha.52.3
 
 - Moves the multi-day hourly price forecast into Dummy OS EMS itself instead of consuming the legacy package sensor `sensor.forecast_prices_all_in_data`.

@@ -293,6 +293,7 @@ def _auto_bridge_attrs(data: dict[str, Any]) -> dict[str, Any]:
         "plan_store_skipped_slots": data.get("auto_bridge_plan_store_skipped_slots", []),
         "expired_release_changed": data.get("auto_expired_release_changed", False),
         "expired_released_slots": data.get("auto_expired_released_slots", []),
+        "scheduler_expired_slots": data.get("auto_expired_scheduler_slots", []),
         "scheduler_handoff_enabled": data.get("auto_bridge_scheduler_handoff_enabled", False),
         "scheduler_handoff_gate_open": data.get("auto_bridge_scheduler_handoff_gate_open", False),
         "scheduler_handoff_changed": data.get("auto_bridge_scheduler_handoff_changed", False),

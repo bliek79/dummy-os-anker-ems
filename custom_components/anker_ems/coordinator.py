@@ -1015,18 +1015,32 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         data.update(planner_preview)
 
-        # Lifecycle cleanup is independent of planner/forecast write gates. A
-        # planner-owned pending plan that has passed its complete start window
-        # is released before Scheduler/Bridge evaluation so it cannot lock a
-        # slot until the user manually resets it.
-        expired_release = await self.plan_store.async_release_expired_automatic_plans()
+        # Alpha53: use the Scheduler's own lifecycle decision as the primary
+        # signal for releasing an expired automatic slot. This avoids keeping a
+        # planner-owned pending plan locked when the Scheduler already reports
+        # it as ``verlopen``. The Plan Store still performs its independent
+        # timestamp check as a fallback, and manual plans remain untouched.
+        pre_cleanup_scheduler = self.scheduler.evaluate(
+            self.max_charge_power_w, self.max_discharge_power_w
+        )
+        scheduler_expired_slots = {
+            int(slot)
+            for slot, detail in (pre_cleanup_scheduler.get("scheduler_slots") or {}).items()
+            if str((detail or {}).get("status") or "").lower() == "verlopen"
+        }
+        expired_release = await self.plan_store.async_release_expired_automatic_plans(
+            scheduler_expired_slots
+        )
         data["auto_expired_release_changed"] = expired_release.get("changed", False)
         data["auto_expired_released_slots"] = expired_release.get("released_slots", [])
+        data["auto_expired_scheduler_slots"] = expired_release.get(
+            "scheduler_expired_slots", []
+        )
 
-        # Scheduler timing is cheap and remains live. It is also used as an
-        # exception trigger so the 72h planner gets one fresh calculation when
-        # an automatic action enters the final 15-minute decision window or
-        # becomes start-ready.
+        # Re-evaluate after cleanup so Bridge/Scheduler see the newly free slot
+        # in the same coordinator cycle rather than waiting for a later poll.
+        # This also remains the exception trigger for a fresh Plan72 calculation
+        # when an action approaches or enters its start window.
         scheduler_snapshot = self.scheduler.evaluate(
             self.max_charge_power_w, self.max_discharge_power_w
         )
