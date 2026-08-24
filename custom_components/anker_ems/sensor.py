@@ -210,6 +210,142 @@ def _auto_shadow_attrs(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+
+def _latest_execution_stage(data: dict[str, Any]) -> str:
+    trace = data.get("execution_automatic_current_trace") or []
+    if isinstance(trace, list) and trace:
+        last = trace[-1]
+        if isinstance(last, dict) and last.get("stage"):
+            return str(last.get("stage"))
+    if data.get("execution_active") and data.get("execution_origin") == "automatic_72h_planner":
+        return str(data.get("execution_status") or "running")
+    return "idle"
+
+
+def _automatic_execution_monitor_status(data: dict[str, Any]) -> str:
+    if data.get("execution_active") and data.get("execution_origin") == "automatic_72h_planner":
+        status = str(data.get("execution_status") or "running")
+        return "stopping" if status == "stopping" else "executing"
+    mode_switch_status = str(data.get("execution_auto_mode_switch_status") or "")
+    if mode_switch_status in {
+        "automatic_execution_arming",
+        "switching_external_mode",
+        "post_mode_stability",
+        "automatic_handoff",
+    }:
+        return "arming"
+    shadow = str(data.get("auto_shadow_status") or "idle")
+    if shadow == "armed_live_ready":
+        return "armed_ready"
+    if shadow == "ready_disarmed":
+        return "ready_disarmed"
+    if shadow == "blocked":
+        return "blocked"
+    return "waiting"
+
+
+def _automatic_execution_monitor_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "stage": _latest_execution_stage(data),
+        "armed": data.get("auto_shadow_armed", False),
+        "technical_ready": data.get("auto_shadow_technical_ready", False),
+        "execution_permitted": data.get("auto_shadow_execution_permitted", False),
+        "selected_slot": data.get("auto_shadow_selected_slot") or data.get("execution_slot"),
+        "planner_identity": data.get("auto_shadow_planner_identity") or data.get("execution_automatic_last_identity"),
+        "action": data.get("execution_action") or data.get("auto_shadow_action"),
+        "purpose": data.get("auto_shadow_purpose"),
+        "requested_power_w": data.get("execution_power_w") or data.get("auto_shadow_power_w"),
+        "target_soc": data.get("execution_target_soc") or data.get("auto_shadow_target_soc"),
+        "current_soc": data.get("soc"),
+        "charge_power_w": data.get("charge_power_w"),
+        "discharge_power_w": data.get("discharge_power_w"),
+        "operating_mode": data.get("operating_mode"),
+        "remaining_s": data.get("execution_remaining_s"),
+        "started_at": data.get("execution_started_at"),
+        "stop_at": data.get("execution_stop_at"),
+        "pre_mode_ready": data.get("auto_shadow_pre_mode_ready", False),
+        "pre_mode_reason": data.get("auto_shadow_pre_mode_reason"),
+        "pre_mode_stable_seconds": data.get("auto_shadow_pre_mode_stable_seconds", 0),
+        "post_mode_ready": data.get("auto_shadow_post_mode_ready", False),
+        "post_mode_reason": data.get("auto_shadow_post_mode_reason"),
+        "post_mode_stable_seconds": data.get("auto_shadow_post_mode_stable_seconds", 0),
+        "post_mode_required": data.get("auto_shadow_post_mode_required", False),
+        "control_path_ready": data.get("auto_shadow_control_path_ready", False),
+        "control_path_reason": data.get("auto_shadow_control_path_reason"),
+        "blockers": data.get("auto_shadow_blockers", []),
+        "warnings": data.get("auto_shadow_warnings", []),
+        "last_result": data.get("execution_automatic_last_result"),
+        "last_reason": data.get("execution_automatic_last_reason"),
+        "last_action": data.get("execution_automatic_last_action"),
+        "last_requested_power_w": data.get("execution_automatic_last_requested_power_w"),
+        "last_average_actual_power_w": data.get("execution_automatic_last_average_actual_power_w"),
+        "last_start_soc": data.get("execution_automatic_last_start_soc"),
+        "last_end_soc": data.get("execution_automatic_last_end_soc"),
+        "last_target_soc": data.get("execution_automatic_last_target_soc"),
+        "last_started_at": data.get("execution_automatic_last_actual_started_at") or data.get("execution_automatic_last_started_at"),
+        "last_finished_at": data.get("execution_automatic_last_finished_at"),
+        "last_duration_s": data.get("execution_automatic_last_duration_s"),
+        "last_planned_energy_kwh": data.get("execution_automatic_last_planned_energy_kwh"),
+        "last_actual_energy_kwh": data.get("execution_automatic_last_actual_energy_kwh"),
+        "last_energy_delta_kwh": data.get("execution_automatic_last_energy_delta_kwh"),
+        "last_target_error_soc": data.get("execution_automatic_last_target_error_soc"),
+        "current_trace": data.get("execution_automatic_current_trace", []),
+    }
+
+
+def _automatic_execution_preflight_status(data: dict[str, Any]) -> str:
+    if data.get("execution_active") and data.get("execution_origin") == "automatic_72h_planner":
+        return "executing"
+    if not data.get("auto_shadow_selected_slot"):
+        return "waiting_action"
+    if data.get("auto_shadow_technical_ready") is not True:
+        return "blocked"
+    if data.get("auto_shadow_armed") is not True:
+        return "ready_disarmed"
+    if data.get("auto_shadow_execution_permitted") is True:
+        return "ready"
+    return "blocked"
+
+
+def _automatic_execution_preflight_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    checks = {
+        "automatic_action_selected": data.get("auto_shadow_selected_slot") is not None,
+        "prestart_safe": data.get("auto_prestart_safe") is True,
+        "safety_handoff_safe": data.get("auto_safety_handoff_safe") is True,
+        "execution_handoff_ready": data.get("auto_execution_handoff_ready") is True,
+        "final_revalidation_safe": data.get("auto_final_revalidation_safe") is True,
+        "mode_switch_preview_ready": data.get("auto_mode_switch_preview_ready") is True,
+        "execution_buffer_safe": data.get("auto_plan_72h_execution_buffer_safe") is True,
+        "forecast_ready": data.get("forecast_ready") is True,
+        "control_path_configured": bool(data.get("control_path_configured")),
+        "control_path_ready": data.get("auto_shadow_control_path_ready") is True,
+        "physical_test_idle": not bool(data.get("physical_test_active")),
+        "execution_idle": not bool(data.get("execution_active")),
+        "manual_override_clear": not bool(data.get("auto_shadow_manual_override_active")),
+        "prices_allowed": "trade_requires_known_prices" not in (data.get("auto_shadow_blockers") or []),
+    }
+    return {
+        "armed": data.get("auto_shadow_armed", False),
+        "technical_ready": data.get("auto_shadow_technical_ready", False),
+        "execution_permitted": data.get("auto_shadow_execution_permitted", False),
+        "selected_slot": data.get("auto_shadow_selected_slot"),
+        "action": data.get("auto_shadow_action"),
+        "purpose": data.get("auto_shadow_purpose"),
+        "power_w": data.get("auto_shadow_power_w"),
+        "target_soc": data.get("auto_shadow_target_soc"),
+        "start_time": data.get("auto_shadow_start_time"),
+        "checks": checks,
+        "passed_checks": sum(1 for value in checks.values() if value),
+        "total_checks": len(checks),
+        "blockers": data.get("auto_shadow_blockers", []),
+        "warnings": data.get("auto_shadow_warnings", []),
+        "pre_mode_ready": data.get("auto_shadow_pre_mode_ready", False),
+        "pre_mode_reason": data.get("auto_shadow_pre_mode_reason"),
+        "post_mode_ready": data.get("auto_shadow_post_mode_ready", False),
+        "post_mode_reason": data.get("auto_shadow_post_mode_reason"),
+        "post_mode_required": data.get("auto_shadow_post_mode_required", False),
+    }
+
 def _source_monitor_attrs(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "sources": data.get("source_monitor_sources", {}),
@@ -550,6 +686,18 @@ SENSORS: tuple[AnkerEmsSensorDescription, ...] = (
         name="Dummy OS EMS Automatic Execution Shadow",
         value_fn=lambda d: d.get("auto_shadow_status") or "idle",
         attrs_fn=_auto_shadow_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="automatic_execution_monitor",
+        name="Dummy OS EMS Automatic Execution Monitor",
+        value_fn=_automatic_execution_monitor_status,
+        attrs_fn=_automatic_execution_monitor_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="automatic_execution_preflight",
+        name="Dummy OS EMS Automatic Execution Preflight",
+        value_fn=_automatic_execution_preflight_status,
+        attrs_fn=_automatic_execution_preflight_attrs,
     ),
     AnkerEmsSensorDescription(
         key="status",

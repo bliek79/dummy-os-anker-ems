@@ -1,3 +1,15 @@
+## 0.0.1-alpha.57 - 2026-08-24
+
+- Adds a read-only `Dummy OS EMS Automatic Execution Monitor` sensor for live observation of the first guarded automatic physical run.
+- Adds a read-only `Dummy OS EMS Automatic Execution Preflight` sensor that summarizes the existing execution gates without introducing new decision logic.
+- The monitor exposes the current execution stage, armed/readiness state, selected planner slot and identity, action, requested power, target/current SOC, measured charge/discharge power, operating mode, remaining runtime, pre/post-mode readiness, blockers, warnings and the most recent automatic run result.
+- The monitor also exposes compact last-run Plan-vs-Actual fields so the transition from planned action to observed battery behavior can be inspected from one entity.
+- Preflight publishes the existing Planner -> Bridge -> Scheduler -> Pre-Start -> Safety -> Final Revalidation -> control-path conditions as a compact check map with passed/total counts.
+- Adds stable entity IDs `sensor.dummy_os_ems_execution_monitor` and `sensor.dummy_os_ems_execution_preflight` through the existing entity-ID migration layer.
+- Keeps alpha56 Plan-vs-Actual, alpha55 Execution Audit, alpha54 guarded physical execution, alpha53 expiry reconciliation and the validated alpha52.3 native Stroomvoorspeller price path unchanged.
+- No planner, price, reserve, safety, Scheduler, Anker actuation or automatic execution decision logic is changed in this release.
+- README remains release-independent; version-specific changes stay in CHANGELOG and GitHub Release notes.
+
 ## 0.0.1-alpha.56 - 2026-08-24
 
 - Adds native Plan-vs-Actual evaluation for automatic physical EMS runs without changing planner, price, safety or actuation decisions.
