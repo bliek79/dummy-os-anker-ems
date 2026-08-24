@@ -89,9 +89,52 @@ def _execution_attrs(data: dict[str, Any]) -> dict[str, Any]:
         "stop_at": data.get("execution_stop_at"),
         "last_result": data.get("execution_last_result"),
         "automatic_mode_switch": True,
-        "discharge_enabled": False,
+        "discharge_enabled": True,
+        "automatic_run_count": data.get("execution_automatic_run_count", 0),
+        "automatic_success_count": data.get("execution_automatic_success_count", 0),
+        "automatic_failure_count": data.get("execution_automatic_failure_count", 0),
+        "automatic_last_identity": data.get("execution_automatic_last_identity"),
+        "automatic_last_slot": data.get("execution_automatic_last_slot"),
+        "automatic_last_action": data.get("execution_automatic_last_action"),
+        "automatic_last_requested_power_w": data.get("execution_automatic_last_requested_power_w"),
+        "automatic_last_average_actual_power_w": data.get("execution_automatic_last_average_actual_power_w"),
+        "automatic_last_target_soc": data.get("execution_automatic_last_target_soc"),
+        "automatic_last_start_soc": data.get("execution_automatic_last_start_soc"),
+        "automatic_last_end_soc": data.get("execution_automatic_last_end_soc"),
+        "automatic_last_started_at": data.get("execution_automatic_last_started_at"),
+        "automatic_last_finished_at": data.get("execution_automatic_last_finished_at"),
+        "automatic_last_duration_s": data.get("execution_automatic_last_duration_s"),
+        "automatic_last_result": data.get("execution_automatic_last_result"),
+        "automatic_last_reason": data.get("execution_automatic_last_reason"),
+        "automatic_current_trace": data.get("execution_automatic_current_trace", []),
+        "automatic_last_trace": data.get("execution_automatic_last_trace", []),
+        "automatic_run_history": data.get("execution_automatic_run_history", []),
     }
 
+
+
+def _execution_audit_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "run_count": data.get("execution_automatic_run_count", 0),
+        "success_count": data.get("execution_automatic_success_count", 0),
+        "failure_count": data.get("execution_automatic_failure_count", 0),
+        "last_identity": data.get("execution_automatic_last_identity"),
+        "last_slot": data.get("execution_automatic_last_slot"),
+        "last_action": data.get("execution_automatic_last_action"),
+        "requested_power_w": data.get("execution_automatic_last_requested_power_w"),
+        "average_actual_power_w": data.get("execution_automatic_last_average_actual_power_w"),
+        "target_soc": data.get("execution_automatic_last_target_soc"),
+        "start_soc": data.get("execution_automatic_last_start_soc"),
+        "end_soc": data.get("execution_automatic_last_end_soc"),
+        "started_at": data.get("execution_automatic_last_started_at"),
+        "finished_at": data.get("execution_automatic_last_finished_at"),
+        "duration_s": data.get("execution_automatic_last_duration_s"),
+        "last_result": data.get("execution_automatic_last_result"),
+        "last_reason": data.get("execution_automatic_last_reason"),
+        "current_trace": data.get("execution_automatic_current_trace", []),
+        "last_trace": data.get("execution_automatic_last_trace", []),
+        "run_history": data.get("execution_automatic_run_history", []),
+    }
 
 
 def _auto_shadow_attrs(data: dict[str, Any]) -> dict[str, Any]:
@@ -897,6 +940,15 @@ SENSORS: tuple[AnkerEmsSensorDescription, ...] = (
         value_fn=lambda d: d.get("execution_remaining_s"),
         attrs_fn=_execution_attrs,
     ),
+    AnkerEmsSensorDescription(
+        key="execution_audit",
+        name='Dummy OS EMS Execution Audit',
+        value_fn=lambda d: d.get("execution_automatic_last_result") or (
+            "running" if d.get("execution_active") and d.get("execution_origin") == "automatic_72h_planner"
+            else "waiting"
+        ),
+        attrs_fn=_execution_audit_attrs,
+    ),
 )
 
 
@@ -918,7 +970,7 @@ async def async_setup_entry(
 
 class AnkerEmsSensor(CoordinatorEntity[AnkerEmsCoordinator], SensorEntity):
     entity_description: AnkerEmsSensorDescription
-    _unrecorded_attributes = frozenset({"plan", "forecast"})
+    _unrecorded_attributes = frozenset({"plan", "forecast", "automatic_current_trace", "automatic_last_trace", "automatic_run_history", "current_trace", "last_trace", "run_history"})
 
     def __init__(
         self,

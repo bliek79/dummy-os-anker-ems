@@ -1,3 +1,17 @@
+## 0.0.1-alpha.55 - 2026-08-24
+
+- Adds persistent observability for guarded automatic physical execution without changing planner, price, safety or actuation decisions.
+- Adds `sensor.dummy_os_ems_execution_audit` with the last automatic run result plus compact diagnostic attributes.
+- Records automatic execution stage transitions such as selection, arming, `third_party_control` request, zero-power guard, post-mode readiness, final revalidation, non-zero power handoff and finish.
+- Stores the last 10 automatic run summaries across Home Assistant restarts.
+- Run summaries include planner identity, slot, action, requested power, average observed battery power, target SOC, start/end SOC, timestamps, duration, result and stop/failure reason.
+- Adds persistent automatic run/success/failure counters.
+- Start failures and emergency stops are retained as audit results so a short-lived event does not disappear from the dashboard before it can be inspected.
+- High-frequency 5-second telemetry samples are aggregated instead of being written as a full time series to integration storage.
+- Marks trace/history payload attributes as unrecorded to avoid unnecessary Home Assistant Recorder growth.
+- Keeps alpha54 guarded physical execution behavior, alpha53 slot-expiry reconciliation and the validated native Stroomvoorspeller price path unchanged.
+- README remains release-independent; version-specific changes stay in CHANGELOG and GitHub Release notes.
+
 ## 0.0.1-alpha.54 - 2026-08-24
 
 - Enables the first guarded physical automatic execution path for Scheduler-selected `automatic_72h_planner` actions.

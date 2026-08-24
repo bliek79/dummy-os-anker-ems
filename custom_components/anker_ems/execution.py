@@ -21,6 +21,8 @@ _SELF_MODE = "self_consumption"
 _MODE_WAIT_SECONDS = 20
 _MONITOR_INTERVAL_SECONDS = 5
 _CONTROL_PATH_STABLE_SECONDS = 60
+_RUN_HISTORY_LIMIT = 10
+_TRACE_LIMIT = 40
 
 
 class AnkerEmsExecutionController:
@@ -68,6 +70,30 @@ class AnkerEmsExecutionController:
             "control_path_ready_reason": "Nog niet gecontroleerd",
             "control_path_stable_seconds": 0,
             "control_path_required_stable_seconds": _CONTROL_PATH_STABLE_SECONDS,
+            # Alpha55 observability: compact persistent audit trail for automatic
+            # physical runs. Long high-frequency telemetry is intentionally not
+            # stored; only stage transitions and final run summaries are kept.
+            "automatic_run_count": 0,
+            "automatic_success_count": 0,
+            "automatic_failure_count": 0,
+            "automatic_last_identity": None,
+            "automatic_last_slot": None,
+            "automatic_last_action": None,
+            "automatic_last_requested_power_w": None,
+            "automatic_last_target_soc": None,
+            "automatic_last_started_at": None,
+            "automatic_last_finished_at": None,
+            "automatic_last_duration_s": None,
+            "automatic_last_start_soc": None,
+            "automatic_last_end_soc": None,
+            "automatic_last_average_actual_power_w": None,
+            "automatic_last_result": None,
+            "automatic_last_reason": None,
+            "automatic_current_trace": [],
+            "automatic_last_trace": [],
+            "automatic_run_history": [],
+            "automatic_sample_count": 0,
+            "automatic_actual_power_sum_w": 0.0,
         }
 
     def attach_coordinator(self, coordinator: Any) -> None:
@@ -99,6 +125,113 @@ class AnkerEmsExecutionController:
 
     async def _async_save(self) -> None:
         await self._store.async_save(dict(self._state))
+
+    def _trace_automatic(self, stage: str, detail: str | None = None) -> None:
+        """Append one compact automatic-execution trace event in memory."""
+        trace = list(self._state.get("automatic_current_trace") or [])
+        event: dict[str, Any] = {"time": dt_util.now().isoformat(), "stage": stage}
+        if detail:
+            event["detail"] = str(detail)[:240]
+        trace.append(event)
+        self._state["automatic_current_trace"] = trace[-_TRACE_LIMIT:]
+
+    def _begin_automatic_audit(
+        self, *, identity: str, slot: int | str, action: str, power_w: int,
+        target_soc: float, max_runtime_h: float, start_soc: Any,
+    ) -> None:
+        """Start an automatic run audit before the first physical mode action."""
+        try:
+            start_soc_value = None if start_soc is None else round(float(start_soc), 2)
+        except (TypeError, ValueError):
+            start_soc_value = None
+        self._state.update({
+            "automatic_last_identity": identity,
+            "automatic_last_slot": slot,
+            "automatic_last_action": action,
+            "automatic_last_requested_power_w": power_w,
+            "automatic_last_target_soc": target_soc,
+            "automatic_last_started_at": dt_util.now().isoformat(),
+            "automatic_last_finished_at": None,
+            "automatic_last_duration_s": None,
+            "automatic_last_start_soc": start_soc_value,
+            "automatic_last_end_soc": None,
+            "automatic_last_average_actual_power_w": None,
+            "automatic_last_result": "arming",
+            "automatic_last_reason": "automatic_execution_arming",
+            "automatic_current_trace": [],
+            "automatic_sample_count": 0,
+            "automatic_actual_power_sum_w": 0.0,
+        })
+        self._trace_automatic("selected", f"slot={slot}; action={action}; requested={power_w}W; target={target_soc}%")
+
+    def _sample_automatic_actual_power(self, data: dict[str, Any]) -> None:
+        """Collect a cheap aggregate of actual battery power while running."""
+        if self._state.get("origin") != "automatic_72h_planner":
+            return
+        action = self._state.get("action")
+        raw = data.get("charge_power_w") if action == "laden" else data.get("discharge_power_w")
+        try:
+            value = max(0.0, float(raw))
+        except (TypeError, ValueError):
+            return
+        self._state["automatic_sample_count"] = int(self._state.get("automatic_sample_count") or 0) + 1
+        self._state["automatic_actual_power_sum_w"] = float(self._state.get("automatic_actual_power_sum_w") or 0.0) + value
+
+    def _finish_automatic_audit(self, result: str, reason: str, data: dict[str, Any] | None = None) -> None:
+        """Finalize and persist a compact run summary."""
+        if not self._state.get("automatic_last_identity"):
+            return
+        finished = dt_util.now()
+        started = dt_util.parse_datetime(str(self._state.get("automatic_last_started_at") or ""))
+        duration_s = None
+        if started is not None:
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+            duration_s = max(0, int((finished - started).total_seconds()))
+        end_soc = None
+        if data is not None:
+            try:
+                end_soc = round(float(data.get("soc")), 2)
+            except (TypeError, ValueError):
+                end_soc = None
+        samples = int(self._state.get("automatic_sample_count") or 0)
+        avg_power = None
+        if samples > 0:
+            avg_power = round(float(self._state.get("automatic_actual_power_sum_w") or 0.0) / samples, 1)
+        self._trace_automatic("finished", f"result={result}; reason={reason}")
+        trace = list(self._state.get("automatic_current_trace") or [])
+        summary = {
+            "identity": self._state.get("automatic_last_identity"),
+            "slot": self._state.get("automatic_last_slot"),
+            "action": self._state.get("automatic_last_action"),
+            "requested_power_w": self._state.get("automatic_last_requested_power_w"),
+            "average_actual_power_w": avg_power,
+            "target_soc": self._state.get("automatic_last_target_soc"),
+            "start_soc": self._state.get("automatic_last_start_soc"),
+            "end_soc": end_soc,
+            "started_at": self._state.get("automatic_last_started_at"),
+            "finished_at": finished.isoformat(),
+            "duration_s": duration_s,
+            "result": result,
+            "reason": reason,
+        }
+        history = list(self._state.get("automatic_run_history") or [])
+        history.append(summary)
+        success = result == "completed"
+        self._state.update({
+            "automatic_run_count": int(self._state.get("automatic_run_count") or 0) + 1,
+            "automatic_success_count": int(self._state.get("automatic_success_count") or 0) + (1 if success else 0),
+            "automatic_failure_count": int(self._state.get("automatic_failure_count") or 0) + (0 if success else 1),
+            "automatic_last_finished_at": finished.isoformat(),
+            "automatic_last_duration_s": duration_s,
+            "automatic_last_end_soc": end_soc,
+            "automatic_last_average_actual_power_w": avg_power,
+            "automatic_last_result": result,
+            "automatic_last_reason": reason,
+            "automatic_last_trace": trace[-_TRACE_LIMIT:],
+            "automatic_run_history": history[-_RUN_HISTORY_LIMIT:],
+            "automatic_current_trace": [],
+        })
 
     def _entity_ids(self) -> tuple[str, str, str]:
         if self._coordinator is None:
@@ -1002,6 +1135,10 @@ class AnkerEmsExecutionController:
             return False
 
         mode_entity, direction_entity, power_entity = self._entity_ids()
+        self._begin_automatic_audit(
+            identity=identity, slot=slot, action=action, power_w=power_w,
+            target_soc=target_soc, max_runtime_h=max_runtime_h, start_soc=data.get("soc"),
+        )
         now = dt_util.now()
         self._state.update({
             "auto_mode_switch_active": True,
@@ -1012,6 +1149,7 @@ class AnkerEmsExecutionController:
             "auto_mode_switch_completed_at": None,
             "auto_mode_switch_last_result": None,
         })
+        self._trace_automatic("arming", "pre-mode gates passed")
         await self._async_save()
 
         try:
@@ -1035,6 +1173,7 @@ class AnkerEmsExecutionController:
                     "select", "select_option", {"option": _EXTERNAL_MODE},
                     target={"entity_id": mode_entity}, blocking=True,
                 )
+                self._trace_automatic("third_party_control_requested")
 
             # Wait for the external controls to appear, then immediately pin
             # the setpoint to zero before waiting for the 60 s stability gate.
@@ -1043,6 +1182,7 @@ class AnkerEmsExecutionController:
                 "number", "set_value", {"value": 0},
                 target={"entity_id": power_entity}, blocking=True,
             )
+            self._trace_automatic("zero_power_guard", "external controls available")
 
             self._state.update({
                 "auto_mode_switch_status": "post_mode_stability",
@@ -1055,6 +1195,7 @@ class AnkerEmsExecutionController:
                 await self._coordinator.async_refresh()
                 readiness = self.control_path_readiness()
                 if readiness.get("post_mode_ready") is True:
+                    self._trace_automatic("post_mode_ready", f"stable={readiness.get('post_mode_stable_seconds', 0)}s")
                     break
                 if self._coordinator.data.get("operating_mode") != _EXTERNAL_MODE:
                     raise HomeAssistantError("third_party_control viel weg tijdens post-mode stabilisatie")
@@ -1085,6 +1226,7 @@ class AnkerEmsExecutionController:
                 blockers.append("post_mode_not_ready")
             if blockers:
                 raise HomeAssistantError(", ".join(blockers))
+            self._trace_automatic("final_revalidation_passed")
 
             execution_started_at = dt_util.now()
             stop_at = execution_started_at + timedelta(hours=max_runtime_h)
@@ -1116,6 +1258,7 @@ class AnkerEmsExecutionController:
                 "number", "set_value", {"value": power_w},
                 target={"entity_id": power_entity}, blocking=True,
             )
+            self._trace_automatic("power_handoff", f"direction={action}; requested={power_w}W")
 
             self._state.update({
                 "status": "running",
@@ -1165,6 +1308,7 @@ class AnkerEmsExecutionController:
                     "auto_mode_switch_last_identity": identity,
                     "auto_mode_switch_last_result": f"failed: {err}",
                 })
+                self._finish_automatic_audit("start_failed", str(err), self._coordinator.data if self._coordinator else None)
                 await self._async_save()
                 await self._coordinator.async_refresh()
             raise HomeAssistantError(f"Automatische EMS-uitvoering starten mislukt: {err}") from err
@@ -1212,6 +1356,7 @@ class AnkerEmsExecutionController:
             return
         await self._coordinator.async_refresh()
         data = self._coordinator.data
+        self._sample_automatic_actual_power(data)
 
         if data.get("operating_mode") != _EXTERNAL_MODE:
             await self.async_stop("operating_mode_changed", emergency=True)
@@ -1350,6 +1495,9 @@ class AnkerEmsExecutionController:
             if errors:
                 result = "stop_error"
                 reason = f"{reason}; {'; '.join(errors)}"
+            if self._state.get("origin") == "automatic_72h_planner":
+                live = self._coordinator.data if self._coordinator is not None else None
+                self._finish_automatic_audit(result, reason, live)
             self._state.update(
                 {
                     "active": False,
