@@ -1,17 +1,12 @@
 # Dummy OS EMS
 
-**Dummy OS EMS** is a Home Assistant Energy Management System for the **Anker SOLIX Solarbank Max AC**.
+**Dummy OS EMS** is an experimental Home Assistant Energy Management System for the **Anker SOLIX Solarbank Max AC**.
 
 > **Status:** experimental alpha  
 > **Domain:** `anker_ems`  
-> **Minimum Home Assistant:** 2026.7.0  
-> **Current version:** `0.0.1-alpha.52.1`
+> **Minimum Home Assistant:** 2026.7.0
 
-### Alpha52 - Two-Stage Control Path Readiness
-
-Alpha52 separates Anker control readiness into a pre-mode and post-mode stage. While the Solarbank is in `self_consumption`, only the operating-mode entity must be available and stable. Direction and power-setpoint become mandatory only after `third_party_control` is active. This removes the circular readiness dependency observed on live hardware. Automatic physical execution remains disabled; the release is shadow-only.
-
-The integration combines battery status, electricity prices, solar forecast, home-consumption forecast, safety limits and user choices into one local EMS layer. The architecture is deliberately split into planning, persistent plan storage, scheduling, safety validation and physical execution.
+The integration combines battery status, electricity prices, solar forecast, home-consumption forecast, safety limits and user choices into one local EMS layer. Planning, persistent plan storage, scheduling, safety validation and physical execution are intentionally separated so every transition can be validated independently.
 
 ## Control philosophy
 
@@ -21,190 +16,110 @@ Dummy OS EMS follows this order of priority:
 2. Remaining solar can charge the battery.
 3. If own production is insufficient, only the necessary deficit may be charged from the grid at suitable cheap moments.
 4. Stored energy is used later to avoid expensive grid import.
-5. Only battery energy above home need, dynamic reserve and expected near-term need may be used for trading.
+5. Only battery energy above home need, dynamic reserve and expected near-term need may be considered for trading.
 6. Genuine excess may be exported when this is financially worthwhile.
-7. Charging/discharging losses, Solar Charge Delay, the 5% hardware minimum SOC and a minimum profitability threshold are respected.
+7. Charging/discharging losses, the hardware minimum SOC, configured reserve and minimum profitability thresholds are respected.
 
-The objective is **maximum self-consumption / as close to zero on the meter as practical**, not trading for its own sake.
+The objective is maximum self-consumption and as close to zero on the meter as practical. Trading is secondary to household energy needs and safety.
 
-## Current functionality
+## Functional architecture
 
-The current alpha supports:
+The main control chain is:
 
-- Config Flow based source/control mapping without hardcoded local Anker entity IDs;
-- normalized battery, grid, price, solar and home-consumption data;
-- three persistent manual plan slots;
-- manual direct and scheduled charge/discharge control;
-- Scheduler, Safety Guard and Execution Controller;
-- safe stop and return to `self_consumption`;
-- 72-hour automatic planning;
-- dynamic reserve and 5% hardware SOC floor;
-- 2 percentage-point execution reserve buffer;
-- deficit-driven grid charging and cheapest required charging hours;
-- separate safety charging and trading charging;
-- Solar Charge Delay;
-- financial trade-margin logic with charge/discharge efficiency;
-- Forward Reserve Precharge;
-- Action Bridge from planner actions to plan slots;
-- controlled automatic Plan Store writes;
-- controlled Scheduler handoff;
-- rolling pending-plan reconciliation using stable `planner_identity`;
-- stale automatic-plan cleanup;
-- pre-start safety validation;
-- time-aware pre-start diagnostics and dry-run blocker tests;
-- non-actuating Scheduler -> Safety Guard handoff for automatic start-ready plans;
-- non-actuating Safety Guard -> Execution Controller handoff preview with final execution prerequisites;
-- final live revalidation and explicit mode-switch transaction preview;
-- controlled physical mode-switch validation for a fully approved automatic plan: 0 W guard -> `third_party_control` -> post-mode revalidation -> immediate safe return to `self_consumption`;
-- centralized configurable charge/discharge power limits based on the electrical connection profile;
-- optimized Plan72 refresh policy: hourly between 05:00 and 22:00 plus event-driven/start-critical refreshes; no periodic overnight refreshes;
-- Recorder-safe live payload handling: the large Plan72 `plan` and Forecast Status `forecast` attributes are excluded from history while remaining available live to the dashboard/diagnostics.
+`Config Flow -> Coordinator -> Forecast/Source Monitor -> Plan72 -> Automatic Plan Bridge -> Persistent Plan Store -> Scheduler -> Pre-Start/Safety Guard -> Final Revalidation -> Execution Controller -> Anker control entities`
 
-### Price configuration
+Supporting modules provide source monitoring, energy-need calculation, planner previews, manual execution and diagnostic entities.
 
-The Home Assistant **Configure** dialog exposes the validated price architecture settings: market-price source, separate import/export markups and 60-/15-minute tariff resolution. The current default markups are **€0.1288/kWh** for both import and export. Quarter-hour resolution is stored as an architecture input; planner execution remains unchanged until the dedicated resolution-aware planner step is implemented and validated.
+## Planning
 
-**Automatic charge/discharge execution is still disabled.** Alpha40.5 retains the alpha40 physical scope and may only validate the operating-mode transition for a fully approved automatic plan. It never selects charge/discharge direction and never applies a non-zero automatic power setpoint.
+The integration maintains a rolling 72-hour plan using:
 
-## Pre-start safety model
+- electricity-price data;
+- home-consumption forecast;
+- solar forecast;
+- current battery SOC;
+- dynamic reserve requirements;
+- charge/discharge efficiency;
+- configured charge/discharge power limits.
 
-The pre-start layer has two intentionally separate modes.
+Plan72 distinguishes expected passive battery flows from explicit EMS actions. Solar surplus charging and normal discharge to the home can remain part of the battery's own `self_consumption` behaviour, while explicit grid safety charging or trading actions can be bridged into persistent plan slots.
 
-### Early diagnostic
+The planner includes a configurable execution reserve buffer. A plan that cannot prove the required reserve remains blocked from unattended physical execution.
 
-The nearest future automatic pending plan is continuously inspected. This diagnostic is **informational and non-authoritative**.
+## Price architecture
 
-Hard structural checks such as planner validity, forecast readiness, execution-buffer safety, Action Bridge validity, action validity, power limits and planner identity remain meaningful at all times.
+Stroomvoorspeller can be used as the primary market-price source. Dummy OS EMS applies separate import and export markups so grid import and grid export can be valued independently.
 
-Current SOC can change substantially before a future plan starts. Therefore, outside the live decision window, SOC direction and execution-reserve checks are exposed as **warnings**, not final blockers.
+Known day-ahead hourly prices take precedence over forecast prices. For the longer horizon the integration uses the most detailed timed Stroomvoorspeller forecast available. If Stroomvoorspeller only exposes a daily market estimate, Dummy OS EMS may use the configured hourly forecast source only to restore the intra-day price shape while keeping the Stroomvoorspeller daily market level authoritative. A daily flat estimate is retained only as a final fallback when no hourly shape is available.
 
-The current live-decision window is at least 15 minutes before the planned start, or wider when the plan start-delay setting requires it.
+The price layer is designed to support hourly and quarter-hour source data. The planner currently operates on hourly blocks; quarter-hour source values are safely aggregated until the dedicated quarter-hour planner is implemented.
 
-### Real pre-start gate
+## Persistent plan slots
 
-When the Scheduler actually selects an automatic plan as ready to start, the authoritative pre-start gate rechecks current conditions. At that point SOC direction and execution reserve are hard safety conditions.
+Exactly three persistent plan slots are maintained.
 
-The gate verifies at least:
+- Manual plans always have priority over automatic planner writes.
+- Automatic planner-owned plans can be reconciled while safely in the future.
+- Planner-owned plans that have passed their complete Scheduler start window are released for reuse.
+- Completed, cancelled, failed and empty slots are reusable.
+- Active plans are never silently overwritten.
 
-- valid current 72-hour plan;
-- ready forecast sources;
-- safe execution buffer;
-- valid Action Bridge candidates;
-- stable planner identity;
-- valid action and power;
-- valid current SOC and target SOC;
-- correct SOC direction for the requested charge/discharge action;
-- sufficient reserve for discharge.
+A user edit immediately claims a slot as manual so a rolling planner refresh cannot overwrite it.
 
-A changed planner revision can be reported as a warning while stable `planner_identity` remains the continuity key.
+## Scheduler and safety
 
-## Planner identity and revisions
+The Scheduler evaluates start times, start windows and plan lifecycle state. Before any automatic action can progress, the safety chain rechecks current conditions including forecast readiness, planner validity, execution reserve, action direction, power limits, target SOC and manual overrides.
 
-Automatic pending plans use two separate values:
+Anker control-path readiness is split into two stages:
 
-- `planner_identity`: stable identity of the planned action, based on action/purpose/start/end;
-- `planner_signature`: current calculated revision, including changing values such as target SOC and expected energy.
+- **pre-mode readiness:** the operating-mode path must be available and stable;
+- **post-mode readiness:** direction and power-setpoint controls become mandatory only when `third_party_control` is active.
 
-This allows rolling forecasts to revise a future automatic plan without creating duplicate slots or falsely treating the planner's own plan as a manual conflict.
+This avoids a circular dependency on controls that may be unavailable while the battery remains in `self_consumption`.
 
-## Battery assumptions
+## Automatic execution status
 
-Current default technical assumptions:
+Automatic planning, bridging, scheduling and shadow validation are under active development. The current alpha architecture keeps unattended non-zero physical automatic charge/discharge execution disabled until every safety and recovery path has been validated on live hardware.
+
+Manual battery control remains separate from the automatic shadow path.
+
+## Battery assumptions and limits
+
+Current project defaults/assumptions include:
 
 - battery capacity: **7.2 kWh**;
 - hardware minimum SOC: **5%**;
-- configurable maximum charging power;
-- configurable maximum discharging power;
-- dedicated-group preset: up to **3500 W charge / 3500 W discharge**;
-- shared/non-dedicated-group safety preset: maximum **800 W charge / 800 W discharge**;
 - charge efficiency: **92%**;
 - discharge efficiency: **92%**;
 - round-trip efficiency: **84.64%**;
-- automatic execution reserve buffer: **2 percentage points**;
-- manual plan slots: **3**.
+- execution reserve buffer: **2 percentage points**;
+- persistent plan slots: **3**.
 
-These are integration defaults/project assumptions where applicable; configurable inputs remain selectable through the integration where implemented.
+Charge and discharge limits are configured centrally. A dedicated electrical group can use higher configured limits than a shared group; the shared-group profile is intentionally conservative.
 
-### Electrical connection and central power limits
+## Source integration
 
-Dummy OS EMS uses one central pair of power limits throughout the control chain:
+Dummy OS EMS does not replace the Anker Solix Home Assistant integration. It uses the existing Anker integration as the communication layer and adds planning, safety and orchestration above it.
 
-- `max_charge_power_w`;
-- `max_discharge_power_w`.
+Typical mapped inputs include:
 
-For a new installation, Config Flow asks whether the battery is on a dedicated electrical group. A dedicated group can be configured up to 3500 W for charge and discharge. A shared/non-dedicated group is fail-safe capped at 800 W for both directions. The same values can later be changed through Options Flow.
-
-Existing entries upgraded from an older alpha without an explicit electrical profile fall back to the conservative shared-group limit of 800 W until the user confirms the installation profile in **Configure**.
-
-The planner, Action Bridge, Scheduler, pre-start validator, Safety Guard and Execution Controller all use these same configured limits. A layer is not allowed to plan, approve or execute power above the configured value.
-
-## Required and supported sources
-
-### Home Assistant
-
-Minimum supported version: **Home Assistant Core 2026.7.0**.
-
-### Anker Solix integration
-
-Dummy OS EMS uses the existing Anker Solix Home Assistant integration as the device communication layer. Dummy OS EMS does not replace that integration; it adds planning, safety and control logic above it.
-
-During Config Flow the user maps functions such as:
-
-- SOC;
-- device status;
-- charge power;
-- discharge power;
+- battery SOC and status;
+- charge/discharge power;
 - grid import/export power;
-- operating mode;
+- Anker operating mode;
 - charge/discharge direction;
-- power setpoint.
-
-### Forecast sources
-
-The 72-hour planner can use selectable Home Assistant sources for:
-
-- known electricity prices;
-- price forecast beyond known day-ahead hours;
+- external power setpoint;
+- market price source;
 - home-consumption forecast;
-- solar forecast for today, tomorrow and day 3.
+- solar forecast.
 
-The current project uses EnergyZero-compatible price data and Solcast-compatible solar data, but local entity IDs are not hardcoded into the integration architecture.
-
-## Architecture
-
-The integration is split into the following functional layers:
-
-`Config Flow -> Coordinator -> Planner -> Action Bridge -> Plan Store -> Scheduler -> Pre-Start/Safety -> Execution Controller -> Anker control entities`
-
-Supporting modules include source monitoring, energy-need calculation, physical test tooling and Home Assistant entity platforms.
-
-### Plan Store
-
-Exactly three persistent plan slots are maintained. Manual actionable plans always have priority over automatic writes.
-
-Automatic planner-owned plans can be reconciled while still safely in the future. Cancelled, completed, failed or empty slots can be reused. Due/start-ready automatic plans are protected from rolling forecast rewrites.
-
-### Scheduler
-
-The Scheduler manages lifecycle timing, start windows and selection of plans. Automatic planner plans can currently be handed to the Scheduler, but unattended physical execution is not yet enabled.
-
-### Safety Guard and Execution Controller
-
-The existing manual execution path has been physically validated for controlled charge/discharge, safe stop and return to `self_consumption`. The automatic planner path now reaches the Safety Guard and a non-actuating Execution Controller handoff preview after the authoritative pre-start gate. The preview validates the final controller-facing plan parameters and controller-idle/control-path prerequisites, but deliberately performs no mode switch, direction change, power setpoint or physical execution.
+Local entity IDs are selected through Config Flow / Options Flow rather than being hardcoded into the integration architecture.
 
 ## Home Assistant entities
 
-The integration currently creates **105 entities** across sensor, binary sensor, select, number and datetime platforms.
+Visible integration entities use the `Dummy OS EMS` prefix. Technical entity IDs and internal attributes use concise English naming. Dashboard labels can remain localized independently from the integration internals.
 
-Technical entity IDs and friendly names use English naming. Dashboard labels may remain Dutch. Newly created visible integration names begin with **Dummy OS EMS**.
-
-For planner/scheduler development, `sensor.dummy_os_ems_bridge_candidates` exposes the most detailed bridge, Plan Store, Scheduler, pre-start, Safety Guard and Execution Controller handoff diagnostics as attributes.
-
-## Services
-
-The integration contains services for manual plan management, direct controlled execution, stopping execution and physical test functions. Service definitions are documented by Home Assistant from `services.yaml` after installation.
-
-Automatic planner execution does **not** currently call the physical execution path unattended.
+Large live Plan72 and forecast payloads are intentionally excluded from Recorder history where appropriate while remaining available live for dashboards and diagnostics.
 
 ## Installation
 
@@ -212,62 +127,44 @@ For local development/testing:
 
 1. Copy `custom_components/anker_ems/` to `/config/custom_components/anker_ems/`.
 2. Restart Home Assistant.
-3. Add **Dummy OS EMS** through Settings -> Devices & services.
-4. Map the required source and control entities in Config Flow.
-5. Validate entity availability before enabling any physical test or manual execution.
+3. Add **Dummy OS EMS** through **Settings -> Devices & services**.
+4. Map the required source and control entities.
+5. Validate source and control availability before using manual physical control.
 
-The GitHub repository is intended to be HACS-compatible. During alpha development, GitHub Releases are used for explicit versioned test packages.
+The repository is structured for HACS-compatible distribution during development.
 
 ## Safety rules
 
 - Never run two physical battery controllers at the same time.
 - Manual/user-modified plans override automatic planner plans.
-- The Anker 5% minimum SOC is never planned below.
-- Invalid or unavailable critical sources must block automatic progress.
-- Automatic planner writes, Scheduler handoff and physical execution are separate gates.
-- A future forecast is not treated as proof that a battery action is safe at execution time.
-- Live conditions are revalidated immediately before execution.
-- Any future automatic execution must fail safe and return the battery to `self_consumption` when control cannot be proven safe.
+- The hardware minimum SOC is never intentionally planned below.
+- Invalid or unavailable critical sources block automatic progress.
+- Planner write, Scheduler handoff, safety approval and physical execution are separate gates.
+- Forecast data is never treated as proof that an action is safe at execution time.
+- Live conditions are revalidated immediately before any future physical execution.
+- Any physical-control failure must fail safe and return control to a known safe state.
 
 ## Roadmap
 
-Current priorities are:
+Main functional work still includes:
 
-- live-validation of the real Scheduler-ready pre-start gate;
-- live-validation of the automatic Scheduler -> Safety Guard handoff;
-- automatic Safety Guard -> Execution Controller handoff;
-- one-controller-at-a-time enforcement;
-- safe abort/recovery during execution;
-- first limited automatic physical charge/discharge tests;
-- event-driven replanning;
+- recovery planning for unavoidable current-hour reserve shortfalls;
+- live validation of post-mode Anker control readiness;
+- controlled automatic physical charge/discharge tests after safety approval;
+- true quarter-hour planning;
 - Afwezigheidsmodus;
 - plan-versus-actual evaluation;
 - daily plan notification;
-- analysis of Anker connection drops and slow charging;
-- eventual removal of temporary YAML/Jinja planner layers after functional parity.
-
-A later evaluation will also determine whether extra battery capacity is financially worthwhile using real EMS history, utilization, avoided expensive import, trading value, losses and payback period.
+- multi-cycle optimization;
+- further migration away from legacy YAML helpers;
+- continued analysis of Anker connection stability and requested-versus-actual power.
 
 ## Development history
 
-Release-specific development history is intentionally **not kept in this README**.
+Release-specific changes are intentionally **not maintained in this README**.
 
 Use:
 
 - `CHANGELOG.md` for version-by-version changes;
-- GitHub Releases for release notes and downloadable test builds;
-- the project handover documentation for full technical history and design decisions.
-
-## License and disclaimer
-
-See `LICENSE` and `NOTICE.md` in this repository. Dummy OS EMS is experimental software. Battery control can affect energy costs and equipment behaviour; validate configuration and safety limits before using physical control functions.
-
-### Supplier-independent price foundation
-Alpha40.5 retains the opt-in Stroomvoorspeller market-price layer with separate import/export markups. The hourly planner remains the effective resolution in this alpha; quarter-hour selection is stored for the next planner-resolution step. Legacy price sources remain available as fallback until live validation is complete.
-
-
-## Alpha51.1 - Automatic Execution Shadow Gate
-
-Alpha51.1 adds the final non-actuating automatic execution chain. It exposes a native `Dummy OS EMS Automatic Execution` arm switch, an automatic-execution readiness binary sensor, and a shadow command sensor. The arm switch is fail-safe OFF on a fresh install and restores the last user choice after startup. Even when armed, alpha51.1 **never sends an automatic non-zero battery command**.
-
-The shadow gate requires the planner bridge, pre-start validator, safety handoff, execution handoff, final live revalidation, stable Anker control path, valid execution buffer, and no manual override. Trading actions additionally require known day-ahead prices; forecast prices may inform reserve planning but cannot authorize physical trade execution.
+- GitHub Releases for release notes and downloadable builds;
+- the project handover documentation for detailed technical history and design decisions.

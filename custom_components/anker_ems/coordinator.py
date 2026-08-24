@@ -5,9 +5,12 @@ from copy import deepcopy
 import logging
 from typing import Any, Iterable
 
+from aiohttp import ClientError, ClientTimeout
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
 
 from .plan_store import AnkerEmsPlanStore
@@ -162,6 +165,10 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._last_forecast_ready: bool | None = None
         self._plan_refresh_count_date = dt_util.now().date()
         self._plan_refresh_count_today = 0
+        self._direct_price_forecast_payload: dict[str, Any] | None = None
+        self._direct_price_forecast_last_fetch_at: datetime | None = None
+        self._direct_price_forecast_last_success_at: datetime | None = None
+        self._direct_price_forecast_error: str | None = None
         # Alpha51: explicit user arm. Default is fail-safe OFF on every fresh install.
         # The switch platform restores the user's last state after startup.
         self._auto_execution_armed = False
@@ -296,15 +303,17 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Return a stable token for content changes relevant to the 72h planner."""
         sources = data.get("source_monitor_sources") or {}
         relevant = (
-            "solcast_forecast",
-            "stroomvoorspeller",
-            "energyzero_prices",
-            "price_forecast",
+            ("solcast_forecast", "stroomvoorspeller")
+            if data.get("price_architecture_enabled")
+            else ("solcast_forecast", "stroomvoorspeller", "energyzero_prices", "price_forecast")
         )
-        return "|".join(
+        base = "|".join(
             f"{name}:{(sources.get(name) or {}).get('last_content_change') or ''}"
             for name in relevant
         )
+        direct_generated = data.get("price_architecture_direct_forecast_generated_at") or ""
+        direct_hours = data.get("price_architecture_direct_forecast_hours") or 0
+        return f"{base}|direct_stroomvoorspeller:{direct_generated}:{direct_hours}"
 
     def _planner_start_critical_key(self, scheduler_data: dict[str, Any]) -> str | None:
         """Return a one-shot key when an automatic plan enters a start-critical phase."""
@@ -348,6 +357,10 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._plan_refresh_count_date != now_local.date():
             self._plan_refresh_count_date = now_local.date()
             self._plan_refresh_count_today = 0
+        self._direct_price_forecast_payload: dict[str, Any] | None = None
+        self._direct_price_forecast_last_fetch_at: datetime | None = None
+        self._direct_price_forecast_last_success_at: datetime | None = None
+        self._direct_price_forecast_error: str | None = None
 
         source_token = self._planner_source_token(data)
         hour_bucket = now_local.strftime("%Y-%m-%dT%H")
@@ -495,16 +508,71 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         walk(raw)
         return rows
 
-    def _stroomvoorspeller_market_rows(self, entity_id: str) -> list[dict[str, Any]]:
-        """Return known hourly prices plus daily model forecast expanded hourly.
+    def _direct_price_forecast_rows(self) -> list[dict[str, Any]]:
+        """Return direct hourly Stroomvoorspeller forecast rows in EUR/kWh."""
+        payload = self._direct_price_forecast_payload or {}
+        raw_rows = payload.get("forecasts")
+        if not isinstance(raw_rows, list):
+            return []
 
-        Stroomvoorspeller exposes exact day-ahead prices in ``today.hours`` and
-        ``tomorrow.hours``. Its longer horizon is deliberately coarser: each
-        item in ``forecast.days`` contains a daily average market estimate, not
-        an hourly curve. To keep the 72-hour EMS horizon usable without falling
-        back to the legacy Package 40 price forecast, expand that daily market
-        estimate across the local hours of the matching day. Exact known
-        today/tomorrow rows retain precedence during hourly aggregation.
+        source_unit = str(payload.get("unit") or payload.get("source_unit") or "EUR/MWh").lower()
+        divisor = 1000.0 if "mwh" in source_unit else 1.0
+        rows: list[dict[str, Any]] = []
+        for item in raw_rows:
+            if not isinstance(item, dict):
+                continue
+            time_value = item.get("time")
+            predicted = _as_float(item.get("predicted"))
+            if time_value is None or predicted is None:
+                continue
+            rows.append(
+                {
+                    "time": time_value,
+                    "market_price": predicted / divisor,
+                    "source_kind": "forecast",
+                    "forecast_granularity": "direct_hourly",
+                }
+            )
+        return rows
+
+    async def _async_refresh_direct_price_forecast(self) -> None:
+        """Fetch the native 7-day Stroomvoorspeller hourly forecast with a 30 min cache."""
+        now_utc = dt_util.utcnow().astimezone(dt_util.UTC)
+        if (
+            self._direct_price_forecast_last_fetch_at is not None
+            and (now_utc - self._direct_price_forecast_last_fetch_at) < timedelta(minutes=30)
+        ):
+            return
+
+        self._direct_price_forecast_last_fetch_at = now_utc
+        session = async_get_clientsession(self.hass)
+        try:
+            async with session.get(
+                "https://stroomvoorspeller.nl/data/forecast.json",
+                timeout=ClientTimeout(total=20),
+            ) as response:
+                response.raise_for_status()
+                payload = await response.json(content_type=None)
+            if not isinstance(payload, dict) or not isinstance(payload.get("forecasts"), list):
+                raise ValueError("Stroomvoorspeller forecast payload bevat geen forecasts-lijst")
+            if not payload.get("forecasts"):
+                raise ValueError("Stroomvoorspeller forecast payload is leeg")
+            self._direct_price_forecast_payload = payload
+            self._direct_price_forecast_last_success_at = now_utc
+            self._direct_price_forecast_error = None
+        except (ClientError, TimeoutError, ValueError, TypeError) as err:
+            self._direct_price_forecast_error = str(err)
+            _LOGGER.warning("Directe Stroomvoorspeller forecast ophalen mislukt: %s", err)
+
+    def _stroomvoorspeller_market_rows(self, entity_id: str) -> list[dict[str, Any]]:
+        """Return known Stroomvoorspeller prices plus its direct hourly forecast.
+
+        Exact ``today``/``tomorrow`` rows from the Home Assistant Stroomvoorspeller
+        entity remain authoritative. Future hours come directly from
+        stroomvoorspeller.nl/data/forecast.json, so the integration no longer
+        depends on package sensor ``sensor.forecast_prices_all_in_data``. The
+        daily model average is retained only as a last-resort fallback when the
+        direct hourly feed is temporarily unavailable.
         """
         attrs = self._attributes(entity_id)
         rows: list[dict[str, Any]] = []
@@ -512,6 +580,16 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         rows.extend(self._iter_market_rows(attrs.get("tomorrow"), "known"))
 
         forecast = attrs.get("forecast")
+        embedded_forecast_rows = self._iter_market_rows(forecast, "forecast")
+        direct_forecast_rows = self._direct_price_forecast_rows()
+        hourly_forecast_rows = direct_forecast_rows or embedded_forecast_rows
+        rows.extend(hourly_forecast_rows)
+        forecast_hours = {
+            hour
+            for row in hourly_forecast_rows
+            if (hour := _hour_key(row.get("time"))) is not None
+        }
+
         if isinstance(forecast, dict):
             days = forecast.get("days")
             if isinstance(days, list):
@@ -540,11 +618,18 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     except ValueError:
                         continue
                     for hour_offset in range(24):
+                        local_hour = local_midnight + timedelta(hours=hour_offset)
+                        utc_hour = local_hour.astimezone(dt_util.UTC).replace(
+                            minute=0, second=0, microsecond=0
+                        )
+                        if utc_hour in forecast_hours:
+                            continue
                         rows.append(
                             {
-                                "time": (local_midnight + timedelta(hours=hour_offset)).isoformat(),
+                                "time": local_hour.isoformat(),
                                 "market_price": market_estimate,
                                 "source_kind": "forecast",
+                                "forecast_granularity": "daily_fallback",
                             }
                         )
 
@@ -562,13 +647,17 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         over forecast prices for the same hour.
         """
         grouped: dict[tuple[datetime, str], list[float]] = {}
+        granularities: dict[tuple[datetime, str], set[str]] = {}
         for row in rows:
             hour = _hour_key(row.get("time"))
             price = _as_float(row.get("market_price"))
             if hour is None or price is None:
                 continue
             source_kind = str(row.get("source_kind") or "forecast")
-            grouped.setdefault((hour, source_kind), []).append(price)
+            key = (hour, source_kind)
+            grouped.setdefault(key, []).append(price)
+            granularity = str(row.get("forecast_granularity") or ("known" if source_kind == "known" else "hourly"))
+            granularities.setdefault(key, set()).add(granularity)
 
         hours = sorted({hour for hour, _source in grouped})
         aggregated: list[dict[str, Any]] = []
@@ -587,12 +676,20 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 full_quarter_hours += 1
             elif point_count > 1:
                 partial_quarter_hours += 1
+            granularity_values = granularities.get((hour, source_kind), set())
+            if "daily_fallback" in granularity_values:
+                forecast_granularity = "daily_fallback"
+            elif source_kind == "known":
+                forecast_granularity = "known"
+            else:
+                forecast_granularity = "hourly"
             aggregated.append(
                 {
                     "time": hour.isoformat(),
                     "market_price": sum(values) / point_count,
                     "source_kind": source_kind,
                     "source_point_count": point_count,
+                    "forecast_granularity": forecast_granularity,
                 }
             )
 
@@ -627,6 +724,17 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         market_rows, market_row_diagnostics = self._aggregate_market_rows_hourly(raw_market_rows)
         known_rows = self._rows(entity_ids["known_price"], "prices")
         price_rows = self._rows(entity_ids["forecast_price"], "forecasts")
+
+        # Direct forecast integration is package-independent. Daily fallback is
+        # deliberately not shaped from legacy package sensors; if the native
+        # hourly feed is unavailable, the daily Stroomvoorspeller estimate is
+        # used transparently as the degraded fallback.
+        shaped_daily_fallback_hours = 0
+        raw_daily_fallback_hours = sum(
+            1 for market_row in market_rows
+            if market_row.get("forecast_granularity") == "daily_fallback"
+        )
+
         home_rows = self._rows(entity_ids["home"], "forecasts")
         solar_rows: list[dict[str, Any]] = []
         for key in ("solar_today", "solar_tomorrow", "solar_day3"):
@@ -774,6 +882,18 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "price_architecture_full_quarter_hours": market_row_diagnostics["full_quarter_hours"],
             "price_architecture_partial_quarter_hours": market_row_diagnostics["partial_quarter_hours"],
             "price_architecture_max_points_per_hour": market_row_diagnostics["max_points_per_hour"],
+            "price_architecture_shaped_daily_fallback_hours": shaped_daily_fallback_hours,
+            "price_architecture_unshaped_daily_fallback_hours": max(0, raw_daily_fallback_hours - shaped_daily_fallback_hours),
+            "price_architecture_direct_forecast_url": "https://stroomvoorspeller.nl/data/forecast.json",
+            "price_architecture_direct_forecast_available": bool(self._direct_price_forecast_rows()),
+            "price_architecture_direct_forecast_hours": len(self._direct_price_forecast_rows()),
+            "price_architecture_direct_forecast_generated_at": (self._direct_price_forecast_payload or {}).get("generated_at"),
+            "price_architecture_direct_forecast_last_success_at": (
+                self._direct_price_forecast_last_success_at.isoformat()
+                if self._direct_price_forecast_last_success_at is not None
+                else None
+            ),
+            "price_architecture_direct_forecast_error": self._direct_price_forecast_error,
             "price_architecture_import_markup_per_kwh": price_settings["import_markup"],
             "price_architecture_export_markup_per_kwh": price_settings["export_markup"],
             "price_architecture_requested_resolution": price_settings["resolution"],
@@ -860,6 +980,8 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "action_direction": self._state(CONF_ACTION_DIRECTION_ENTITY),
             "power_setpoint_w": self._number(CONF_POWER_SETPOINT_ENTITY),
         }
+        if self._price_architecture_settings()["enabled"]:
+            await self._async_refresh_direct_price_forecast()
         data.update(self._build_forecast())
         # Source Monitor remains fast and observes every coordinator cycle. It
         # supplies content-change timestamps used to trigger event-driven 72h
@@ -892,6 +1014,14 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             max_charge_power_w=self.max_charge_power_w,
         )
         data.update(planner_preview)
+
+        # Lifecycle cleanup is independent of planner/forecast write gates. A
+        # planner-owned pending plan that has passed its complete start window
+        # is released before Scheduler/Bridge evaluation so it cannot lock a
+        # slot until the user manually resets it.
+        expired_release = await self.plan_store.async_release_expired_automatic_plans()
+        data["auto_expired_release_changed"] = expired_release.get("changed", False)
+        data["auto_expired_released_slots"] = expired_release.get("released_slots", [])
 
         # Scheduler timing is cheap and remains live. It is also used as an
         # exception trigger so the 72h planner gets one fresh calculation when

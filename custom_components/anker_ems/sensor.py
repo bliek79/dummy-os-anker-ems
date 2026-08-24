@@ -249,6 +249,13 @@ def _auto_plan_72h_summary_attrs(data: dict[str, Any]) -> dict[str, Any]:
         "tariff_resolution_requested": data.get("price_architecture_requested_resolution"),
         "tariff_resolution_effective": data.get("price_architecture_effective_resolution"),
         "quarter_hour_ready": data.get("price_architecture_quarter_hour_ready", False),
+        "shaped_daily_forecast_hours": data.get("price_architecture_shaped_daily_fallback_hours", 0),
+        "flat_daily_fallback_hours": data.get("price_architecture_unshaped_daily_fallback_hours", 0),
+        "direct_forecast_available": data.get("price_architecture_direct_forecast_available", False),
+        "direct_forecast_hours": data.get("price_architecture_direct_forecast_hours", 0),
+        "direct_forecast_generated_at": data.get("price_architecture_direct_forecast_generated_at"),
+        "direct_forecast_last_success_at": data.get("price_architecture_direct_forecast_last_success_at"),
+        "direct_forecast_error": data.get("price_architecture_direct_forecast_error"),
         "note": data.get("auto_plan_72h_note"),
     }
 
@@ -284,6 +291,8 @@ def _auto_bridge_attrs(data: dict[str, Any]) -> dict[str, Any]:
         "plan_store_written_slots": data.get("auto_bridge_plan_store_written_slots", []),
         "plan_store_cleared_slots": data.get("auto_bridge_plan_store_cleared_slots", []),
         "plan_store_skipped_slots": data.get("auto_bridge_plan_store_skipped_slots", []),
+        "expired_release_changed": data.get("auto_expired_release_changed", False),
+        "expired_released_slots": data.get("auto_expired_released_slots", []),
         "scheduler_handoff_enabled": data.get("auto_bridge_scheduler_handoff_enabled", False),
         "scheduler_handoff_gate_open": data.get("auto_bridge_scheduler_handoff_gate_open", False),
         "scheduler_handoff_changed": data.get("auto_bridge_scheduler_handoff_changed", False),

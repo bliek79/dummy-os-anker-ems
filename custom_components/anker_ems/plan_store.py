@@ -123,6 +123,54 @@ class AnkerEmsPlanStore:
         self._notify_listeners()
 
 
+
+    async def async_release_expired_automatic_plans(self) -> dict[str, Any]:
+        """Release planner-owned pending slots after their complete start window.
+
+        This lifecycle cleanup is independent of planner/forecast write gates. A
+        stale automatic pending plan must never lock one of the three slots just
+        because a new planner proposal is temporarily blocked. Manual plans are
+        deliberately untouched.
+        """
+        now = dt_util.now()
+        now_iso = now.isoformat()
+        released_slots: list[int] = []
+
+        for slot in range(1, PLAN_SLOT_COUNT + 1):
+            plan = self._plans[slot]
+            if str(plan.get("origin") or "") != "automatic_72h_planner":
+                continue
+            if str(plan.get("lifecycle_status") or "").lower() != "pending":
+                continue
+            start_raw = plan.get("start_time")
+            start = dt_util.parse_datetime(str(start_raw)) if start_raw else None
+            if start is None:
+                continue
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+            try:
+                delay_min = max(0.0, float(plan.get("max_start_delay_min", 0) or 0))
+            except (TypeError, ValueError):
+                delay_min = 0.0
+            if now <= start + timedelta(minutes=delay_min):
+                continue
+
+            empty = deepcopy(DEFAULT_PLAN)
+            empty["lifecycle_status"] = "concept"
+            empty["lifecycle_reason"] = "automatic_expired_released"
+            empty["lifecycle_updated_at"] = now_iso
+            self._plans[slot] = empty
+            released_slots.append(slot)
+
+        if released_slots:
+            await self._async_save()
+            self._notify_listeners()
+
+        return {
+            "changed": bool(released_slots),
+            "released_slots": released_slots,
+        }
+
     async def async_sync_automatic_plans(
         self, desired: dict[int, dict[str, Any]]
     ) -> dict[str, Any]:
@@ -169,6 +217,25 @@ class AnkerEmsPlanStore:
             # rolling forecast revisions must no longer rewrite it.
             return dt_util.now() < start
 
+        def expired_automatic_pending(plan: dict[str, Any]) -> bool:
+            """Return True when a planner-owned pending plan is past its start window."""
+            if str(plan.get("origin") or "") != "automatic_72h_planner":
+                return False
+            if str(plan.get("lifecycle_status") or "").lower() != "pending":
+                return False
+            start_raw = plan.get("start_time")
+            start = dt_util.parse_datetime(str(start_raw)) if start_raw else None
+            if start is None:
+                return False
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+            delay_raw = plan.get("max_start_delay_min", 0)
+            try:
+                delay_min = max(0.0, float(delay_raw or 0))
+            except (TypeError, ValueError):
+                delay_min = 0.0
+            return dt_util.now() > start + timedelta(minutes=delay_min)
+
         for slot in range(1, PLAN_SLOT_COUNT + 1):
             current = self._plans[slot]
             proposal = desired.get(slot)
@@ -177,6 +244,7 @@ class AnkerEmsPlanStore:
             reusable = (
                 (current_origin == "automatic_72h_planner" and current_lifecycle == "concept")
                 or pending_revisable(current)
+                or expired_automatic_pending(current)
                 or terminal(current)
             )
 
@@ -238,7 +306,11 @@ class AnkerEmsPlanStore:
             # actions are frozen and manual slots are never touched.
             if (
                 current_origin == "automatic_72h_planner"
-                and (current_lifecycle == "concept" or pending_revisable(current))
+                and (
+                    current_lifecycle == "concept"
+                    or pending_revisable(current)
+                    or expired_automatic_pending(current)
+                )
             ):
                 already_cleared = (
                     current.get("action") in (None, "geen")
@@ -249,7 +321,11 @@ class AnkerEmsPlanStore:
                 if not already_cleared:
                     empty = deepcopy(DEFAULT_PLAN)
                     empty["lifecycle_status"] = "concept"
-                    empty["lifecycle_reason"] = "automatic_preview_cleared"
+                    empty["lifecycle_reason"] = (
+                        "automatic_expired_released"
+                        if expired_automatic_pending(current)
+                        else "automatic_preview_cleared"
+                    )
                     empty["lifecycle_updated_at"] = now_iso
                     self._plans[slot] = empty
                     changed_slots.append(slot)

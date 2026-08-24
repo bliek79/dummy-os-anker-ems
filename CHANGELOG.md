@@ -1,3 +1,30 @@
+## 0.0.1-alpha.52.3
+
+- Moves the multi-day hourly price forecast into Dummy OS EMS itself instead of consuming the legacy package sensor `sensor.forecast_prices_all_in_data`.
+- Fetches the native Stroomvoorspeller 7-day hourly forecast directly from `https://stroomvoorspeller.nl/data/forecast.json` with a 30-minute cache.
+- Converts the raw Stroomvoorspeller market forecast from EUR/MWh to EUR/kWh inside the integration.
+- Keeps `sensor.stroomvoorspeller_data` `today`/`tomorrow` hourly market prices authoritative as `known` prices.
+- Uses the direct hourly forecast for later Plan72 hours as `forecast`, then applies the configured Dummy OS EMS import/export markups exactly once.
+- Removes the alpha52.2 runtime dependency on the package forecast sensor for hourly shaping.
+- Keeps Stroomvoorspeller daily model averages only as a transparent degraded fallback when the native hourly feed is unavailable.
+- Adds Plan72 diagnostics for direct-forecast availability, hour count, generation timestamp, last successful fetch and fetch error.
+- Planner source-change detection now includes the native forecast generation timestamp so a new Stroomvoorspeller model run can trigger a Plan72 refresh.
+- README remains release-independent; no alpha/update section is added.
+- No scheduler, slot-lifecycle, Anker control-path or physical execution logic changes are included in this release.
+- Automatic physical execution remains disabled/shadow-only.
+
+## 0.0.1-alpha.52.2
+
+- Releases expired planner-owned automatic plan slots after their complete Scheduler start window, allowing the Automatic Plan Bridge to reuse them without a manual reset to `geen`.
+- Manual expired plans remain protected and are never silently cleared by the automatic planner.
+- Restores recursive extraction of timed Stroomvoorspeller forecast rows so an available hourly/quarter-hour forecast is no longer flattened to a daily tariff.
+- When Stroomvoorspeller only exposes a daily market estimate, uses the configured hourly forecast only as an intra-day shape and rebases it around the Stroomvoorspeller daily market estimate.
+- Keeps a flat daily estimate only as a final fallback when no hourly forecast shape is available.
+- Adds diagnostics for shaped versus unshaped daily forecast fallback hours.
+- Rewrites README as a stable project/architecture description; release-specific alpha updates remain only in CHANGELOG and GitHub Releases.
+- Keeps alpha52 two-stage Anker readiness and alpha52.1 execution-buffer accounting unchanged.
+- Automatic non-zero physical execution remains disabled/shadow-only.
+
 ## 0.0.1-alpha.52.1
 
 - Fixed Plan72 safety-precharge capacity accounting when solar charging and grid safety charging share the same hourly charge-power limit.

@@ -59,6 +59,10 @@ def _manual_slot_available(detail: dict[str, Any]) -> bool:
     # Any user edit changes origin to manual in Plan Store.
     if origin == "automatic_72h_planner" and lifecycle == "concept":
         return True
+    # A planner-owned pending plan that missed its complete Scheduler start
+    # window must not permanently occupy one of the three automatic slots.
+    if origin == "automatic_72h_planner" and status == "verlopen":
+        return True
     if action in (None, "geen"):
         return True
     if lifecycle in {"geannuleerd", "voltooid", "fout"}:
