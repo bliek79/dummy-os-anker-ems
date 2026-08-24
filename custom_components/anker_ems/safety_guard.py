@@ -215,7 +215,7 @@ class AnkerEmsSafetyGuard:
         safe = not reasons
         status = "safe_observe" if safe else "blocked"
         reason = (
-            "Scheduler-ready automatisch plan is door Safety Guard goedgekeurd; Execution Controller blijft uitgeschakeld"
+            "Scheduler-ready automatisch plan is door Safety Guard goedgekeurd; fysieke uitvoering vereist nog de centrale arm- en finale revalidatiegates"
             if safe
             else ", ".join(reasons)
         )

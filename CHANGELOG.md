@@ -1,3 +1,17 @@
+## 0.0.1-alpha.54 - 2026-08-24
+
+- Enables the first guarded physical automatic execution path for Scheduler-selected `automatic_72h_planner` actions.
+- Requires the existing Automatic Execution arm switch plus the complete Planner -> Bridge -> Scheduler -> Pre-Start -> Safety -> Final Revalidation -> Mode-Switch gate to be green.
+- Switches to `third_party_control`, applies a 0 W guard as soon as the external setpoint is available, waits for 60 seconds of post-mode control-path stability, and revalidates planner identity and safety before writing direction and non-zero power.
+- Uses the centrally configured charge/discharge power limits and the plan's target SOC/max runtime.
+- Runtime monitoring safe-stops on mode changes, direction changes, setpoint changes/unavailability, conflicting battery power, telemetry loss, invalid SOC, target SOC, minimum SOC or maximum runtime.
+- Safe stop writes 0 W first and returns the Anker to `self_consumption`.
+- Turning Automatic Execution OFF safe-stops a running automatic action and aborts an in-progress automatic mode transition.
+- Interrupted automatic arming is recovered fail-safe after a Home Assistant restart.
+- Fail-safe upgrade behavior: an ON state restored from the former shadow-only switch is not accepted as physical consent; the first alpha54 start requires one explicit re-arm. Later `live_guarded` ON state can restore normally.
+- Keeps manual priority, three persistent slots, alpha53 expiry reconciliation and the validated alpha52.3 native Stroomvoorspeller price path unchanged.
+- README remains release-independent; version-specific details are kept here and in GitHub Release notes.
+
 ## 0.0.1-alpha.53
 
 - Fixes automatic plan-slot expiry reconciliation using the Scheduler's own `verlopen` decision as the primary release signal.

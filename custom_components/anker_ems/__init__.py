@@ -490,61 +490,50 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     entry.async_on_unload(coordinator.async_add_listener(_scheduler_execution_listener))
 
-    # Alpha51 keeps the entire automatic chain shadow-only. The legacy Alpha40
-    # mode-switch transaction remains available in code for controlled testing,
-    # but the automatic listener is hard-gated by auto_shadow_execution_permitted.
-    # No automatic Home Assistant control service may run in this release.
-    # The transaction applies a 0 W guard, switches to third_party_control,
-    # revalidates, and immediately returns to self_consumption. It never selects
-    # a charge/discharge direction or sends non-zero power.
-    automatic_mode_switch_task = None
+    # Alpha54: the restored Automatic Execution switch is now the explicit
+    # physical arm. The coordinator listener starts exactly one automatic
+    # Scheduler-selected planner action only when the complete gate reports
+    # execution_permitted. The Execution Controller performs its own fresh
+    # identity/safety checks again before and after entering third_party_control.
+    automatic_execution_task = None
 
     @callback
-    def _automatic_mode_switch_listener() -> None:
-        nonlocal automatic_mode_switch_task
+    def _automatic_execution_listener() -> None:
+        nonlocal automatic_execution_task
         data = coordinator.data or {}
         if data.get("auto_shadow_execution_permitted") is not True:
             return
-        if data.get("auto_mode_switch_preview_ready") is not True:
-            return
-        if data.get("auto_final_revalidation_safe") is not True:
-            return
-        slot = data.get("auto_final_revalidation_selected_slot")
+        slot = data.get("auto_shadow_selected_slot")
         detail = ((data.get("scheduler_slots", {}) or {}).get(slot) or
                   (data.get("scheduler_slots", {}) or {}).get(str(slot)) or {})
         identity = detail.get("planner_identity")
         if not identity or detail.get("origin") != "automatic_72h_planner":
             return
         execution_data = execution.data
-        if identity == execution_data.get("auto_mode_switch_last_identity"):
-            return
         if execution_data.get("active") or execution_data.get("auto_mode_switch_active"):
             return
         if physical_test.data.get("active"):
             return
-        readiness = execution.control_path_readiness()
-        if readiness.get("ready") is not True:
-            return
-        if automatic_mode_switch_task is not None and not automatic_mode_switch_task.done():
+        if automatic_execution_task is not None and not automatic_execution_task.done():
             return
 
         async def _run() -> None:
-            nonlocal automatic_mode_switch_task
+            nonlocal automatic_execution_task
             try:
-                _LOGGER.info("Starting controlled automatic mode-switch validation for %s", identity)
-                await execution.async_run_automatic_mode_switch_only()
+                _LOGGER.info("Starting automatic physical EMS execution for %s", identity)
+                await execution.async_execute_automatic_plan(identity)
             except HomeAssistantError as err:
-                _LOGGER.warning("Automatic mode-switch validation blocked/failed: %s", err)
+                _LOGGER.warning("Automatic physical EMS execution blocked/failed: %s", err)
             except Exception:
-                _LOGGER.exception("Unexpected automatic mode-switch validation error")
+                _LOGGER.exception("Unexpected automatic physical EMS execution error")
             finally:
-                automatic_mode_switch_task = None
+                automatic_execution_task = None
 
-        automatic_mode_switch_task = hass.async_create_task(
-            _run(), "Dummy OS EMS automatic mode-switch validation"
+        automatic_execution_task = hass.async_create_task(
+            _run(), "Dummy OS EMS automatic physical execution"
         )
 
-    entry.async_on_unload(coordinator.async_add_listener(_automatic_mode_switch_listener))
+    entry.async_on_unload(coordinator.async_add_listener(_automatic_execution_listener))
 
     @callback
     def _shutdown(_event) -> None:

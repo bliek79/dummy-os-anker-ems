@@ -244,10 +244,55 @@ class AnkerEmsExecutionController:
         )
 
     async def async_recover_if_needed(self) -> None:
-        if not self._state.get("active"):
+        if self._state.get("active"):
+            _LOGGER.warning("Recovering interrupted Dummy OS EMS execution")
+            await self.async_stop("restart_recovery", emergency=True)
             return
-        _LOGGER.warning("Recovering interrupted Dummy OS EMS execution")
-        await self.async_stop("restart_recovery", emergency=True)
+        if self._state.get("auto_mode_switch_active"):
+            _LOGGER.warning("Recovering interrupted Dummy OS EMS automatic arming")
+            await self.async_abort_automatic_arming("restart_recovery")
+
+    async def async_abort_automatic_arming(self, reason: str) -> None:
+        """Fail-safe an in-progress automatic mode transition before power handoff."""
+        if not self._state.get("auto_mode_switch_active"):
+            return
+        mode_entity = power_entity = None
+        try:
+            mode_entity, _direction_entity, power_entity = self._entity_ids()
+        except HomeAssistantError:
+            pass
+        errors: list[str] = []
+        if power_entity:
+            state = self.hass.states.get(power_entity)
+            if state is not None and state.state not in {"unknown", "unavailable"}:
+                try:
+                    await self.hass.services.async_call(
+                        "number", "set_value", {"value": 0},
+                        target={"entity_id": power_entity}, blocking=True,
+                    )
+                except Exception as err:
+                    errors.append(f"power_zero_failed: {err}")
+        if mode_entity:
+            state = self.hass.states.get(mode_entity)
+            if state is not None and state.state not in {"unknown", "unavailable", _SELF_MODE}:
+                try:
+                    await self.hass.services.async_call(
+                        "select", "select_option", {"option": _SELF_MODE},
+                        target={"entity_id": mode_entity}, blocking=True,
+                    )
+                except Exception as err:
+                    errors.append(f"self_consumption_failed: {err}")
+        result_reason = reason if not errors else f"{reason}; {'; '.join(errors)}"
+        self._state.update({
+            "auto_mode_switch_active": False,
+            "auto_mode_switch_status": "aborted" if not errors else "abort_error",
+            "auto_mode_switch_reason": result_reason,
+            "auto_mode_switch_completed_at": dt_util.now().isoformat(),
+            "auto_mode_switch_last_result": "aborted" if not errors else "abort_error",
+        })
+        await self._async_save()
+        if self._coordinator is not None:
+            await self._coordinator.async_refresh()
 
     def evaluate_automatic_handoff(self, data: dict[str, Any]) -> dict[str, Any]:
         """Evaluate Safety Guard -> Execution Controller handoff without actuating.
@@ -348,7 +393,7 @@ class AnkerEmsExecutionController:
             "auto_execution_handoff_ready": ready,
             "auto_execution_handoff_status": "ready_observe" if ready else "blocked",
             "auto_execution_handoff_reason": (
-                "Execution Controller handoff is gereed voor finale live revalidatie; fysieke uitvoering blijft uit"
+                "Execution Controller handoff is gereed voor finale live revalidatie; fysieke uitvoering vereist de Automatic Execution-arm"
                 if ready
                 else ", ".join(reasons)
             ),
@@ -484,7 +529,7 @@ class AnkerEmsExecutionController:
                 "check": "external_mode_ready",
                 "passed": False,
                 "severity": "warning",
-                "detail": "Battery is not yet in third_party_control; future Execution Controller must switch mode after this gate",
+                "detail": "Battery is not yet in third_party_control; the Execution Controller switches mode after this gate when automatic execution is armed",
             })
         else:
             checks.append({
@@ -529,7 +574,7 @@ class AnkerEmsExecutionController:
         """Preview the guarded external-mode transaction without actuating.
 
         Alpha39 turns the final revalidation result into an explicit transaction
-        plan for the future physical mode switch. No Home Assistant service is
+        plan for the guarded physical mode switch. This evaluator itself calls no Home Assistant service.
         called here. The preview requires a zero-power safety step, the mode
         transition, control-source availability recheck and a final safe-return
         path before direction/power execution may ever be enabled.
@@ -567,7 +612,7 @@ class AnkerEmsExecutionController:
             "auto_mode_switch_preview_ready": ready,
             "auto_mode_switch_preview_status": "ready_observe" if ready else ("blocked" if required else "not_required"),
             "auto_mode_switch_preview_reason": (
-                "Mode-switch transaction is gereed als observerende stap; fysieke mode-switch blijft uit"
+                "Mode-switch transaction is gereed; fysieke uitvoering blijft afhankelijk van de Automatic Execution-arm en finale revalidatie"
                 if ready else (", ".join(blockers) if blockers else "Geen finale revalidatie actief")
             ),
             "auto_mode_switch_preview_blockers": blockers,
@@ -901,6 +946,229 @@ class AnkerEmsExecutionController:
         self._schedule_monitor()
         await self._coordinator.async_refresh()
 
+    async def async_execute_automatic_plan(self, expected_identity: str | None = None) -> bool:
+        """Execute one Scheduler-selected automatic planner action physically.
+
+        Alpha54 is the first live automatic execution path. It only starts when
+        the complete observer chain is green *and* the user arm switch is on.
+        The transaction is deliberately staged:
+
+        1. capture and validate the selected planner identity;
+        2. switch to ``third_party_control``;
+        3. force a 0 W guard as soon as the external setpoint is available;
+        4. wait until post-mode controls have been stable for 60 seconds;
+        5. re-run the complete final safety/identity validation;
+        6. select direction and only then apply the non-zero setpoint;
+        7. monitor continuously and fail-safe back to 0 W/self-consumption.
+        """
+        if self._coordinator is None:
+            raise HomeAssistantError("Dummy OS EMS coordinator is niet beschikbaar")
+        if self._state.get("active") or self._state.get("auto_mode_switch_active"):
+            return False
+        if self._coordinator.physical_test.data.get("active"):
+            return False
+
+        await self._coordinator.async_refresh()
+        data = self._coordinator.data
+        if data.get("auto_shadow_execution_permitted") is not True:
+            return False
+        if data.get("auto_final_revalidation_safe") is not True:
+            return False
+        if data.get("auto_mode_switch_preview_ready") is not True:
+            return False
+
+        slot = data.get("auto_final_revalidation_selected_slot")
+        slots = data.get("scheduler_slots", {}) or {}
+        detail = slots.get(slot) or slots.get(str(slot)) or {}
+        identity = detail.get("planner_identity")
+        if not identity or detail.get("origin") != "automatic_72h_planner":
+            return False
+        if expected_identity is not None and identity != expected_identity:
+            return False
+
+        action = detail.get("action")
+        try:
+            power_w = int(float(detail.get("power_w") or 0))
+            target_soc = float(detail.get("target_soc") or 0)
+            max_runtime_h = float(detail.get("max_runtime_h") or 0)
+        except (TypeError, ValueError):
+            return False
+        if action not in {"laden", "ontladen"}:
+            return False
+        max_power = int(data.get("max_discharge_power_w") or 800) if action == "ontladen" else int(data.get("max_charge_power_w") or 800)
+        if not 100 <= power_w <= max_power:
+            return False
+        if not 5 <= target_soc <= 100 or not 0.25 <= max_runtime_h <= 12:
+            return False
+
+        mode_entity, direction_entity, power_entity = self._entity_ids()
+        now = dt_util.now()
+        self._state.update({
+            "auto_mode_switch_active": True,
+            "auto_mode_switch_status": "automatic_execution_arming",
+            "auto_mode_switch_reason": "Automatische fysieke uitvoering wordt veilig voorbereid",
+            "auto_mode_switch_identity": identity,
+            "auto_mode_switch_started_at": now.isoformat(),
+            "auto_mode_switch_completed_at": None,
+            "auto_mode_switch_last_result": None,
+        })
+        await self._async_save()
+
+        try:
+            # If the setpoint is already available, zero it before the mode
+            # transition. On the live Solarbank it can legitimately be
+            # unavailable in self_consumption, so this step is best-effort.
+            power_state = self.hass.states.get(power_entity)
+            if power_state is not None and power_state.state not in {"unknown", "unavailable"}:
+                await self.hass.services.async_call(
+                    "number", "set_value", {"value": 0},
+                    target={"entity_id": power_entity}, blocking=True,
+                )
+
+            if data.get("operating_mode") != _EXTERNAL_MODE:
+                self._state.update({
+                    "auto_mode_switch_status": "switching_external_mode",
+                    "auto_mode_switch_reason": "Omschakelen naar third_party_control",
+                })
+                await self._async_save()
+                await self.hass.services.async_call(
+                    "select", "select_option", {"option": _EXTERNAL_MODE},
+                    target={"entity_id": mode_entity}, blocking=True,
+                )
+
+            # Wait for the external controls to appear, then immediately pin
+            # the setpoint to zero before waiting for the 60 s stability gate.
+            await self._wait_for_external_controls()
+            await self.hass.services.async_call(
+                "number", "set_value", {"value": 0},
+                target={"entity_id": power_entity}, blocking=True,
+            )
+
+            self._state.update({
+                "auto_mode_switch_status": "post_mode_stability",
+                "auto_mode_switch_reason": "Externe besturing actief; 60 s stabiliteit en finale revalidatie vereist",
+            })
+            await self._async_save()
+
+            deadline = dt_util.now() + timedelta(seconds=_CONTROL_PATH_STABLE_SECONDS + 30)
+            while dt_util.now() < deadline:
+                await self._coordinator.async_refresh()
+                readiness = self.control_path_readiness()
+                if readiness.get("post_mode_ready") is True:
+                    break
+                if self._coordinator.data.get("operating_mode") != _EXTERNAL_MODE:
+                    raise HomeAssistantError("third_party_control viel weg tijdens post-mode stabilisatie")
+                await asyncio.sleep(2)
+            else:
+                raise HomeAssistantError("Post-mode besturingspad werd niet 60 seconden stabiel")
+
+            await self._coordinator.async_refresh()
+            armed = self._coordinator.data
+            armed_slot = armed.get("auto_final_revalidation_selected_slot")
+            armed_detail = ((armed.get("scheduler_slots", {}) or {}).get(armed_slot) or
+                            (armed.get("scheduler_slots", {}) or {}).get(str(armed_slot)) or {})
+            blockers: list[str] = []
+            if armed.get("auto_shadow_armed") is not True:
+                blockers.append("automatic_execution_disarmed")
+            if armed.get("operating_mode") != _EXTERNAL_MODE:
+                blockers.append("not_in_external_mode")
+            if armed.get("auto_final_revalidation_safe") is not True:
+                blockers.append("final_revalidation_not_safe")
+            if armed.get("auto_mode_switch_preview_ready") is not True:
+                blockers.append("mode_switch_preview_not_ready")
+            if armed_detail.get("planner_identity") != identity:
+                blockers.append("planner_identity_changed")
+            if armed_slot != slot:
+                blockers.append("selected_slot_changed")
+            readiness = self.control_path_readiness()
+            if readiness.get("post_mode_ready") is not True:
+                blockers.append("post_mode_not_ready")
+            if blockers:
+                raise HomeAssistantError(", ".join(blockers))
+
+            execution_started_at = dt_util.now()
+            stop_at = execution_started_at + timedelta(hours=max_runtime_h)
+            self._state.update({
+                "active": True,
+                "status": "starting_automatic",
+                "reason": f"Automatisch plan {slot}: {power_w} W {action} tot {target_soc:.0f}%",
+                "slot": slot,
+                "origin": "automatic_72h_planner",
+                "action": action,
+                "power_w": power_w,
+                "target_soc": target_soc,
+                "max_runtime_h": max_runtime_h,
+                "started_at": execution_started_at.isoformat(),
+                "stop_at": stop_at.isoformat(),
+                "last_result": None,
+                "auto_mode_switch_active": False,
+                "auto_mode_switch_status": "automatic_handoff",
+                "auto_mode_switch_reason": "Post-mode validatie akkoord; richting en vermogen worden overgedragen",
+            })
+            await self._async_save()
+
+            await self.hass.services.async_call(
+                "select", "select_option",
+                {"option": "charge" if action == "laden" else "discharge"},
+                target={"entity_id": direction_entity}, blocking=True,
+            )
+            await self.hass.services.async_call(
+                "number", "set_value", {"value": power_w},
+                target={"entity_id": power_entity}, blocking=True,
+            )
+
+            self._state.update({
+                "status": "running",
+                "reason": f"Automatisch plan {slot} actief: {action} {power_w} W tot {target_soc:.0f}% of max {max_runtime_h:g} uur",
+                "auto_mode_switch_completed_at": dt_util.now().isoformat(),
+                "auto_mode_switch_last_identity": identity,
+                "auto_mode_switch_last_result": "automatic_execution_started",
+            })
+            await self._async_save()
+            await self._coordinator.plan_store.async_mark_lifecycle(
+                int(slot), "actief", "automatic_execution_running"
+            )
+            self._schedule_stop(stop_at)
+            self._schedule_monitor()
+            await self._coordinator.async_refresh()
+            return True
+        except Exception as err:
+            _LOGGER.exception("Automatic Dummy OS EMS physical execution failed to start")
+            # When active was already set, use the normal safe-stop path so the
+            # plan lifecycle is also marked. Otherwise perform the same physical
+            # fail-safe directly and leave the pending plan available for the
+            # scheduler only if its start window remains valid.
+            if self._state.get("active"):
+                await self.async_stop(f"automatic_start_failed: {err}", emergency=True)
+            else:
+                try:
+                    state = self.hass.states.get(power_entity)
+                    if state is not None and state.state not in {"unknown", "unavailable"}:
+                        await self.hass.services.async_call(
+                            "number", "set_value", {"value": 0},
+                            target={"entity_id": power_entity}, blocking=True,
+                        )
+                except Exception:
+                    _LOGGER.exception("Failed to apply automatic execution zero-power abort")
+                try:
+                    await self.hass.services.async_call(
+                        "select", "select_option", {"option": _SELF_MODE},
+                        target={"entity_id": mode_entity}, blocking=True,
+                    )
+                except Exception:
+                    _LOGGER.exception("Failed to return automatic execution to self_consumption")
+                self._state.update({
+                    "auto_mode_switch_active": False,
+                    "auto_mode_switch_status": "failed",
+                    "auto_mode_switch_reason": f"Automatische uitvoering afgebroken: {err}",
+                    "auto_mode_switch_completed_at": dt_util.now().isoformat(),
+                    "auto_mode_switch_last_identity": identity,
+                    "auto_mode_switch_last_result": f"failed: {err}",
+                })
+                await self._async_save()
+                await self._coordinator.async_refresh()
+            raise HomeAssistantError(f"Automatische EMS-uitvoering starten mislukt: {err}") from err
+
     def _schedule_stop(self, stop_at: datetime) -> None:
         if self._stop_task is not None and not self._stop_task.done():
             self._stop_task.cancel()
@@ -956,6 +1224,15 @@ class AnkerEmsExecutionController:
             return
         if data.get("power_setpoint_w") is None:
             await self.async_stop("power_setpoint_unavailable", emergency=True)
+            return
+        expected_power = self._number_value(self._state.get("power_w"))
+        actual_setpoint = self._number_value(data.get("power_setpoint_w"))
+        if (
+            expected_power is None
+            or actual_setpoint is None
+            or abs(actual_setpoint - expected_power) > 10
+        ):
+            await self.async_stop("power_setpoint_changed", emergency=True)
             return
         if action == "laden" and (data.get("discharge_power_w") or 0) > 100:
             await self.async_stop("unexpected_discharge_detected", emergency=True)
@@ -1086,7 +1363,11 @@ class AnkerEmsExecutionController:
 
             if self._coordinator is not None and slot is not None:
                 if result == "completed":
-                    lifecycle = "geannuleerd" if reason == "manual_stop" else "voltooid"
+                    lifecycle = (
+                        "geannuleerd"
+                        if reason in {"manual_stop", "automatic_execution_disarmed"}
+                        else "voltooid"
+                    )
                 else:
                     lifecycle = "fout"
                 await self._coordinator.plan_store.async_mark_lifecycle(

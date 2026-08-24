@@ -390,7 +390,7 @@ class AnkerEmsPreStartValidator:
                 "auto_prestart_safe": checked["safe"],
                 "auto_prestart_status": "safe_observe" if checked["safe"] else "blocked",
                 "auto_prestart_reason": (
-                    "Pre-start veiligheidscontrole akkoord; automatische fysieke uitvoering blijft uitgeschakeld"
+                    "Pre-start veiligheidscontrole akkoord; fysieke uitvoering vereist nog de Automatic Execution-arm en volgende safety-gates"
                     if checked["safe"]
                     else ", ".join(checked["reasons"])
                 ),

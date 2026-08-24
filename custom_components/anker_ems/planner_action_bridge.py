@@ -444,6 +444,6 @@ def build_planner_action_bridge(
         "auto_bridge_note": (
             "Planner-owned pending plannen worden op stabiele planner identity gereconcilieerd. "
             "Plan Store-write, Scheduler-handoff en pre-start veiligheidsvalidatie zijn actief; "
-            "fysieke automatische uitvoering blijft uitgeschakeld."
+            "fysieke automatische uitvoering blijft apart geborgd door de Automatic Execution-arm en safety-keten."
         ),
     }

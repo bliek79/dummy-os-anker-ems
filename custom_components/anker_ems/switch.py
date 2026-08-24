@@ -24,10 +24,11 @@ async def async_setup_entry(
 class AnkerEmsAutomaticExecutionArm(
     CoordinatorEntity[AnkerEmsCoordinator], RestoreEntity, SwitchEntity
 ):
-    """Fail-safe arm switch for future automatic execution.
+    """Fail-safe arm switch for automatic physical execution.
 
-    Alpha51 is shadow-only: ON means the user has armed the chain for validation,
-    but the integration still refuses every automatic non-zero physical command.
+    Alpha54: ON explicitly permits a fully validated automatic planner action
+    to reach the physical Execution Controller. OFF closes the gate and also
+    safe-stops a currently running automatic planner execution.
     """
 
     _attr_name = "Dummy OS EMS Automatic Execution"
@@ -50,24 +51,44 @@ class AnkerEmsAutomaticExecutionArm(
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         previous = await self.async_get_last_state()
-        armed = previous is not None and previous.state == "on"
+        # Fail-safe migration from the former shadow-only arm: an ON state from
+        # alpha51-alpha53 must never silently become a physical-live arm after
+        # upgrading. Only a state previously saved by the live_guarded switch
+        # itself is restored as ON. The first alpha54 start therefore requires
+        # one explicit user re-arm.
+        armed = bool(
+            previous is not None
+            and previous.state == "on"
+            and previous.attributes.get("mode") == "live_guarded"
+        )
         await self.coordinator.async_set_auto_execution_armed(armed)
 
     async def async_turn_on(self, **kwargs) -> None:
         await self.coordinator.async_set_auto_execution_armed(True)
 
     async def async_turn_off(self, **kwargs) -> None:
-        # Alpha51 has no automatic non-zero execution to stop; OFF therefore
-        # immediately closes the future automatic gate without touching manual plans.
         await self.coordinator.async_set_auto_execution_armed(False)
+        execution = self.coordinator.execution.data
+        if (
+            execution.get("active")
+            and execution.get("origin") == "automatic_72h_planner"
+        ):
+            await self.coordinator.execution.async_stop(
+                "automatic_execution_disarmed", emergency=False
+            )
+        elif execution.get("auto_mode_switch_active"):
+            await self.coordinator.execution.async_abort_automatic_arming(
+                "automatic_execution_disarmed"
+            )
 
     @property
     def extra_state_attributes(self) -> dict[str, object]:
         data = self.coordinator.data or {}
         return {
-            "mode": "shadow_only",
+            "mode": "live_guarded",
             "technical_ready": data.get("auto_shadow_technical_ready", False),
-            "shadow_status": data.get("auto_shadow_status"),
+            "execution_status": data.get("auto_shadow_status"),
             "blockers": data.get("auto_shadow_blockers", []),
-            "physical_execution_enabled": False,
+            "physical_execution_enabled": True,
+            "execution_permitted": data.get("auto_shadow_execution_permitted", False),
         }

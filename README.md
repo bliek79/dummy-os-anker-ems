@@ -79,9 +79,9 @@ This avoids a circular dependency on controls that may be unavailable while the 
 
 ## Automatic execution status
 
-Automatic planning, bridging, scheduling and shadow validation are under active development. The current alpha architecture keeps unattended non-zero physical automatic charge/discharge execution disabled until every safety and recovery path has been validated on live hardware.
+Automatic planner actions can reach the physical Execution Controller only when the dedicated Automatic Execution arm switch is enabled and every planning, Scheduler, pre-start, safety, reserve, identity and control-path gate is green. Entry into `third_party_control` is followed by a zero-power guard, post-mode stability validation and a final live revalidation before a non-zero setpoint is applied.
 
-Manual battery control remains separate from the automatic shadow path.
+A running automatic action is monitored against operating mode, direction, commanded setpoint, battery telemetry, SOC target and maximum runtime. Disarming automatic execution, a critical source failure or an execution fault triggers a safe stop to 0 W and return to `self_consumption`. Manual control remains separate and retains priority.
 
 ## Battery assumptions and limits
 
@@ -141,7 +141,7 @@ The repository is structured for HACS-compatible distribution during development
 - Invalid or unavailable critical sources block automatic progress.
 - Planner write, Scheduler handoff, safety approval and physical execution are separate gates.
 - Forecast data is never treated as proof that an action is safe at execution time.
-- Live conditions are revalidated immediately before any future physical execution.
+- Live conditions are revalidated immediately before physical automatic execution.
 - Any physical-control failure must fail safe and return control to a known safe state.
 
 ## Roadmap
@@ -149,8 +149,7 @@ The repository is structured for HACS-compatible distribution during development
 Main functional work still includes:
 
 - recovery planning for unavoidable current-hour reserve shortfalls;
-- live validation of post-mode Anker control readiness;
-- controlled automatic physical charge/discharge tests after safety approval;
+- continued live validation of post-mode Anker control readiness and automatic execution recovery;
 - true quarter-hour planning;
 - Afwezigheidsmodus;
 - plan-versus-actual evaluation;

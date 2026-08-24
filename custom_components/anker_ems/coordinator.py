@@ -253,6 +253,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         warnings = list(dict.fromkeys(warnings))
         technical_ready = not blockers
         armed = bool(self._auto_execution_armed)
+        execution_permitted = bool(automatic_selected and technical_ready and armed)
         if not automatic_selected:
             status = "idle"
         elif not technical_ready:
@@ -260,15 +261,15 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         elif not armed:
             status = "ready_disarmed"
         else:
-            status = "armed_shadow_ready"
+            status = "armed_live_ready"
 
         return {
             "auto_shadow_enabled": True,
             "auto_shadow_status": status,
             "auto_shadow_technical_ready": technical_ready,
             "auto_shadow_armed": armed,
-            "auto_shadow_execution_permitted": False,
-            "auto_shadow_physical_control": False,
+            "auto_shadow_execution_permitted": execution_permitted,
+            "auto_shadow_physical_control": execution_permitted,
             "auto_shadow_selected_slot": slot if automatic_selected else None,
             "auto_shadow_planner_identity": detail.get("planner_identity") if automatic_selected else None,
             "auto_shadow_action": detail.get("action") if automatic_selected else None,
@@ -294,7 +295,8 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "auto_shadow_post_mode_required": bool(readiness.get("post_mode_required")),
             "auto_shadow_control_entities": readiness.get("entities", {}),
             "auto_shadow_note": (
-                "Alpha52 gebruikt two-stage control-path readiness; fysieke automatische uitvoering blijft uit."
+                "Alpha54: een gewapende, volledig veilige automatische planneractie mag fysiek worden uitgevoerd. "
+                "Two-stage control-path readiness, post-mode revalidatie en fail-safe stop blijven verplicht."
             ),
         }
 
@@ -1146,7 +1148,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "auto_bridge_scheduler_handoff_changed": handoff_result.get("changed", False),
                 "auto_bridge_scheduler_handoff_slots": handoff_result.get("handed_off_slots", []),
                 "auto_bridge_scheduler_handoff_skipped_slots": handoff_result.get("skipped_slots", []),
-                "auto_bridge_execution_enabled": False,
+                "auto_bridge_execution_enabled": bool(self._auto_execution_armed),
                 "auto_bridge_observational_only": False,
             }
         )

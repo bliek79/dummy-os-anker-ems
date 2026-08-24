@@ -58,7 +58,7 @@ class AnkerEmsActionController:
             "controller_reason": (
                 "Commando veilig voorbereid; simulatiemodus voorkomt fysieke uitvoering"
                 if simulation
-                else "Commando veilig voorbereid; normale EMS-besturing heeft fysieke uitvoering nog uitgeschakeld"
+                else "Commando veilig voorbereid; automatische fysieke uitvoering blijft afhankelijk van de centrale arm- en safety-gates"
             ),
             "controller_desired_mode": "third_party_control",
             "controller_desired_direction": detail.get("action"),
