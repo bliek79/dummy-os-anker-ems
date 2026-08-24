@@ -81,12 +81,22 @@ class AnkerEmsExecutionController:
             "automatic_last_action": None,
             "automatic_last_requested_power_w": None,
             "automatic_last_target_soc": None,
+            "automatic_last_planned_start_time": None,
+            "automatic_last_planned_end_time": None,
+            "automatic_last_planned_duration_s": None,
+            "automatic_last_planned_energy_kwh": None,
             "automatic_last_started_at": None,
+            "automatic_last_actual_started_at": None,
             "automatic_last_finished_at": None,
             "automatic_last_duration_s": None,
+            "automatic_last_duration_delta_s": None,
             "automatic_last_start_soc": None,
             "automatic_last_end_soc": None,
+            "automatic_last_soc_delta": None,
+            "automatic_last_target_error_soc": None,
             "automatic_last_average_actual_power_w": None,
+            "automatic_last_actual_energy_kwh": None,
+            "automatic_last_energy_delta_kwh": None,
             "automatic_last_result": None,
             "automatic_last_reason": None,
             "automatic_current_trace": [],
@@ -138,19 +148,34 @@ class AnkerEmsExecutionController:
     def _begin_automatic_audit(
         self, *, identity: str, slot: int | str, action: str, power_w: int,
         target_soc: float, max_runtime_h: float, start_soc: Any,
+        planned_start_time: Any = None,
     ) -> None:
         """Start an automatic run audit before the first physical mode action."""
         try:
             start_soc_value = None if start_soc is None else round(float(start_soc), 2)
         except (TypeError, ValueError):
             start_soc_value = None
+        planned_duration_s = max(0, int(round(float(max_runtime_h) * 3600)))
+        planned_energy_kwh = round((float(power_w) * float(max_runtime_h)) / 1000.0, 3)
+        planned_start = str(planned_start_time) if planned_start_time else dt_util.now().isoformat()
+        planned_start_dt = dt_util.parse_datetime(planned_start)
+        planned_end = None
+        if planned_start_dt is not None:
+            if planned_start_dt.tzinfo is None:
+                planned_start_dt = planned_start_dt.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+            planned_end = (planned_start_dt + timedelta(seconds=planned_duration_s)).isoformat()
         self._state.update({
             "automatic_last_identity": identity,
             "automatic_last_slot": slot,
             "automatic_last_action": action,
             "automatic_last_requested_power_w": power_w,
             "automatic_last_target_soc": target_soc,
+            "automatic_last_planned_start_time": planned_start,
+            "automatic_last_planned_end_time": planned_end,
+            "automatic_last_planned_duration_s": planned_duration_s,
+            "automatic_last_planned_energy_kwh": planned_energy_kwh,
             "automatic_last_started_at": dt_util.now().isoformat(),
+            "automatic_last_actual_started_at": None,
             "automatic_last_finished_at": None,
             "automatic_last_duration_s": None,
             "automatic_last_start_soc": start_soc_value,
@@ -182,7 +207,11 @@ class AnkerEmsExecutionController:
         if not self._state.get("automatic_last_identity"):
             return
         finished = dt_util.now()
-        started = dt_util.parse_datetime(str(self._state.get("automatic_last_started_at") or ""))
+        started = dt_util.parse_datetime(str(
+            self._state.get("automatic_last_actual_started_at")
+            or self._state.get("automatic_last_started_at")
+            or ""
+        ))
         duration_s = None
         if started is not None:
             if started.tzinfo is None:
@@ -200,18 +229,46 @@ class AnkerEmsExecutionController:
             avg_power = round(float(self._state.get("automatic_actual_power_sum_w") or 0.0) / samples, 1)
         self._trace_automatic("finished", f"result={result}; reason={reason}")
         trace = list(self._state.get("automatic_current_trace") or [])
+        planned_duration_s = self._state.get("automatic_last_planned_duration_s")
+        planned_energy_kwh = self._state.get("automatic_last_planned_energy_kwh")
+        actual_energy_kwh = None
+        if avg_power is not None and duration_s is not None:
+            actual_energy_kwh = round((float(avg_power) * float(duration_s)) / 3600000.0, 3)
+        energy_delta_kwh = None
+        if actual_energy_kwh is not None and planned_energy_kwh is not None:
+            energy_delta_kwh = round(actual_energy_kwh - float(planned_energy_kwh), 3)
+        duration_delta_s = None
+        if duration_s is not None and planned_duration_s is not None:
+            duration_delta_s = int(duration_s) - int(planned_duration_s)
+        soc_delta = None
+        start_soc = self._state.get("automatic_last_start_soc")
+        if start_soc is not None and end_soc is not None:
+            soc_delta = round(float(end_soc) - float(start_soc), 2)
+        target_error_soc = None
+        target_soc = self._state.get("automatic_last_target_soc")
+        if end_soc is not None and target_soc is not None:
+            target_error_soc = round(float(end_soc) - float(target_soc), 2)
         summary = {
             "identity": self._state.get("automatic_last_identity"),
             "slot": self._state.get("automatic_last_slot"),
             "action": self._state.get("automatic_last_action"),
             "requested_power_w": self._state.get("automatic_last_requested_power_w"),
             "average_actual_power_w": avg_power,
-            "target_soc": self._state.get("automatic_last_target_soc"),
-            "start_soc": self._state.get("automatic_last_start_soc"),
+            "planned_start_time": self._state.get("automatic_last_planned_start_time"),
+            "planned_end_time": self._state.get("automatic_last_planned_end_time"),
+            "planned_duration_s": planned_duration_s,
+            "actual_started_at": self._state.get("automatic_last_actual_started_at") or self._state.get("automatic_last_started_at"),
+            "actual_finished_at": finished.isoformat(),
+            "actual_duration_s": duration_s,
+            "duration_delta_s": duration_delta_s,
+            "planned_energy_kwh": planned_energy_kwh,
+            "actual_energy_kwh": actual_energy_kwh,
+            "energy_delta_kwh": energy_delta_kwh,
+            "target_soc": target_soc,
+            "start_soc": start_soc,
             "end_soc": end_soc,
-            "started_at": self._state.get("automatic_last_started_at"),
-            "finished_at": finished.isoformat(),
-            "duration_s": duration_s,
+            "soc_delta": soc_delta,
+            "target_error_soc": target_error_soc,
             "result": result,
             "reason": reason,
         }
@@ -226,6 +283,11 @@ class AnkerEmsExecutionController:
             "automatic_last_duration_s": duration_s,
             "automatic_last_end_soc": end_soc,
             "automatic_last_average_actual_power_w": avg_power,
+            "automatic_last_actual_energy_kwh": actual_energy_kwh,
+            "automatic_last_energy_delta_kwh": energy_delta_kwh,
+            "automatic_last_duration_delta_s": duration_delta_s,
+            "automatic_last_soc_delta": soc_delta,
+            "automatic_last_target_error_soc": target_error_soc,
             "automatic_last_result": result,
             "automatic_last_reason": reason,
             "automatic_last_trace": trace[-_TRACE_LIMIT:],
@@ -1138,6 +1200,7 @@ class AnkerEmsExecutionController:
         self._begin_automatic_audit(
             identity=identity, slot=slot, action=action, power_w=power_w,
             target_soc=target_soc, max_runtime_h=max_runtime_h, start_soc=data.get("soc"),
+            planned_start_time=detail.get("start_time"),
         )
         now = dt_util.now()
         self._state.update({
@@ -1231,6 +1294,7 @@ class AnkerEmsExecutionController:
             execution_started_at = dt_util.now()
             stop_at = execution_started_at + timedelta(hours=max_runtime_h)
             self._state.update({
+                "automatic_last_actual_started_at": execution_started_at.isoformat(),
                 "active": True,
                 "status": "starting_automatic",
                 "reason": f"Automatisch plan {slot}: {power_w} W {action} tot {target_soc:.0f}%",

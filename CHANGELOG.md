@@ -1,3 +1,16 @@
+## 0.0.1-alpha.56 - 2026-08-24
+
+- Adds native Plan-vs-Actual evaluation for automatic physical EMS runs without changing planner, price, safety or actuation decisions.
+- Adds `sensor.dummy_os_ems_plan_vs_actual` for the most recent automatic run.
+- Captures planned start/end, planned duration and planned energy from the planner-owned persistent slot at execution start.
+- Compares those values with actual start/end, actual duration, average measured battery power and estimated actual transferred energy.
+- Adds duration and energy deltas, SOC delta and target-SOC error for post-run analysis.
+- Extends the persistent last-10-run history with Plan-vs-Actual fields so a completed run remains reviewable after Home Assistant restarts.
+- Extends `sensor.dummy_os_ems_execution_audit` with the same comparison metrics.
+- Keeps high-frequency telemetry aggregated; no 5-second sample history is written to integration storage or Recorder attributes.
+- Keeps alpha54 guarded physical execution, alpha53 expiry reconciliation and the validated native Stroomvoorspeller price path unchanged.
+- README remains release-independent; version-specific changes stay in CHANGELOG and GitHub Release notes.
+
 ## 0.0.1-alpha.55 - 2026-08-24
 
 - Adds persistent observability for guarded automatic physical execution without changing planner, price, safety or actuation decisions.

@@ -102,6 +102,7 @@ def _execution_attrs(data: dict[str, Any]) -> dict[str, Any]:
         "automatic_last_start_soc": data.get("execution_automatic_last_start_soc"),
         "automatic_last_end_soc": data.get("execution_automatic_last_end_soc"),
         "automatic_last_started_at": data.get("execution_automatic_last_started_at"),
+        "automatic_last_actual_started_at": data.get("execution_automatic_last_actual_started_at"),
         "automatic_last_finished_at": data.get("execution_automatic_last_finished_at"),
         "automatic_last_duration_s": data.get("execution_automatic_last_duration_s"),
         "automatic_last_result": data.get("execution_automatic_last_result"),
@@ -123,10 +124,20 @@ def _execution_audit_attrs(data: dict[str, Any]) -> dict[str, Any]:
         "last_action": data.get("execution_automatic_last_action"),
         "requested_power_w": data.get("execution_automatic_last_requested_power_w"),
         "average_actual_power_w": data.get("execution_automatic_last_average_actual_power_w"),
+        "planned_start_time": data.get("execution_automatic_last_planned_start_time"),
+        "planned_end_time": data.get("execution_automatic_last_planned_end_time"),
+        "planned_duration_s": data.get("execution_automatic_last_planned_duration_s"),
+        "planned_energy_kwh": data.get("execution_automatic_last_planned_energy_kwh"),
+        "actual_energy_kwh": data.get("execution_automatic_last_actual_energy_kwh"),
+        "energy_delta_kwh": data.get("execution_automatic_last_energy_delta_kwh"),
+        "duration_delta_s": data.get("execution_automatic_last_duration_delta_s"),
+        "soc_delta": data.get("execution_automatic_last_soc_delta"),
+        "target_error_soc": data.get("execution_automatic_last_target_error_soc"),
         "target_soc": data.get("execution_automatic_last_target_soc"),
         "start_soc": data.get("execution_automatic_last_start_soc"),
         "end_soc": data.get("execution_automatic_last_end_soc"),
         "started_at": data.get("execution_automatic_last_started_at"),
+        "actual_started_at": data.get("execution_automatic_last_actual_started_at"),
         "finished_at": data.get("execution_automatic_last_finished_at"),
         "duration_s": data.get("execution_automatic_last_duration_s"),
         "last_result": data.get("execution_automatic_last_result"),
@@ -136,6 +147,34 @@ def _execution_audit_attrs(data: dict[str, Any]) -> dict[str, Any]:
         "run_history": data.get("execution_automatic_run_history", []),
     }
 
+
+
+def _execution_evaluation_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "identity": data.get("execution_automatic_last_identity"),
+        "slot": data.get("execution_automatic_last_slot"),
+        "action": data.get("execution_automatic_last_action"),
+        "result": data.get("execution_automatic_last_result"),
+        "reason": data.get("execution_automatic_last_reason"),
+        "planned_start_time": data.get("execution_automatic_last_planned_start_time"),
+        "planned_end_time": data.get("execution_automatic_last_planned_end_time"),
+        "planned_duration_s": data.get("execution_automatic_last_planned_duration_s"),
+        "actual_started_at": data.get("execution_automatic_last_actual_started_at") or data.get("execution_automatic_last_started_at"),
+        "actual_finished_at": data.get("execution_automatic_last_finished_at"),
+        "actual_duration_s": data.get("execution_automatic_last_duration_s"),
+        "duration_delta_s": data.get("execution_automatic_last_duration_delta_s"),
+        "requested_power_w": data.get("execution_automatic_last_requested_power_w"),
+        "average_actual_power_w": data.get("execution_automatic_last_average_actual_power_w"),
+        "planned_energy_kwh": data.get("execution_automatic_last_planned_energy_kwh"),
+        "actual_energy_kwh": data.get("execution_automatic_last_actual_energy_kwh"),
+        "energy_delta_kwh": data.get("execution_automatic_last_energy_delta_kwh"),
+        "target_soc": data.get("execution_automatic_last_target_soc"),
+        "start_soc": data.get("execution_automatic_last_start_soc"),
+        "end_soc": data.get("execution_automatic_last_end_soc"),
+        "soc_delta": data.get("execution_automatic_last_soc_delta"),
+        "target_error_soc": data.get("execution_automatic_last_target_error_soc"),
+        "run_history": data.get("execution_automatic_run_history", []),
+    }
 
 def _auto_shadow_attrs(data: dict[str, Any]) -> dict[str, Any]:
     return {
@@ -948,6 +987,12 @@ SENSORS: tuple[AnkerEmsSensorDescription, ...] = (
             else "waiting"
         ),
         attrs_fn=_execution_audit_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="execution_evaluation",
+        name='Dummy OS EMS Plan vs Actual',
+        value_fn=lambda d: d.get("execution_automatic_last_result") or "waiting",
+        attrs_fn=_execution_evaluation_attrs,
     ),
 )
 
