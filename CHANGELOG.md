@@ -1,3 +1,15 @@
+## 0.0.1-alpha.58 - 2026-08-25
+
+- Adds a dedicated 0.10 kWh minimum actionable threshold for automatic **safety-charge** actions in the Plan72 -> Automatic Plan Bridge handoff.
+- Keeps sub-threshold safety-charge residues visible in Plan72 diagnostics, but prevents them from taking the battery out of `self_consumption` for a physical 100 W minimum command.
+- Keeps the existing 0.01 kWh planner epsilon for numerical calculations and non-safety action detection; the new 0.10 kWh limit is an execution/actionability threshold only.
+- Adds bridge diagnostics for the threshold, suppressed safety-charge energy, suppressed hour count and suppressed source hours.
+- Improves automatic Execution Audit energy accounting by integrating measured 5-second battery-power samples.
+- Adds a transparent SOC-delta fallback when live power samples remain effectively zero while SOC changes by at least 0.5 percentage point; charging uses configured charge efficiency and discharging uses configured discharge efficiency.
+- Adds `actual_energy_source` diagnostics (`power_samples`, `soc_delta_fallback` or `unavailable`) to Execution Audit, Plan-vs-Actual and Automatic Execution Monitor.
+- Corrects the internal `VERSION` constant to match the manifest version.
+- Keeps the 2 percentage-point execution buffer, dynamic reserve calculation, price architecture, Scheduler, Plan Store, two-stage Anker readiness and guarded physical execution safety chain unchanged.
+
 ## 0.0.1-alpha.57 - 2026-08-24
 
 - Adds a read-only `Dummy OS EMS Automatic Execution Monitor` sensor for live observation of the first guarded automatic physical run.

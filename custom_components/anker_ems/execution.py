@@ -12,7 +12,12 @@ from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
+from .const import (
+    DEFAULT_BATTERY_CAPACITY_KWH,
+    DEFAULT_CHARGE_EFFICIENCY_PERCENT,
+    DEFAULT_DISCHARGE_EFFICIENCY_PERCENT,
+    DOMAIN,
+)
 
 _LOGGER = logging.getLogger(__name__)
 _STORAGE_VERSION = 1
@@ -104,6 +109,10 @@ class AnkerEmsExecutionController:
             "automatic_run_history": [],
             "automatic_sample_count": 0,
             "automatic_actual_power_sum_w": 0.0,
+            "automatic_actual_energy_wh": 0.0,
+            "automatic_previous_sample_power_w": None,
+            "automatic_previous_sample_at": None,
+            "automatic_last_actual_energy_source": None,
         }
 
     def attach_coordinator(self, coordinator: Any) -> None:
@@ -186,11 +195,15 @@ class AnkerEmsExecutionController:
             "automatic_current_trace": [],
             "automatic_sample_count": 0,
             "automatic_actual_power_sum_w": 0.0,
+            "automatic_actual_energy_wh": 0.0,
+            "automatic_previous_sample_power_w": None,
+            "automatic_previous_sample_at": None,
+            "automatic_last_actual_energy_source": None,
         })
         self._trace_automatic("selected", f"slot={slot}; action={action}; requested={power_w}W; target={target_soc}%")
 
     def _sample_automatic_actual_power(self, data: dict[str, Any]) -> None:
-        """Collect a cheap aggregate of actual battery power while running."""
+        """Aggregate measured power and integrate transferred energy while running."""
         if self._state.get("origin") != "automatic_72h_planner":
             return
         action = self._state.get("action")
@@ -199,8 +212,23 @@ class AnkerEmsExecutionController:
             value = max(0.0, float(raw))
         except (TypeError, ValueError):
             return
+
+        now = dt_util.now()
+        previous_at = dt_util.parse_datetime(str(self._state.get("automatic_previous_sample_at") or ""))
+        previous_power = self._state.get("automatic_previous_sample_power_w")
+        if previous_at is not None and previous_power is not None:
+            if previous_at.tzinfo is None:
+                previous_at = previous_at.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+            elapsed_s = max(0.0, min(60.0, (now - previous_at).total_seconds()))
+            interval_wh = ((float(previous_power) + value) / 2.0) * elapsed_s / 3600.0
+            self._state["automatic_actual_energy_wh"] = float(
+                self._state.get("automatic_actual_energy_wh") or 0.0
+            ) + interval_wh
+
         self._state["automatic_sample_count"] = int(self._state.get("automatic_sample_count") or 0) + 1
         self._state["automatic_actual_power_sum_w"] = float(self._state.get("automatic_actual_power_sum_w") or 0.0) + value
+        self._state["automatic_previous_sample_power_w"] = value
+        self._state["automatic_previous_sample_at"] = now.isoformat()
 
     def _finish_automatic_audit(self, result: str, reason: str, data: dict[str, Any] | None = None) -> None:
         """Finalize and persist a compact run summary."""
@@ -231,19 +259,46 @@ class AnkerEmsExecutionController:
         trace = list(self._state.get("automatic_current_trace") or [])
         planned_duration_s = self._state.get("automatic_last_planned_duration_s")
         planned_energy_kwh = self._state.get("automatic_last_planned_energy_kwh")
-        actual_energy_kwh = None
-        if avg_power is not None and duration_s is not None:
-            actual_energy_kwh = round((float(avg_power) * float(duration_s)) / 3600000.0, 3)
+
+        # Primary measurement: integrate the 5-second live power samples.
+        integrated_kwh = max(0.0, float(self._state.get("automatic_actual_energy_wh") or 0.0) / 1000.0)
+        actual_energy_kwh = round(integrated_kwh, 3) if samples > 1 else None
+        actual_energy_source = "power_samples" if samples > 1 else "unavailable"
+
+        soc_delta = None
+        start_soc = self._state.get("automatic_last_start_soc")
+        if start_soc is not None and end_soc is not None:
+            soc_delta = round(float(end_soc) - float(start_soc), 2)
+
+        # Live alpha57 runs showed a valid SOC change while the measured power
+        # aggregate could remain 0 W. In that specific case, use SOC delta as a
+        # transparent fallback estimate rather than storing a false 0.000 kWh.
+        if (actual_energy_kwh is None or actual_energy_kwh <= 0.005) and soc_delta is not None and abs(soc_delta) >= 0.5:
+            try:
+                capacity_kwh = max(0.1, float((data or {}).get("battery_capacity_kwh") or DEFAULT_BATTERY_CAPACITY_KWH))
+                charge_eff = max(0.50, min(1.00, float((data or {}).get("charge_efficiency_percent") or DEFAULT_CHARGE_EFFICIENCY_PERCENT) / 100.0))
+                discharge_eff = max(0.50, min(1.00, float((data or {}).get("discharge_efficiency_percent") or DEFAULT_DISCHARGE_EFFICIENCY_PERCENT) / 100.0))
+                action = self._state.get("automatic_last_action")
+                if action == "laden" and soc_delta > 0:
+                    stored_delta_kwh = capacity_kwh * soc_delta / 100.0
+                    actual_energy_kwh = round(stored_delta_kwh / charge_eff, 3)
+                    actual_energy_source = "soc_delta_fallback"
+                elif action == "ontladen" and soc_delta < 0:
+                    stored_delta_kwh = capacity_kwh * abs(soc_delta) / 100.0
+                    actual_energy_kwh = round(stored_delta_kwh * discharge_eff, 3)
+                    actual_energy_source = "soc_delta_fallback"
+            except (TypeError, ValueError):
+                pass
+
+        if actual_energy_kwh is not None and duration_s and actual_energy_source == "soc_delta_fallback":
+            avg_power = round(actual_energy_kwh * 3600000.0 / float(duration_s), 1)
+
         energy_delta_kwh = None
         if actual_energy_kwh is not None and planned_energy_kwh is not None:
             energy_delta_kwh = round(actual_energy_kwh - float(planned_energy_kwh), 3)
         duration_delta_s = None
         if duration_s is not None and planned_duration_s is not None:
             duration_delta_s = int(duration_s) - int(planned_duration_s)
-        soc_delta = None
-        start_soc = self._state.get("automatic_last_start_soc")
-        if start_soc is not None and end_soc is not None:
-            soc_delta = round(float(end_soc) - float(start_soc), 2)
         target_error_soc = None
         target_soc = self._state.get("automatic_last_target_soc")
         if end_soc is not None and target_soc is not None:
@@ -263,6 +318,8 @@ class AnkerEmsExecutionController:
             "duration_delta_s": duration_delta_s,
             "planned_energy_kwh": planned_energy_kwh,
             "actual_energy_kwh": actual_energy_kwh,
+            "actual_energy_source": actual_energy_source,
+            "power_sample_count": samples,
             "energy_delta_kwh": energy_delta_kwh,
             "target_soc": target_soc,
             "start_soc": start_soc,
@@ -284,6 +341,7 @@ class AnkerEmsExecutionController:
             "automatic_last_end_soc": end_soc,
             "automatic_last_average_actual_power_w": avg_power,
             "automatic_last_actual_energy_kwh": actual_energy_kwh,
+            "automatic_last_actual_energy_source": actual_energy_source,
             "automatic_last_energy_delta_kwh": energy_delta_kwh,
             "automatic_last_duration_delta_s": duration_delta_s,
             "automatic_last_soc_delta": soc_delta,

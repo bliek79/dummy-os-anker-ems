@@ -2,7 +2,7 @@ from __future__ import annotations
 
 DOMAIN = "anker_ems"
 NAME = "Dummy OS EMS"
-VERSION = "0.0.1-alpha.54"
+VERSION = "0.0.1-alpha.58"
 
 CONF_SIMULATION_MODE = "simulation_mode"
 
@@ -70,6 +70,11 @@ DEFAULT_MINIMUM_TRADE_MARGIN = 0.10
 # Alpha25: extra operational headroom above the calculated dynamic reserve.
 # This buffer is used by the observer planner before automatic execution is enabled.
 DEFAULT_AUTO_EXECUTION_BUFFER_PERCENT = 2.0
+
+# Alpha58: calculated safety-charge residue below this amount remains visible
+# in Plan72 diagnostics but is not promoted to a physical automatic action.
+# The 0.01 kWh planner epsilon is numerical, not an execution threshold.
+MIN_ACTIONABLE_SAFETY_CHARGE_KWH = 0.10
 
 DEFAULT_KNOWN_PRICE_ENTITY = "sensor.battery_control_energy_prices"
 DEFAULT_FORECAST_PRICE_ENTITY = "sensor.forecast_prices_all_in_data"

@@ -76,6 +76,7 @@ from .const import (
     DEFAULT_MONITOR_STROOMVOORSPELLER_ENTITY,
     DEFAULT_MONITOR_SOLCAST_API_ENTITY,
     FORECAST_HORIZON_HOURS,
+    DEFAULT_BATTERY_CAPACITY_KWH,
     CONF_SOFTWARE_RESERVE_PERCENT,
     DEFAULT_SOFTWARE_RESERVE_PERCENT,
     CONF_CHARGE_EFFICIENCY_PERCENT,
@@ -971,6 +972,13 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "electrical_profile": self.electrical_profile,
             "max_charge_power_w": self.max_charge_power_w,
             "max_discharge_power_w": self.max_discharge_power_w,
+            "battery_capacity_kwh": DEFAULT_BATTERY_CAPACITY_KWH,
+            "charge_efficiency_percent": self.entry.options.get(
+                CONF_CHARGE_EFFICIENCY_PERCENT, DEFAULT_CHARGE_EFFICIENCY_PERCENT
+            ),
+            "discharge_efficiency_percent": self.entry.options.get(
+                CONF_DISCHARGE_EFFICIENCY_PERCENT, DEFAULT_DISCHARGE_EFFICIENCY_PERCENT
+            ),
             "control_path_configured": all(bool(control_ids.get(key)) for key in ("operating_mode", "action_direction", "power_setpoint")),
             "soc": self._number(CONF_SOC_ENTITY),
             "device_status": self._state(CONF_DEVICE_STATUS_ENTITY),

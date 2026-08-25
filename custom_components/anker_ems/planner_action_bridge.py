@@ -6,7 +6,7 @@ from typing import Any
 
 from homeassistant.util import dt as dt_util
 
-from .const import PLAN_SLOT_COUNT
+from .const import MIN_ACTIONABLE_SAFETY_CHARGE_KWH, PLAN_SLOT_COUNT
 
 _MIN_ACTION_ENERGY_KWH = 0.01
 _DEFAULT_START_DELAY_MIN = 10
@@ -77,11 +77,18 @@ def _forced_row_action(row: dict[str, Any]) -> tuple[str, str, float] | None:
     trade_charge = max(0.0, _as_float(row.get("charge_from_grid_trade_kwh")) or 0.0)
     grid_discharge = max(0.0, _as_float(row.get("discharge_to_grid_kwh")) or 0.0)
 
-    grid_charge = safety + trade_charge
+    # Alpha58: separate the numerical planner epsilon from a useful physical
+    # safety-charge action. Tiny safety residues stay observable in Plan72 but
+    # no longer justify taking the battery out of self_consumption.
+    safety_actionable = safety >= MIN_ACTIONABLE_SAFETY_CHARGE_KWH
+    trade_actionable = trade_charge > _MIN_ACTION_ENERGY_KWH
+    grid_charge = (safety if safety_actionable else 0.0) + (
+        trade_charge if trade_actionable else 0.0
+    )
     if grid_charge > _MIN_ACTION_ENERGY_KWH:
-        if safety > _MIN_ACTION_ENERGY_KWH and trade_charge > _MIN_ACTION_ENERGY_KWH:
+        if safety_actionable and trade_actionable:
             purpose = "veiligheidsladen+handelsladen"
-        elif safety > _MIN_ACTION_ENERGY_KWH:
+        elif safety_actionable:
             purpose = "veiligheidsladen"
         else:
             purpose = "handelsladen"
@@ -238,6 +245,7 @@ def build_planner_action_bridge(
         "auto_bridge_pending_reconciliation_enabled": True,
         "auto_bridge_max_charge_power_w": max_charge_power_w,
         "auto_bridge_max_discharge_power_w": max_discharge_power_w,
+        "auto_bridge_min_actionable_safety_charge_kwh": MIN_ACTIONABLE_SAFETY_CHARGE_KWH,
     }
 
     if not plan_valid or not isinstance(auto_plan, list) or not auto_plan:
@@ -271,12 +279,18 @@ def build_planner_action_bridge(
         }
 
     prepared_rows: list[dict[str, Any]] = []
+    suppressed_safety_kwh = 0.0
+    suppressed_safety_hours: list[str] = []
     for raw in auto_plan:
         if not isinstance(raw, dict):
             continue
         parsed_time = _parse_time(raw.get("time"))
         if parsed_time is None or parsed_time + timedelta(hours=1) <= now_utc:
             continue
+        safety_kwh = max(0.0, _as_float(raw.get("charge_from_grid_safety_kwh")) or 0.0)
+        if _MIN_ACTION_ENERGY_KWH < safety_kwh < MIN_ACTIONABLE_SAFETY_CHARGE_KWH:
+            suppressed_safety_kwh += safety_kwh
+            suppressed_safety_hours.append(parsed_time.isoformat())
         forced = _forced_row_action(raw)
         if forced is None:
             continue
@@ -433,6 +447,9 @@ def build_planner_action_bridge(
         "auto_bridge_reason": reason,
         "auto_bridge_candidate_count": len(candidates),
         "auto_bridge_slot_preview_count": len(preview),
+        "auto_bridge_suppressed_safety_charge_kwh": round(suppressed_safety_kwh, 3),
+        "auto_bridge_suppressed_safety_charge_count": len(suppressed_safety_hours),
+        "auto_bridge_suppressed_safety_charge_hours": suppressed_safety_hours,
         "auto_bridge_overflow_count": overflow,
         "auto_bridge_invalid_candidate_count": invalid_candidates,
         "auto_bridge_candidates": candidates,
