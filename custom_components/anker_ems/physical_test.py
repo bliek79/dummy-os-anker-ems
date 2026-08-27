@@ -7,7 +7,7 @@ import logging
 from typing import Any
 
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.storage import Store
@@ -339,7 +339,15 @@ class AnkerEmsPhysicalTestController:
         self._cancel_monitor = async_call_later(
             self.hass,
             5,
-            lambda _now: self.hass.async_create_task(self._async_monitor_once()),
+            self._async_monitor_callback,
+        )
+
+    @callback
+    def _async_monitor_callback(self, _now: datetime) -> None:
+        """Schedule the physical-test monitor from the Home Assistant event loop."""
+        self.hass.async_create_task(
+            self._async_monitor_once(),
+            "Dummy OS EMS physical test monitor",
         )
 
     async def _async_monitor_once(self) -> None:

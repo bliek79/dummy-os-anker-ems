@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import logging
 from typing import Any
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.storage import Store
@@ -1470,7 +1470,15 @@ class AnkerEmsExecutionController:
         self._cancel_monitor = async_call_later(
             self.hass,
             _MONITOR_INTERVAL_SECONDS,
-            lambda _now: self.hass.async_create_task(self._async_monitor_once()),
+            self._async_monitor_callback,
+        )
+
+    @callback
+    def _async_monitor_callback(self, _now: datetime) -> None:
+        """Schedule the execution monitor from the Home Assistant event loop."""
+        self.hass.async_create_task(
+            self._async_monitor_once(),
+            "Dummy OS EMS execution monitor",
         )
 
     async def _async_monitor_once(self) -> None:
