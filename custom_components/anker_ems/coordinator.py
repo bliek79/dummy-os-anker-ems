@@ -360,10 +360,10 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._plan_refresh_count_date != now_local.date():
             self._plan_refresh_count_date = now_local.date()
             self._plan_refresh_count_today = 0
-        self._direct_price_forecast_payload: dict[str, Any] | None = None
-        self._direct_price_forecast_last_fetch_at: datetime | None = None
-        self._direct_price_forecast_last_success_at: datetime | None = None
-        self._direct_price_forecast_error: str | None = None
+        # Direct Stroomvoorspeller cache belongs to the coordinator lifetime.
+        # Do not reset it during every Plan72 refresh decision: doing so bypassed
+        # the 30-minute fetch guard and caused a request storm when the provider
+        # returned HTTP 403.
 
         source_token = self._planner_source_token(data)
         hour_bucket = now_local.strftime("%Y-%m-%dT%H")
