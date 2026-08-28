@@ -213,7 +213,15 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             blockers.append("final_revalidation_not_safe")
         if data.get("auto_mode_switch_preview_ready") is not True:
             blockers.append("mode_switch_preview_not_ready")
-        if data.get("auto_plan_72h_execution_buffer_safe") is not True:
+        selected_action = str(detail.get("action") or "")
+        safety_recovery_action = bool(
+            selected_action == "laden"
+            and purpose in {"veiligheidsladen", "veiligheidsladen+handelsladen"}
+        )
+        if (
+            data.get("auto_plan_72h_execution_buffer_safe") is not True
+            and not safety_recovery_action
+        ):
             blockers.append("execution_buffer_unsafe")
         if data.get("forecast_ready") is not True:
             blockers.append("forecast_not_ready")
@@ -1094,7 +1102,6 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         desired_auto_plans: dict[int, dict[str, Any]] = {}
         write_gate_open = (
             bool(data.get("auto_bridge_valid"))
-            and bool(data.get("auto_plan_72h_execution_buffer_safe"))
             and bool(data.get("forecast_ready"))
             and not int(data.get("auto_bridge_invalid_candidate_count") or 0)
         )

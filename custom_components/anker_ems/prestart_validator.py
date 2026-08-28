@@ -84,8 +84,24 @@ class AnkerEmsPreStartValidator:
         forecast_ready = data.get("forecast_ready") is True
         add_check("forecast_ready", forecast_ready, "Forecast sources ready", "forecast_not_ready")
 
+        purpose = str(detail.get("purpose") or "")
+        action = str(detail.get("action") or "")
+        safety_recovery_action = bool(
+            action == "laden"
+            and purpose in {"veiligheidsladen", "veiligheidsladen+handelsladen"}
+        )
         buffer_safe = data.get("auto_plan_72h_execution_buffer_safe") is True
-        add_check("execution_buffer_safe", buffer_safe, "Execution buffer safe", "execution_buffer_unsafe")
+        buffer_allows_action = buffer_safe or safety_recovery_action
+        add_check(
+            "execution_buffer_safe",
+            buffer_allows_action,
+            (
+                "Execution buffer safe"
+                if buffer_safe
+                else "Execution buffer unsafe; safety charge is allowed to restore it"
+            ),
+            "execution_buffer_unsafe",
+        )
 
         invalid_candidates = int(data.get("auto_bridge_invalid_candidate_count") or 0)
         add_check(

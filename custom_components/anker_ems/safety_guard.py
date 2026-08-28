@@ -176,7 +176,15 @@ class AnkerEmsSafetyGuard:
             reasons.append("bridge_invalid")
         if data.get("forecast_ready") is not True:
             reasons.append("forecast_not_ready")
-        if data.get("auto_plan_72h_execution_buffer_safe") is not True:
+        purpose = str(detail.get("purpose") or "")
+        safety_recovery_action = bool(
+            action == "laden"
+            and purpose in {"veiligheidsladen", "veiligheidsladen+handelsladen"}
+        )
+        if (
+            data.get("auto_plan_72h_execution_buffer_safe") is not True
+            and not safety_recovery_action
+        ):
             reasons.append("execution_buffer_unsafe")
         if not data.get("control_path_configured"):
             reasons.append("control_path_not_configured")

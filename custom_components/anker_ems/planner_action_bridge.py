@@ -72,7 +72,11 @@ def _manual_slot_available(detail: dict[str, Any]) -> bool:
     return False
 
 
-def _forced_row_action(row: dict[str, Any]) -> tuple[str, str, float] | None:
+def _forced_row_action(
+    row: dict[str, Any],
+    *,
+    safety_only: bool = False,
+) -> tuple[str, str, float] | None:
     safety = max(0.0, _as_float(row.get("charge_from_grid_safety_kwh")) or 0.0)
     trade_charge = max(0.0, _as_float(row.get("charge_from_grid_trade_kwh")) or 0.0)
     grid_discharge = max(0.0, _as_float(row.get("discharge_to_grid_kwh")) or 0.0)
@@ -82,6 +86,16 @@ def _forced_row_action(row: dict[str, Any]) -> tuple[str, str, float] | None:
     # no longer justify taking the battery out of self_consumption.
     safety_actionable = safety >= MIN_ACTIONABLE_SAFETY_CHARGE_KWH
     trade_actionable = trade_charge > _MIN_ACTION_ENERGY_KWH
+
+    # Alpha61: when the execution buffer is already unsafe, the bridge must
+    # still be able to create the safety charge that restores that buffer.
+    # In recovery mode, suppress trading and grid discharge so the exception
+    # cannot be used for an economic action while the safety margin is low.
+    if safety_only:
+        if safety_actionable:
+            return "laden", "veiligheidsladen", safety
+        return None
+
     grid_charge = (safety if safety_actionable else 0.0) + (
         trade_charge if trade_actionable else 0.0
     )
@@ -246,6 +260,7 @@ def build_planner_action_bridge(
         "auto_bridge_max_charge_power_w": max_charge_power_w,
         "auto_bridge_max_discharge_power_w": max_discharge_power_w,
         "auto_bridge_min_actionable_safety_charge_kwh": MIN_ACTIONABLE_SAFETY_CHARGE_KWH,
+        "auto_bridge_buffer_recovery_mode": not buffer_safe,
     }
 
     if not plan_valid or not isinstance(auto_plan, list) or not auto_plan:
@@ -254,21 +269,6 @@ def build_planner_action_bridge(
             "auto_bridge_status": "blocked_invalid_plan",
             "auto_bridge_valid": False,
             "auto_bridge_reason": "72-uursplan is niet geldig of niet beschikbaar",
-            "auto_bridge_candidate_count": 0,
-            "auto_bridge_slot_preview_count": 0,
-            "auto_bridge_overflow_count": 0,
-            "auto_bridge_candidates": [],
-            "auto_bridge_slot_preview": [],
-            "auto_bridge_available_manual_slots": 0,
-            "auto_bridge_manual_slot_conflict": False,
-        }
-
-    if not buffer_safe:
-        return {
-            **base,
-            "auto_bridge_status": "blocked_execution_buffer",
-            "auto_bridge_valid": False,
-            "auto_bridge_reason": "Uitvoeringsbuffer van het 72-uursplan is niet veilig",
             "auto_bridge_candidate_count": 0,
             "auto_bridge_slot_preview_count": 0,
             "auto_bridge_overflow_count": 0,
@@ -291,7 +291,7 @@ def build_planner_action_bridge(
         if _MIN_ACTION_ENERGY_KWH < safety_kwh < MIN_ACTIONABLE_SAFETY_CHARGE_KWH:
             suppressed_safety_kwh += safety_kwh
             suppressed_safety_hours.append(parsed_time.isoformat())
-        forced = _forced_row_action(raw)
+        forced = _forced_row_action(raw, safety_only=not buffer_safe)
         if forced is None:
             continue
         action, purpose, energy_kwh = forced
@@ -320,6 +320,30 @@ def build_planner_action_bridge(
 
     candidates = [_build_candidate(segment, now_utc, max_charge_power_w, max_discharge_power_w) for segment in segments]
     candidates = [candidate for candidate in candidates if candidate["expected_energy_kwh"] > _MIN_ACTION_ENERGY_KWH]
+
+    # Alpha61: an unsafe execution buffer blocks all economic actions, but it
+    # must not block the safety charge required to restore the buffer itself.
+    if not buffer_safe and not candidates:
+        return {
+            **base,
+            "auto_bridge_buffer_recovery_mode": True,
+            "auto_bridge_status": "blocked_execution_buffer",
+            "auto_bridge_valid": False,
+            "auto_bridge_reason": (
+                "Uitvoeringsbuffer is niet veilig en er is geen uitvoerbare "
+                "veiligheidslaadactie beschikbaar"
+            ),
+            "auto_bridge_candidate_count": 0,
+            "auto_bridge_slot_preview_count": 0,
+            "auto_bridge_suppressed_safety_charge_kwh": round(suppressed_safety_kwh, 3),
+            "auto_bridge_suppressed_safety_charge_count": len(suppressed_safety_hours),
+            "auto_bridge_suppressed_safety_charge_hours": suppressed_safety_hours,
+            "auto_bridge_overflow_count": 0,
+            "auto_bridge_candidates": [],
+            "auto_bridge_slot_preview": [],
+            "auto_bridge_available_manual_slots": 0,
+            "auto_bridge_manual_slot_conflict": False,
+        }
 
     scheduler_slots = data.get("scheduler_slots") or {}
     slot_statuses: list[dict[str, Any]] = []
@@ -419,6 +443,18 @@ def build_planner_action_bridge(
     elif not forecast_ready:
         status = "preview_forecast_incomplete"
         reason = "Actiepreview gemaakt, maar forecastbronnen zijn nog niet volledig startklaar"
+        valid = True
+    elif not buffer_safe:
+        pending_matches = sum(1 for item in preview if item.get("automatic_pending_match"))
+        status = (
+            "buffer_recovery_scheduler_handoff"
+            if pending_matches
+            else "buffer_recovery_preview"
+        )
+        reason = (
+            "Uitvoeringsbuffer is niet veilig; alleen noodzakelijke "
+            "veiligheidslaadacties zijn toegestaan om de buffer te herstellen"
+        )
         valid = True
     elif preview_conflicts:
         status = "preview_manual_slots_in_use"

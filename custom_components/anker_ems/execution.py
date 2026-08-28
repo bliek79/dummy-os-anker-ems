@@ -744,7 +744,21 @@ class AnkerEmsExecutionController:
         add_check("planner_identity_match", data.get("auto_prestart_current_identity_match") is True and planner_identity == data.get("auto_execution_handoff_planner_identity"), "Planner identity unchanged")
         add_check("planner_signature_match", data.get("auto_prestart_current_signature_match") is True, "Planner revision unchanged", warning_only=True)
         add_check("forecast_ready", data.get("forecast_ready") is True, "Forecast sources ready")
-        add_check("execution_buffer_safe", data.get("auto_plan_72h_execution_buffer_safe") is True, "Execution buffer safe")
+        purpose = str(detail.get("purpose") or "")
+        safety_recovery_action = bool(
+            action == "laden"
+            and purpose in {"veiligheidsladen", "veiligheidsladen+handelsladen"}
+        )
+        execution_buffer_safe = data.get("auto_plan_72h_execution_buffer_safe") is True
+        add_check(
+            "execution_buffer_safe",
+            execution_buffer_safe or safety_recovery_action,
+            (
+                "Execution buffer safe"
+                if execution_buffer_safe
+                else "Execution buffer unsafe; safety charge is allowed to restore it"
+            ),
+        )
         add_check("control_path_configured", bool(data.get("control_path_configured")), "Control path configured")
         add_check("controller_idle", not bool(data.get("execution_active")), "Execution Controller idle")
         add_check("physical_test_idle", not bool(data.get("physical_test_active")), "Physical test idle")
