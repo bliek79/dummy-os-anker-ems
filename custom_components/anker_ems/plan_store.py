@@ -31,6 +31,8 @@ DEFAULT_PLAN: dict[str, Any] = {
     "target_soc": 80,
     "max_runtime_h": 2.0,
     "max_start_delay_min": 15,
+    "planned_energy_kwh": None,
+    "planned_end_time": None,
     "lifecycle_status": "concept",
     "lifecycle_reason": None,
     "lifecycle_updated_at": None,
@@ -283,6 +285,8 @@ class AnkerEmsPlanStore:
                 new_plan["planner_signature"] = proposal.get("planner_signature")
                 new_plan["price_sources"] = list(proposal.get("price_sources") or [])
                 new_plan["all_prices_known"] = bool(proposal.get("all_prices_known"))
+                new_plan["planned_energy_kwh"] = proposal.get("planned_energy_kwh")
+                new_plan["planned_end_time"] = proposal.get("planned_end_time")
 
                 # Do not write persistent storage every coordinator poll. The
                 # bridge signature changes only when the actual planner proposal

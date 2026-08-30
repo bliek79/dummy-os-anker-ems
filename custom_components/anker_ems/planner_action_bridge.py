@@ -6,10 +6,17 @@ from typing import Any
 
 from homeassistant.util import dt as dt_util
 
-from .const import MIN_ACTIONABLE_SAFETY_CHARGE_KWH, PLAN_SLOT_COUNT
+from .const import (
+    DEFAULT_BATTERY_CAPACITY_KWH,
+    DEFAULT_CHARGE_EFFICIENCY_PERCENT,
+    DEFAULT_DISCHARGE_EFFICIENCY_PERCENT,
+    MIN_ACTIONABLE_SAFETY_CHARGE_KWH,
+    PLAN_SLOT_COUNT,
+)
 
 _MIN_ACTION_ENERGY_KWH = 0.01
 _DEFAULT_START_DELAY_MIN = 10
+_EXECUTION_HANDOFF_ALLOWANCE_MIN = 2.0
 
 
 def _as_float(value: Any) -> float | None:
@@ -117,7 +124,15 @@ def _forced_row_action(
     return None
 
 
-def _build_candidate(segment: list[dict[str, Any]], now_utc: datetime, max_charge_power_w: int, max_discharge_power_w: int) -> dict[str, Any]:
+def _build_candidate(
+    segment: list[dict[str, Any]],
+    now_utc: datetime,
+    max_charge_power_w: int,
+    max_discharge_power_w: int,
+    battery_capacity_kwh: float,
+    charge_efficiency_percent: float,
+    discharge_efficiency_percent: float,
+) -> dict[str, Any]:
     first = segment[0]
     last = segment[-1]
     action = str(first["bridge_action"])
@@ -130,10 +145,31 @@ def _build_candidate(segment: list[dict[str, Any]], now_utc: datetime, max_charg
     duration_h = max(0.0, (planned_end - planned_start).total_seconds() / 3600.0)
     energy_kwh = sum(float(item["bridge_energy_kwh"]) for item in segment)
 
+    # Alpha62: the explicit Plan72 grid energy is authoritative for physical
+    # execution. Reserve a small part of the remaining price window for the
+    # third-party-control handoff/stability gate so the requested energy can be
+    # delivered before the planned price window ends instead of spilling into
+    # the following hour.
+    handoff_allowance_h = _EXECUTION_HANDOFF_ALLOWANCE_MIN / 60.0
+    effective_duration_h = max(0.0, duration_h - handoff_allowance_h)
     max_power_w = max_charge_power_w if action == "laden" else max_discharge_power_w
-    average_power_w = energy_kwh * 1000.0 / duration_h if duration_h > 0 else 0.0
+    average_power_w = energy_kwh * 1000.0 / effective_duration_h if effective_duration_h > 0 else 0.0
     power_w = _round_power_up(average_power_w, max_power_w)
-    target_soc = _as_float(last.get("soc_end"))
+
+    # Plan72 ``soc_end`` includes all energy flows in the hour (solar, home,
+    # grid and trade). It must therefore not be used as the physical target of
+    # this explicit grid action. Derive the target only from the exact grid
+    # energy assigned to this candidate.
+    capacity = max(0.1, float(battery_capacity_kwh))
+    charge_eff = max(0.50, min(1.00, float(charge_efficiency_percent) / 100.0))
+    discharge_eff = max(0.50, min(1.00, float(discharge_efficiency_percent) / 100.0))
+    projected_start_soc = _as_float(first.get("soc_start"))
+    if projected_start_soc is None:
+        target_soc = None
+    elif action == "laden":
+        target_soc = min(100.0, projected_start_soc + (energy_kwh * charge_eff / capacity * 100.0))
+    else:
+        target_soc = max(5.0, projected_start_soc - (energy_kwh / discharge_eff / capacity * 100.0))
 
     valid = True
     reasons: list[str] = []
@@ -166,6 +202,7 @@ def _build_candidate(segment: list[dict[str, Any]], now_utc: datetime, max_charg
         "execution_mode": "gepland",
         "start_time": planned_start.isoformat(),
         "planned_end_time": planned_end.isoformat(),
+        "planned_energy_kwh": round(energy_kwh, 3),
         "power_w": power_w,
         "average_required_power_w": round(average_power_w, 1),
         "target_soc": round(target_soc, 1) if target_soc is not None else None,
@@ -248,6 +285,9 @@ def build_planner_action_bridge(
     forecast_ready = bool(data.get("forecast_ready"))
     max_charge_power_w = int(data.get("max_charge_power_w") or 800)
     max_discharge_power_w = int(data.get("max_discharge_power_w") or 800)
+    battery_capacity_kwh = float(data.get("battery_capacity_kwh") or DEFAULT_BATTERY_CAPACITY_KWH)
+    charge_efficiency_percent = float(data.get("charge_efficiency_percent") or DEFAULT_CHARGE_EFFICIENCY_PERCENT)
+    discharge_efficiency_percent = float(data.get("discharge_efficiency_percent") or DEFAULT_DISCHARGE_EFFICIENCY_PERCENT)
 
     base = {
         "auto_bridge_observational_only": False,
@@ -318,7 +358,18 @@ def build_planner_action_bridge(
         else:
             segments.append([row])
 
-    candidates = [_build_candidate(segment, now_utc, max_charge_power_w, max_discharge_power_w) for segment in segments]
+    candidates = [
+        _build_candidate(
+            segment,
+            now_utc,
+            max_charge_power_w,
+            max_discharge_power_w,
+            battery_capacity_kwh,
+            charge_efficiency_percent,
+            discharge_efficiency_percent,
+        )
+        for segment in segments
+    ]
     candidates = [candidate for candidate in candidates if candidate["expected_energy_kwh"] > _MIN_ACTION_ENERGY_KWH]
 
     # Alpha61: an unsafe execution buffer blocks all economic actions, but it

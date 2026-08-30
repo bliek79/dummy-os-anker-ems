@@ -99,6 +99,8 @@ class AnkerEmsScheduler:
                 "target_soc": plan.get("target_soc"),
                 "max_runtime_h": plan.get("max_runtime_h"),
                 "max_start_delay_min": plan.get("max_start_delay_min"),
+                "planned_energy_kwh": plan.get("planned_energy_kwh"),
+                "planned_end_time": plan.get("planned_end_time"),
                 "lifecycle_status": lifecycle_status,
                 "lifecycle_reason": plan.get("lifecycle_reason"),
                 "lifecycle_updated_at": plan.get("lifecycle_updated_at"),

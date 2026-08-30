@@ -60,6 +60,8 @@ class AnkerEmsExecutionController:
             "power_w": None,
             "target_soc": None,
             "max_runtime_h": None,
+            "planned_energy_kwh": None,
+            "planned_end_time": None,
             "started_at": None,
             "stop_at": None,
             "last_result": None,
@@ -157,7 +159,8 @@ class AnkerEmsExecutionController:
     def _begin_automatic_audit(
         self, *, identity: str, slot: int | str, action: str, power_w: int,
         target_soc: float, max_runtime_h: float, start_soc: Any,
-        planned_start_time: Any = None,
+        planned_start_time: Any = None, planned_energy_kwh: Any = None,
+        planned_end_time: Any = None,
     ) -> None:
         """Start an automatic run audit before the first physical mode action."""
         try:
@@ -165,7 +168,11 @@ class AnkerEmsExecutionController:
         except (TypeError, ValueError):
             start_soc_value = None
         planned_duration_s = max(0, int(round(float(max_runtime_h) * 3600)))
-        planned_energy_kwh = round((float(power_w) * float(max_runtime_h)) / 1000.0, 3)
+        try:
+            explicit_planned_energy_kwh = max(0.0, float(planned_energy_kwh))
+        except (TypeError, ValueError):
+            explicit_planned_energy_kwh = (float(power_w) * float(max_runtime_h)) / 1000.0
+        planned_energy_kwh = round(explicit_planned_energy_kwh, 3)
         planned_start = str(planned_start_time) if planned_start_time else dt_util.now().isoformat()
         planned_start_dt = dt_util.parse_datetime(planned_start)
         planned_end = None
@@ -180,7 +187,7 @@ class AnkerEmsExecutionController:
             "automatic_last_requested_power_w": power_w,
             "automatic_last_target_soc": target_soc,
             "automatic_last_planned_start_time": planned_start,
-            "automatic_last_planned_end_time": planned_end,
+            "automatic_last_planned_end_time": str(planned_end_time) if planned_end_time else planned_end,
             "automatic_last_planned_duration_s": planned_duration_s,
             "automatic_last_planned_energy_kwh": planned_energy_kwh,
             "automatic_last_started_at": dt_util.now().isoformat(),
@@ -1273,6 +1280,8 @@ class AnkerEmsExecutionController:
             identity=identity, slot=slot, action=action, power_w=power_w,
             target_soc=target_soc, max_runtime_h=max_runtime_h, start_soc=data.get("soc"),
             planned_start_time=detail.get("start_time"),
+            planned_energy_kwh=detail.get("planned_energy_kwh"),
+            planned_end_time=detail.get("planned_end_time"),
         )
         now = dt_util.now()
         self._state.update({
@@ -1365,6 +1374,14 @@ class AnkerEmsExecutionController:
 
             execution_started_at = dt_util.now()
             stop_at = execution_started_at + timedelta(hours=max_runtime_h)
+            planned_end_time = detail.get("planned_end_time")
+            planned_end_dt = dt_util.parse_datetime(str(planned_end_time)) if planned_end_time else None
+            if planned_end_dt is not None:
+                if planned_end_dt.tzinfo is None:
+                    planned_end_dt = planned_end_dt.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+                # Alpha62: an automatic price-window action must not continue
+                # into the next (potentially more expensive) planner hour.
+                stop_at = min(stop_at, planned_end_dt)
             self._state.update({
                 "automatic_last_actual_started_at": execution_started_at.isoformat(),
                 "active": True,
@@ -1376,6 +1393,8 @@ class AnkerEmsExecutionController:
                 "power_w": power_w,
                 "target_soc": target_soc,
                 "max_runtime_h": max_runtime_h,
+                "planned_energy_kwh": detail.get("planned_energy_kwh"),
+                "planned_end_time": detail.get("planned_end_time"),
                 "started_at": execution_started_at.isoformat(),
                 "stop_at": stop_at.isoformat(),
                 "last_result": None,
@@ -1462,7 +1481,15 @@ class AnkerEmsExecutionController:
             delay = max(0.0, (stop_at - dt_util.now()).total_seconds())
             await asyncio.sleep(delay)
             if self._state.get("active"):
-                await self.async_stop("max_runtime_reached", emergency=False)
+                reason = "max_runtime_reached"
+                planned_end_raw = self._state.get("planned_end_time")
+                planned_end = dt_util.parse_datetime(str(planned_end_raw)) if planned_end_raw else None
+                if planned_end is not None:
+                    if planned_end.tzinfo is None:
+                        planned_end = planned_end.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+                    if abs((stop_at - planned_end).total_seconds()) < 2.0:
+                        reason = "planned_window_ended"
+                await self.async_stop(reason, emergency=False)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -1559,6 +1586,21 @@ class AnkerEmsExecutionController:
                 return
             if target_soc is not None and soc_value <= float(target_soc):
                 await self.async_stop("target_soc_reached", emergency=False)
+                return
+
+        # Alpha62: for automatic planner actions the exact explicit Plan72
+        # energy is the primary normal completion condition. This prevents a
+        # total-hour ``soc_end`` projection from keeping grid charging active
+        # beyond the economically selected amount.
+        if self._state.get("origin") == "automatic_72h_planner":
+            try:
+                planned_energy = float(self._state.get("planned_energy_kwh") or 0.0)
+                delivered_energy = float(self._state.get("automatic_actual_energy_wh") or 0.0) / 1000.0
+            except (TypeError, ValueError):
+                planned_energy = 0.0
+                delivered_energy = 0.0
+            if planned_energy > 0 and delivered_energy + 0.002 >= planned_energy:
+                await self.async_stop("planned_energy_reached", emergency=False)
                 return
 
         # Do not reuse the pre-start Safety Guard while a plan is active.
