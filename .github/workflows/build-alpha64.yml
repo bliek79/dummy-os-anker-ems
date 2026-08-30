@@ -1,0 +1,76 @@
+name: Build alpha64 coordinator recovery
+
+on:
+  push:
+    branches:
+      - alpha64-coordinator-recovery
+    paths:
+      - .github/workflows/build-alpha64.yml
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: alpha64-coordinator-recovery
+      - name: Apply alpha64 patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('custom_components/anker_ems/coordinator.py')
+          s = p.read_text()
+          old = '''        forecast_ready = bool(data.get("forecast_ready"))\n\n        if self._cached_72h_plan is None:\n            return True, "startup", source_token, start_key\n'''
+          new = '''        forecast_ready = bool(data.get("forecast_ready"))\n\n        # Alpha64: make SOC recovery part of the coordinator refresh policy itself.\n        # The first startup pass can cache waiting_for_soc before the configured\n        # SOC entity has restored. As soon as a later coordinator cycle sees a\n        # numeric SOC, force exactly the Plan72 rebuild that the cached state needs.\n        # The direct Stroomvoorspeller cache remains untouched.\n        cached_plan = self._cached_72h_plan or {}\n        cached_waiting_for_soc = bool(\n            str(cached_plan.get("auto_plan_72h_status") or "") == "waiting_for_soc"\n            or (\n                cached_plan.get("auto_plan_72h_valid") is not True\n                and int(cached_plan.get("auto_plan_72h_count") or 0) == 0\n                and str(cached_plan.get("auto_plan_72h_reason") or "") == "Geen geldige SOC beschikbaar"\n            )\n        )\n        if cached_waiting_for_soc and _as_float(data.get("soc")) is not None:\n            return True, "soc_recovered_after_startup", source_token, start_key\n\n        if self._cached_72h_plan is None:\n            return True, "startup", source_token, start_key\n'''
+          if old not in s:
+              raise SystemExit('coordinator replacement anchor not found')
+          p.write_text(s.replace(old, new, 1))
+
+          p = Path('custom_components/anker_ems/entity_naming.py')
+          s = p.read_text()
+          s = s.replace('import asyncio\n', '')
+          s = s.replace('from datetime import timedelta\n\n', '')
+          s = s.replace('from homeassistant.util import dt as dt_util\n\n', '')
+          s = s.replace('from .const import DOMAIN, CONF_SOC_ENTITY\n\n', '')
+          marker = '    schedule_alpha63_startup_recovery(hass, entry)\n'
+          if marker not in s:
+              raise SystemExit('alpha63 schedule call not found')
+          s = s.replace(marker, '', 1)
+          helper = '\n\nasync def _async_alpha63_startup_recovery'
+          idx = s.find(helper)
+          if idx < 0:
+              raise SystemExit('alpha63 helper not found')
+          s = s[:idx].rstrip() + '\n'
+          p.write_text(s)
+
+          p = Path('custom_components/anker_ems/manifest.json')
+          s = p.read_text()
+          if '"version": "0.0.1-alpha.63"' not in s:
+              raise SystemExit('manifest alpha63 anchor not found')
+          p.write_text(s.replace('"version": "0.0.1-alpha.63"', '"version": "0.0.1-alpha.64"', 1))
+
+          p = Path('custom_components/anker_ems/const.py')
+          s = p.read_text()
+          s = s.replace('VERSION = "0.0.1-alpha.61"', 'VERSION = "0.0.1-alpha.64"', 1)
+          p.write_text(s)
+
+          Path('RELEASE_NOTES_ALPHA64.md').write_text('''# Dummy OS EMS 0.0.1-alpha.64 - Coordinator SOC Recovery Hotfix\n\n## Samenvatting\nAlpha64 maakt de Plan72-startuprecovery deterministisch door deze in de coordinator-refreshpolicy zelf op te nemen.\n\n## Opgelost\n- Als de eerste startup-pass `waiting_for_soc` cachet en een latere coordinatorcyclus een geldige numerieke SOC ziet, wordt Plan72 direct opnieuw opgebouwd.\n- De recovery is niet langer afhankelijk van een losse achtergrondtaak vanuit entity-migratie.\n- De tijdelijke alpha63 startup-task is verwijderd.\n- De Stroomvoorspeller direct-forecastcache wordt niet gewist; alpha60 rate limiting blijft intact.\n\n## Ongewijzigd\n- Alpha63 reconciliatiegedrag voor automatische planslots via de bestaande Plan Store lifecycle blijft beschikbaar.\n- Alpha62 planned-energy execution, target-SOC-afleiding en prijsvensterbegrenzing blijven ongewijzigd.\n- Alpha61 low-SOC safety recovery blijft ongewijzigd.\n- Manual plans, Automatic Execution-arm, safety gates en safe-return blijven ongewijzigd.\n\n## Validatie\n- `python -m compileall -q custom_components/anker_ems` moet slagen.\n- Gerichte broncontrole bevestigt de nieuwe refreshreden `soc_recovered_after_startup`.\n- Live Home Assistant-validatie na installatie/herstart blijft vereist.\n''')
+          PY
+
+          python -m compileall -q custom_components/anker_ems
+          grep -F 'soc_recovered_after_startup' custom_components/anker_ems/coordinator.py
+          grep -F '"version": "0.0.1-alpha.64"' custom_components/anker_ems/manifest.json
+          find custom_components/anker_ems -type d -name __pycache__ -prune -exec rm -rf {} +
+          find custom_components/anker_ems -type f -name '*.pyc' -delete
+          git rm .github/workflows/build-alpha64.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/anker_ems/coordinator.py custom_components/anker_ems/entity_naming.py custom_components/anker_ems/manifest.json custom_components/anker_ems/const.py RELEASE_NOTES_ALPHA64.md
+          git commit -m "Release 0.0.1-alpha.64: coordinator SOC recovery hotfix"
+          git push origin alpha64-coordinator-recovery
