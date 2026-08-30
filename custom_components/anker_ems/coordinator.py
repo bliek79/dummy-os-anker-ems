@@ -378,6 +378,23 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         start_key = self._planner_start_critical_key(scheduler_data)
         forecast_ready = bool(data.get("forecast_ready"))
 
+        # Alpha64: make SOC recovery part of the coordinator refresh policy itself.
+        # The first startup pass can cache waiting_for_soc before the configured
+        # SOC entity has restored. As soon as a later coordinator cycle sees a
+        # numeric SOC, force exactly the Plan72 rebuild that the cached state needs.
+        # The direct Stroomvoorspeller cache remains untouched.
+        cached_plan = self._cached_72h_plan or {}
+        cached_waiting_for_soc = bool(
+            str(cached_plan.get("auto_plan_72h_status") or "") == "waiting_for_soc"
+            or (
+                cached_plan.get("auto_plan_72h_valid") is not True
+                and int(cached_plan.get("auto_plan_72h_count") or 0) == 0
+                and str(cached_plan.get("auto_plan_72h_reason") or "") == "Geen geldige SOC beschikbaar"
+            )
+        )
+        if cached_waiting_for_soc and _as_float(data.get("soc")) is not None:
+            return True, "soc_recovered_after_startup", source_token, start_key
+
         if self._cached_72h_plan is None:
             return True, "startup", source_token, start_key
 
