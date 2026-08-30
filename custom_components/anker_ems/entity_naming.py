@@ -77,6 +77,7 @@ async def async_migrate_entity_ids(hass: HomeAssistant, entry: ConfigEntry) -> N
         _LOGGER.info("Migrated Dummy OS EMS entity_id %s -> %s", old, target)
     if migrated:
         _LOGGER.info("Migrated %s Dummy OS EMS entity IDs to alpha28 naming", migrated)
+    schedule_alpha63_startup_recovery(hass, entry)
 
 
 async def _async_alpha63_startup_recovery(hass: HomeAssistant, entry: ConfigEntry) -> None:
