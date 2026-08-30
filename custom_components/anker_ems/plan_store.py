@@ -244,6 +244,25 @@ class AnkerEmsPlanStore:
                 delay_min = 0.0
             return dt_util.now() > start + timedelta(minutes=delay_min)
 
+        def expired_automatic_terminal(plan: dict[str, Any]) -> bool:
+            """Return True when a planner-owned terminal plan is past its start window."""
+            if str(plan.get("origin") or "") != "automatic_72h_planner":
+                return False
+            if str(plan.get("lifecycle_status") or "").lower() not in {"geannuleerd", "voltooid", "fout"}:
+                return False
+            start_raw = plan.get("start_time")
+            start = dt_util.parse_datetime(str(start_raw)) if start_raw else None
+            if start is None:
+                return False
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+            delay_raw = plan.get("max_start_delay_min", 0)
+            try:
+                delay_min = max(0.0, float(delay_raw or 0))
+            except (TypeError, ValueError):
+                delay_min = 0.0
+            return dt_util.now() > start + timedelta(minutes=delay_min)
+
         for slot in range(1, PLAN_SLOT_COUNT + 1):
             current = self._plans[slot]
             proposal = desired.get(slot)
@@ -320,6 +339,7 @@ class AnkerEmsPlanStore:
                     current_lifecycle == "concept"
                     or pending_revisable(current)
                     or expired_automatic_pending(current)
+                    or expired_automatic_terminal(current)
                 )
             ):
                 already_cleared = (
@@ -331,11 +351,13 @@ class AnkerEmsPlanStore:
                 if not already_cleared:
                     empty = deepcopy(DEFAULT_PLAN)
                     empty["lifecycle_status"] = "concept"
-                    empty["lifecycle_reason"] = (
-                        "automatic_expired_released"
-                        if expired_automatic_pending(current)
-                        else "automatic_preview_cleared"
-                    )
+                    if expired_automatic_pending(current):
+                        clear_reason = "automatic_expired_released"
+                    elif expired_automatic_terminal(current):
+                        clear_reason = "automatic_terminal_released"
+                    else:
+                        clear_reason = "automatic_preview_cleared"
+                    empty["lifecycle_reason"] = clear_reason
                     empty["lifecycle_updated_at"] = now_iso
                     self._plans[slot] = empty
                     changed_slots.append(slot)
