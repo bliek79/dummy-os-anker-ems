@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
+
+from .const import DOMAIN, CONF_SOC_ENTITY
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -72,3 +77,73 @@ async def async_migrate_entity_ids(hass: HomeAssistant, entry: ConfigEntry) -> N
         _LOGGER.info("Migrated Dummy OS EMS entity_id %s -> %s", old, target)
     if migrated:
         _LOGGER.info("Migrated %s Dummy OS EMS entity IDs to alpha28 naming", migrated)
+    schedule_alpha63_startup_recovery(hass, entry)
+
+
+async def _async_alpha63_startup_recovery(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Recover Plan72 and stale automatic slots after Home Assistant startup."""
+    coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if coordinator is None:
+        return
+
+    # A planner-owned error from an execution interrupted by Home Assistant
+    # shutdown is historical audit information, not a reason to lock a physical
+    # plan slot after startup. Only expired automatic slots are reconciled;
+    # manual plans are deliberately untouched.
+    now = dt_util.now()
+    for slot in range(1, 4):
+        plan = coordinator.plan_store.get_plan(slot)
+        if str(plan.get("origin") or "") != "automatic_72h_planner":
+            continue
+        if str(plan.get("lifecycle_status") or "").lower() != "fout":
+            continue
+        start_raw = plan.get("start_time")
+        start = dt_util.parse_datetime(str(start_raw)) if start_raw else None
+        if start is None:
+            continue
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+        try:
+            delay_min = max(0.0, float(plan.get("max_start_delay_min", 0) or 0))
+        except (TypeError, ValueError):
+            delay_min = 0.0
+        if now <= start + timedelta(minutes=delay_min):
+            continue
+        await coordinator.plan_store.async_mark_lifecycle(
+            slot, "geannuleerd", "automatic_restart_error_reconciled"
+        )
+
+    # The first coordinator pass can occur before the SOC entity is restored.
+    # If that pass cached waiting_for_soc, wait briefly for a valid numeric SOC
+    # and invalidate only the Plan72 cache. The direct price forecast cache is
+    # intentionally left untouched, preserving alpha60 rate limiting.
+    soc_entity = coordinator._entity_id(CONF_SOC_ENTITY)
+    for _ in range(24):
+        state = hass.states.get(soc_entity) if soc_entity else None
+        try:
+            soc = float(state.state) if state is not None else None
+        except (TypeError, ValueError):
+            soc = None
+        cached = coordinator._cached_72h_plan or {}
+        waiting = (
+            str(cached.get("auto_plan_72h_status") or "") == "waiting_for_soc"
+            or (
+                cached.get("auto_plan_72h_valid") is not True
+                and int(cached.get("auto_plan_72h_count") or 0) == 0
+            )
+        )
+        if soc is not None and waiting:
+            coordinator._cached_72h_plan = None
+            await coordinator.async_request_refresh()
+            return
+        if soc is not None:
+            return
+        await asyncio.sleep(5)
+
+
+def schedule_alpha63_startup_recovery(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Schedule the one-shot alpha63 startup recovery task."""
+    hass.async_create_task(
+        _async_alpha63_startup_recovery(hass, entry),
+        "Dummy OS EMS alpha63 startup recovery",
+    )
