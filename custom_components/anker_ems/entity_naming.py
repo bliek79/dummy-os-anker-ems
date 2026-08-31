@@ -6,6 +6,15 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 _LOGGER = logging.getLogger(__name__)
 
+# Entity IDs are an explicit Dummy OS contract. Home Assistant generated names
+# must never silently replace a project-approved entity ID.
+#
+# Exact IDs take precedence over the legacy alpha28 prefix scheme. This is used
+# for new canonical EMS entities whose object ID is deliberately fixed.
+EXACT_ENTITY_IDS = {
+    ("sensor", "home_power"): "sensor.do_ems_home_power",
+}
+
 # Alpha28 keeps unique IDs stable and migrates only entity_id object IDs.
 # This preserves the entity registry identity while making technical entity IDs
 # shorter and consistently English.
@@ -50,10 +59,14 @@ async def async_migrate_entity_ids(hass: HomeAssistant, entry: ConfigEntry) -> N
             continue
         suffix = unique_id[len(prefix):]
         domain = reg_entry.entity_id.split(".", 1)[0]
-        object_id = _target_object_id(domain, suffix)
-        if not object_id:
-            continue
-        target = f"{domain}.dummy_os_ems_{object_id}"
+
+        target = EXACT_ENTITY_IDS.get((domain, suffix))
+        if target is None:
+            object_id = _target_object_id(domain, suffix)
+            if not object_id:
+                continue
+            target = f"{domain}.dummy_os_ems_{object_id}"
+
         if reg_entry.entity_id == target:
             continue
         existing = registry.async_get(target)
@@ -69,4 +82,4 @@ async def async_migrate_entity_ids(hass: HomeAssistant, entry: ConfigEntry) -> N
         migrated += 1
         _LOGGER.info("Migrated Dummy OS EMS entity_id %s -> %s", old, target)
     if migrated:
-        _LOGGER.info("Migrated %s Dummy OS EMS entity IDs to alpha28 naming", migrated)
+        _LOGGER.info("Migrated %s Dummy OS EMS entity IDs to approved naming", migrated)
