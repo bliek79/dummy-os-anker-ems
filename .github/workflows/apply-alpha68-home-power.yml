@@ -1,0 +1,135 @@
+name: Apply alpha68 home power integration
+
+on:
+  push:
+    branches:
+      - feature-alpha68-internal-home-power
+    paths:
+      - '.github/workflows/apply-alpha68-home-power.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature-alpha68-internal-home-power
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply alpha68 changes
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          const_path = Path('custom_components/anker_ems/const.py')
+          text = const_path.read_text()
+          text = text.replace('VERSION = "0.0.1-alpha.67"', 'VERSION = "0.0.1-alpha.68"', 1)
+          anchor = 'CONF_GRID_EXPORT_POWER_ENTITY = "grid_export_power_entity"\n'
+          if 'CONF_SOLAR_POWER_ENTITY' not in text:
+              text = text.replace(anchor, anchor + 'CONF_SOLAR_POWER_ENTITY = "solar_power_entity"\n', 1)
+          const_path.write_text(text)
+
+          config_path = Path('custom_components/anker_ems/config_flow.py')
+          text = config_path.read_text()
+          import_anchor = '    CONF_GRID_EXPORT_POWER_ENTITY,\n'
+          if '    CONF_SOLAR_POWER_ENTITY,\n' not in text:
+              text = text.replace(import_anchor, import_anchor + '    CONF_SOLAR_POWER_ENTITY,\n', 1)
+
+          old_user = '''                vol.Required(CONF_CHARGE_POWER_ENTITY): _entity_selector("sensor"),\n                vol.Required(CONF_DISCHARGE_POWER_ENTITY): _entity_selector("sensor"),\n                vol.Optional(CONF_GRID_IMPORT_POWER_ENTITY): _entity_selector("sensor"),\n                vol.Optional(CONF_GRID_EXPORT_POWER_ENTITY): _entity_selector("sensor"),\n                vol.Required(CONF_OPERATING_MODE_ENTITY): _entity_selector("select"),\n'''
+          new_user = '''                vol.Required(CONF_CHARGE_POWER_ENTITY): _entity_selector("sensor"),\n                vol.Required(CONF_DISCHARGE_POWER_ENTITY): _entity_selector("sensor"),\n                vol.Required(CONF_GRID_IMPORT_POWER_ENTITY): _entity_selector("sensor"),\n                vol.Required(CONF_GRID_EXPORT_POWER_ENTITY): _entity_selector("sensor"),\n                vol.Required(CONF_SOLAR_POWER_ENTITY): _entity_selector("sensor"),\n                vol.Required(CONF_OPERATING_MODE_ENTITY): _entity_selector("select"),\n'''
+          if old_user not in text:
+              raise SystemExit('user schema anchor missing')
+          text = text.replace(old_user, new_user, 1)
+
+          suggested_anchor = '''            CONF_GRID_IMPORT_POWER_ENTITY: entry.data.get(CONF_GRID_IMPORT_POWER_ENTITY),\n            CONF_GRID_EXPORT_POWER_ENTITY: entry.data.get(CONF_GRID_EXPORT_POWER_ENTITY),\n            CONF_OPERATING_MODE_ENTITY: entry.data.get(CONF_OPERATING_MODE_ENTITY),\n'''
+          suggested_repl = '''            CONF_GRID_IMPORT_POWER_ENTITY: entry.data.get(CONF_GRID_IMPORT_POWER_ENTITY),\n            CONF_GRID_EXPORT_POWER_ENTITY: entry.data.get(CONF_GRID_EXPORT_POWER_ENTITY),\n            CONF_SOLAR_POWER_ENTITY: entry.data.get(CONF_SOLAR_POWER_ENTITY),\n            CONF_OPERATING_MODE_ENTITY: entry.data.get(CONF_OPERATING_MODE_ENTITY),\n'''
+          if suggested_anchor not in text:
+              raise SystemExit('suggested anchor missing')
+          text = text.replace(suggested_anchor, suggested_repl, 1)
+
+          old_reconf = '''                vol.Required(CONF_CHARGE_POWER_ENTITY): _entity_selector("sensor"),\n                vol.Required(CONF_DISCHARGE_POWER_ENTITY): _entity_selector("sensor"),\n                vol.Optional(CONF_GRID_IMPORT_POWER_ENTITY): _entity_selector("sensor"),\n                vol.Optional(CONF_GRID_EXPORT_POWER_ENTITY): _entity_selector("sensor"),\n                vol.Required(CONF_OPERATING_MODE_ENTITY): _entity_selector("select"),\n'''
+          new_reconf = '''                vol.Required(CONF_CHARGE_POWER_ENTITY): _entity_selector("sensor"),\n                vol.Required(CONF_DISCHARGE_POWER_ENTITY): _entity_selector("sensor"),\n                vol.Required(CONF_GRID_IMPORT_POWER_ENTITY): _entity_selector("sensor"),\n                vol.Required(CONF_GRID_EXPORT_POWER_ENTITY): _entity_selector("sensor"),\n                vol.Required(CONF_SOLAR_POWER_ENTITY): _entity_selector("sensor"),\n                vol.Required(CONF_OPERATING_MODE_ENTITY): _entity_selector("select"),\n'''
+          if old_reconf not in text:
+              raise SystemExit('reconfigure schema anchor missing')
+          text = text.replace(old_reconf, new_reconf, 1)
+          config_path.write_text(text)
+
+          coord_path = Path('custom_components/anker_ems/coordinator.py')
+          text = coord_path.read_text()
+          import_anchor = '    CONF_GRID_EXPORT_POWER_ENTITY,\n'
+          if '    CONF_SOLAR_POWER_ENTITY,\n' not in text:
+              text = text.replace(import_anchor, import_anchor + '    CONF_SOLAR_POWER_ENTITY,\n', 1)
+
+          helper_anchor = '''    def _number(self, key: str) -> float | None:\n        return _as_float(self._state(key))\n\n'''
+          helper = '''    def _home_power_snapshot(self) -> dict[str, Any]:\n        """Build canonical home power from the five directional power sources.\n\n        All configured source sensors are expected to expose positive power in W\n        for their named direction. The EMS home load is therefore:\n        solar + grid import + battery discharge - grid export - battery charge.\n        The raw result is retained for diagnostics; the canonical load is clamped\n        at zero to absorb tiny asynchronous meter timing differences.\n        """\n        source_keys = {\n            "grid_import": CONF_GRID_IMPORT_POWER_ENTITY,\n            "grid_export": CONF_GRID_EXPORT_POWER_ENTITY,\n            "solar": CONF_SOLAR_POWER_ENTITY,\n            "battery_charge": CONF_CHARGE_POWER_ENTITY,\n            "battery_discharge": CONF_DISCHARGE_POWER_ENTITY,\n        }\n        entities = {name: self._entity_id(key) for name, key in source_keys.items()}\n        values = {name: self._number(key) for name, key in source_keys.items()}\n        missing = [name for name in source_keys if not entities.get(name) or values.get(name) is None]\n        if missing:\n            return {\n                "home_power_valid": False,\n                "home_power_status": "waiting_for_sources",\n                "home_power_w": None,\n                "home_power_raw_w": None,\n                "home_power_missing_sources": missing,\n                "home_power_source_entities": entities,\n                "home_power_source_values_w": values,\n                "home_power_formula": "solar + grid_import + battery_discharge - grid_export - battery_charge",\n            }\n\n        raw = (\n            float(values["solar"])\n            + float(values["grid_import"])\n            + float(values["battery_discharge"])\n            - float(values["grid_export"])\n            - float(values["battery_charge"])\n        )\n        return {\n            "home_power_valid": True,\n            "home_power_status": "ready",\n            "home_power_w": round(max(0.0, raw), 3),\n            "home_power_raw_w": round(raw, 3),\n            "home_power_missing_sources": [],\n            "home_power_source_entities": entities,\n            "home_power_source_values_w": values,\n            "home_power_formula": "solar + grid_import + battery_discharge - grid_export - battery_charge",\n        }\n\n'''
+          if helper_anchor not in text:
+              raise SystemExit('number helper anchor missing')
+          text = text.replace(helper_anchor, helper_anchor + helper, 1)
+
+          data_anchor = '''            "grid_import_power_w": self._number(CONF_GRID_IMPORT_POWER_ENTITY),\n            "grid_export_power_w": self._number(CONF_GRID_EXPORT_POWER_ENTITY),\n            "operating_mode": self._state(CONF_OPERATING_MODE_ENTITY),\n'''
+          data_repl = '''            "grid_import_power_w": self._number(CONF_GRID_IMPORT_POWER_ENTITY),\n            "grid_export_power_w": self._number(CONF_GRID_EXPORT_POWER_ENTITY),\n            "solar_power_w": self._number(CONF_SOLAR_POWER_ENTITY),\n            "operating_mode": self._state(CONF_OPERATING_MODE_ENTITY),\n'''
+          if data_anchor not in text:
+              raise SystemExit('coordinator data anchor missing')
+          text = text.replace(data_anchor, data_repl, 1)
+
+          update_anchor = '''        if self._price_architecture_settings()["enabled"]:\n            await self._async_refresh_direct_price_forecast()\n'''
+          update_repl = '''        data.update(self._home_power_snapshot())\n        if self._price_architecture_settings()["enabled"]:\n            await self._async_refresh_direct_price_forecast()\n'''
+          if update_anchor not in text:
+              raise SystemExit('home snapshot insertion anchor missing')
+          text = text.replace(update_anchor, update_repl, 1)
+          coord_path.write_text(text)
+
+          sensor_path = Path('custom_components/anker_ems/sensor.py')
+          text = sensor_path.read_text()
+          attrs_anchor = '''def _forecast_attrs(data: dict[str, Any]) -> dict[str, Any]:\n'''
+          attrs = '''def _home_power_attrs(data: dict[str, Any]) -> dict[str, Any]:\n    return {\n        "valid": data.get("home_power_valid", False),\n        "status": data.get("home_power_status"),\n        "raw_power_w": data.get("home_power_raw_w"),\n        "formula": data.get("home_power_formula"),\n        "source_entities": data.get("home_power_source_entities", {}),\n        "source_values_w": data.get("home_power_source_values_w", {}),\n        "missing_sources": data.get("home_power_missing_sources", []),\n        "shadow_only": True,\n        "plan72_source": False,\n    }\n\n\n'''
+          if attrs_anchor not in text:
+              raise SystemExit('sensor attrs anchor missing')
+          text = text.replace(attrs_anchor, attrs + attrs_anchor, 1)
+
+          tuple_anchor = '''SENSORS: tuple[AnkerEmsSensorDescription, ...] = (\n'''
+          new_sensor = '''SENSORS: tuple[AnkerEmsSensorDescription, ...] = (\n    AnkerEmsSensorDescription(\n        key="home_power",\n        name="DO EMS Home Power",\n        native_unit_of_measurement=UnitOfPower.WATT,\n        value_fn=lambda d: d.get("home_power_w"),\n        attrs_fn=_home_power_attrs,\n    ),\n'''
+          if tuple_anchor not in text:
+              raise SystemExit('SENSORS tuple anchor missing')
+          text = text.replace(tuple_anchor, new_sensor, 1)
+          sensor_path.write_text(text)
+
+          manifest_path = Path('custom_components/anker_ems/manifest.json')
+          manifest = json.loads(manifest_path.read_text())
+          manifest['version'] = '0.0.1-alpha.68'
+          manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + '\n')
+
+          Path('RELEASE_NOTES_ALPHA68.md').write_text('''# Dummy OS EMS 0.0.1-alpha.68 - Internal Home Power\n\n## Doel\nDe EMS krijgt een eigen canonieke woningvermogenssensor als fundering voor de latere interne historie- en forecastlaag.\n\n## Nieuw\n- Nieuwe configureerbare Solar Power bronentiteit.\n- Grid Import Power en Grid Export Power zijn voor nieuwe configuraties en reconfigure nu verplichte bronnen voor de Home Power laag.\n- Battery Charge Power en Battery Discharge Power blijven afzonderlijke directionele bronnen.\n- Nieuwe `DO EMS Home Power` sensor, bedoeld als `sensor.do_ems_home_power`.\n- Interne formule: `solar + grid_import + battery_discharge - grid_export - battery_charge`.\n- Diagnostiek toont de vijf bronentiteiten, actuele bronwaarden, raw resultaat en ontbrekende bronnen.\n- Kleine negatieve transients door niet-gelijktijdige sensormetingen worden alleen op de canonieke Home Power naar 0 W begrensd; de raw waarde blijft zichtbaar.\n\n## Veilig migratiegedrag\n- Bestaande installaties zonder geconfigureerde Solar Power bron blijven laden.\n- `DO EMS Home Power` rapporteert dan geen waarde en status `waiting_for_sources` totdat de vijf bronnen via Reconfigure zijn ingevuld.\n- Alpha68 vervangt de huidige Home Forecast of Plan72-bron nog niet. De nieuwe Home Power draait eerst parallel/shadow.\n\n## Volgende stap\nNa live-validatie wordt op deze sensor de eigen 15-minuten historie en daarna de interne Home Demand Forecast gebouwd.\n''')
+          PY
+
+          python -m compileall -q custom_components/anker_ems
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          c = Path('custom_components/anker_ems/coordinator.py').read_text()
+          s = Path('custom_components/anker_ems/sensor.py').read_text()
+          f = Path('custom_components/anker_ems/config_flow.py').read_text()
+          assert 'def _home_power_snapshot(' in c
+          assert 'CONF_SOLAR_POWER_ENTITY' in c
+          assert '"home_power_w"' in c
+          assert 'name="DO EMS Home Power"' in s
+          assert 'vol.Required(CONF_SOLAR_POWER_ENTITY)' in f
+          assert f.count('vol.Required(CONF_GRID_IMPORT_POWER_ENTITY)') >= 2
+          assert f.count('vol.Required(CONF_GRID_EXPORT_POWER_ENTITY)') >= 2
+          assert 'VERSION = "0.0.1-alpha.68"' in Path('custom_components/anker_ems/const.py').read_text()
+          assert json.loads(Path('custom_components/anker_ems/manifest.json').read_text())['version'] == '0.0.1-alpha.68'
+          print('ALPHA68_INTERNAL_HOME_POWER_SOURCE_VALIDATION_OK')
+          PY
+          find custom_components/anker_ems -type d -name __pycache__ -prune -exec rm -rf {} +
+          git add custom_components/anker_ems/const.py custom_components/anker_ems/config_flow.py custom_components/anker_ems/coordinator.py custom_components/anker_ems/sensor.py custom_components/anker_ems/manifest.json RELEASE_NOTES_ALPHA68.md
+          git commit -m 'Add internal EMS home power source layer'
+          git push origin HEAD:feature-alpha68-internal-home-power
