@@ -21,6 +21,7 @@ from .action_controller import AnkerEmsActionController
 from .physical_test import AnkerEmsPhysicalTestController
 from .execution import AnkerEmsExecutionController
 from .source_monitor import AnkerEmsSourceMonitor
+from .home_history import AnkerEmsHomeHistory
 from .energy_need import build_energy_need_analysis
 from .planner_preview import build_planner_preview
 from .planner_72h import build_72h_plan_preview
@@ -158,6 +159,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.physical_test = physical_test
         self.execution = execution
         self.source_monitor = source_monitor
+        self.home_history = AnkerEmsHomeHistory(hass, entry.entry_id)
         self._cached_72h_plan: dict[str, Any] | None = None
         self._last_plan_source_token: str | None = None
         self._last_plan_refresh_at: datetime | None = None
@@ -1126,6 +1128,14 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "power_setpoint_w": self._number(CONF_POWER_SETPOINT_ENTITY),
         }
         data.update(self._home_power_snapshot())
+        # Alpha70: build a persistent, EMS-owned 15-minute demand history from
+        # the validated canonical Home Power. This remains parallel/shadow data
+        # and does not feed the current Home Forecast or Plan72 yet.
+        data.update(
+            await self.home_history.async_observe(
+                data.get("home_power_w") if data.get("home_power_valid") else None
+            )
+        )
         if self._price_architecture_settings()["enabled"]:
             await self._async_refresh_direct_price_forecast()
         data.update(self._build_forecast())

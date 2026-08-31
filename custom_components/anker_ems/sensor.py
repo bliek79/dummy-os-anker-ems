@@ -35,6 +35,35 @@ def _home_power_attrs(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _home_energy_15m_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": data.get("home_energy_15m_status"),
+        "period_start": data.get("home_energy_15m_period_start"),
+        "coverage_percent": data.get("home_energy_15m_coverage_percent"),
+        "sample_count": data.get("home_energy_15m_sample_count"),
+        "interval_minutes": data.get("home_history_interval_minutes", 15),
+        "history_points": data.get("home_history_points", 0),
+        "history_days": data.get("home_history_days", 0),
+        "retention_days": data.get("home_history_retention_days"),
+        "shadow_only": True,
+        "plan72_source": False,
+        "forecast_source": False,
+    }
+
+
+def _home_history_days_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "history_points": data.get("home_history_points", 0),
+        "covered_quarters_80pct": data.get("home_history_covered_quarters", 0),
+        "retention_days": data.get("home_history_retention_days"),
+        "interval_minutes": data.get("home_history_interval_minutes", 15),
+        "max_sample_gap_seconds": data.get("home_history_max_sample_gap_seconds"),
+        "shadow_only": True,
+        "plan72_source": False,
+        "forecast_source": False,
+    }
+
+
 def _forecast_attrs(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "horizon_hours": data.get("forecast_horizon_hours"),
@@ -708,6 +737,19 @@ SENSORS: tuple[AnkerEmsSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfPower.WATT,
         value_fn=lambda d: d.get("home_power_w"),
         attrs_fn=_home_power_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="home_energy_15m",
+        name="DO EMS Home Energy 15m",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value_fn=lambda d: d.get("home_energy_15m_kwh"),
+        attrs_fn=_home_energy_15m_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="home_history_days",
+        name="DO EMS Home History Days",
+        value_fn=lambda d: d.get("home_history_days", 0),
+        attrs_fn=_home_history_days_attrs,
     ),
     AnkerEmsSensorDescription(
         key="automatic_execution_shadow",

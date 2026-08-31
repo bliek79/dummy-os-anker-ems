@@ -337,6 +337,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     physical_test.attach_coordinator(coordinator)
     execution.attach_coordinator(coordinator)
+    await coordinator.home_history.async_load()
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
