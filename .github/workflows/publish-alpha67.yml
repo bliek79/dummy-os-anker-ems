@@ -1,0 +1,89 @@
+name: Publish alpha67 release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-alpha67.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate release source
+        shell: bash
+        run: |
+          SOURCE_SHA='46eea237cafafc40cfb0744ade9154f69403ffd7'
+          git checkout "$SOURCE_SHA"
+          python -m compileall -q custom_components/anker_ems
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          text = Path('custom_components/anker_ems/coordinator.py').read_text()
+          required = [
+              'def _aggregate_home_rows_hourly(',
+              'sum(value for _stamp, value in points)',
+              '"forecast_home_aggregation": "sum_energy_per_hour"',
+              '"home_forecast"',
+          ]
+          for token in required:
+              assert token in text, token
+          assert 'VERSION = "0.0.1-alpha.67"' in Path('custom_components/anker_ems/const.py').read_text()
+          assert json.loads(Path('custom_components/anker_ems/manifest.json').read_text())['version'] == '0.0.1-alpha.67'
+          assert Path('RELEASE_NOTES_ALPHA67.md').exists()
+          print('ALPHA67_SOURCE_VALIDATION_OK')
+          PY
+          find custom_components/anker_ems -type d -name __pycache__ -prune -exec rm -rf {} +
+          git checkout main
+
+      - name: Build release assets
+        shell: bash
+        run: |
+          SOURCE_SHA='46eea237cafafc40cfb0744ade9154f69403ffd7'
+          git archive --format=zip --output=dummy-os-anker-ems-alpha67.zip "$SOURCE_SHA" custom_components/anker_ems
+          sha256sum dummy-os-anker-ems-alpha67.zip > SHA256SUMS-alpha67.txt
+          unzip -l dummy-os-anker-ems-alpha67.zip
+
+      - name: Create tag and prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          SOURCE_SHA='46eea237cafafc40cfb0744ade9154f69403ffd7'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if git rev-parse 0.0.1-alpha.67 >/dev/null 2>&1; then
+            echo 'Tag 0.0.1-alpha.67 already exists' >&2
+            exit 1
+          fi
+          git tag -a 0.0.1-alpha.67 "$SOURCE_SHA" -m 'Dummy OS EMS 0.0.1-alpha.67 - Home Forecast Hourly Aggregation Fix'
+          git push origin refs/tags/0.0.1-alpha.67
+          gh release create 0.0.1-alpha.67 \
+            dummy-os-anker-ems-alpha67.zip SHA256SUMS-alpha67.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --title 'Dummy OS EMS 0.0.1-alpha.67 - Home Forecast Hourly Aggregation Fix' \
+            --notes-file RELEASE_NOTES_ALPHA67.md \
+            --prerelease \
+            --target "$SOURCE_SHA"
+
+      - name: Remove temporary workflow
+        if: always()
+        shell: bash
+        run: |
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/publish-alpha67.yml
+          git commit -m 'Remove temporary alpha67 publishing workflow'
+          git push origin HEAD:main
