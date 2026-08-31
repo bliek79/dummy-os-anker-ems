@@ -2,7 +2,7 @@ from __future__ import annotations
 
 DOMAIN = "anker_ems"
 NAME = "Dummy OS EMS"
-VERSION = "0.0.1-alpha.67"
+VERSION = "0.0.1-alpha.68"
 
 CONF_SIMULATION_MODE = "simulation_mode"
 
@@ -30,6 +30,7 @@ CONF_CHARGE_POWER_ENTITY = "charge_power_entity"
 CONF_DISCHARGE_POWER_ENTITY = "discharge_power_entity"
 CONF_GRID_IMPORT_POWER_ENTITY = "grid_import_power_entity"
 CONF_GRID_EXPORT_POWER_ENTITY = "grid_export_power_entity"
+CONF_SOLAR_POWER_ENTITY = "solar_power_entity"
 CONF_OPERATING_MODE_ENTITY = "operating_mode_entity"
 CONF_ACTION_DIRECTION_ENTITY = "action_direction_entity"
 CONF_POWER_SETPOINT_ENTITY = "power_setpoint_entity"
