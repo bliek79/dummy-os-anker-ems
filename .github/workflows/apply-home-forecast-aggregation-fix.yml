@@ -1,0 +1,114 @@
+name: Apply home forecast aggregation fix
+
+on:
+  push:
+    branches:
+      - fix-home-forecast-hourly-aggregation
+    paths:
+      - '.github/workflows/apply-home-forecast-aggregation-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fix branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix-home-forecast-hourly-aggregation
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply targeted home forecast fix
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          path = Path('custom_components/anker_ems/coordinator.py')
+          text = path.read_text()
+
+          anchor = '''    @staticmethod\n    def _aggregate_market_rows_hourly(\n        rows: list[dict[str, Any]],\n    ) -> tuple[list[dict[str, Any]], dict[str, int]]:\n'''
+          helper = '''    @staticmethod\n    def _aggregate_home_rows_hourly(\n        rows: list[dict[str, Any]],\n    ) -> tuple[list[dict[str, Any]], dict[str, int]]:\n        """Aggregate home-consumption forecast energy to hourly planner slots.\n\n        Forecast values are energy per source interval (kWh). Multiple sub-hourly\n        points in the same hour therefore have to be summed, never overwritten\n        and never averaged. Exact duplicate timestamps are de-duplicated first.\n        A native hourly source remains unchanged because it contributes one point.\n        """\n        per_timestamp: dict[datetime, float] = {}\n        for row in rows:\n            stamp = _parse_datetime(_first(row, ("time", "timestamp", "datetime", "start")))\n            value = _as_float(_first(row, ("predicted", "value", "consumption", "kwh")))\n            if stamp is None or value is None:\n                continue\n            per_timestamp[stamp] = max(0.0, value)\n\n        grouped: dict[datetime, list[tuple[datetime, float]]] = {}\n        for stamp, value in per_timestamp.items():\n            hour = stamp.replace(minute=0, second=0, microsecond=0)\n            grouped.setdefault(hour, []).append((stamp, value))\n\n        aggregated: list[dict[str, Any]] = []\n        subhourly_hours = 0\n        max_points_per_hour = 0\n        for hour in sorted(grouped):\n            points = sorted(grouped[hour], key=lambda item: item[0])\n            point_count = len(points)\n            max_points_per_hour = max(max_points_per_hour, point_count)\n            if point_count > 1:\n                subhourly_hours += 1\n            aggregated.append(\n                {\n                    "time": hour.isoformat(),\n                    "home_consumption_kwh": sum(value for _stamp, value in points),\n                    "source_point_count": point_count,\n                    "forecast_granularity": "subhourly_sum" if point_count > 1 else "hourly",\n                }\n            )\n\n        return aggregated, {\n            "raw_rows": len(rows),\n            "unique_points": len(per_timestamp),\n            "hourly_rows": len(aggregated),\n            "subhourly_hours": subhourly_hours,\n            "max_points_per_hour": max_points_per_hour,\n        }\n\n'''
+          if anchor not in text:
+              raise SystemExit('market aggregation anchor not found')
+          text = text.replace(anchor, helper + anchor, 1)
+
+          old_home = '''        home_rows = self._rows(entity_ids["home"], "forecasts")\n        solar_rows: list[dict[str, Any]] = []\n'''
+          new_home = '''        home_rows = self._rows(entity_ids["home"], "forecasts")\n        home_hourly_rows, home_row_diagnostics = self._aggregate_home_rows_hourly(home_rows)\n        solar_rows: list[dict[str, Any]] = []\n'''
+          if old_home not in text:
+              raise SystemExit('home rows anchor not found')
+          text = text.replace(old_home, new_home, 1)
+
+          old_loop = '''        for row in home_rows:\n            hour = _hour_key(_first(row, ("time", "timestamp", "datetime", "start")))\n            if hour not in slots:\n                continue\n            slots[hour]["home_consumption_kwh"] = _as_float(\n                _first(row, ("predicted", "value", "consumption", "kwh"))\n            )\n'''
+          new_loop = '''        for row in home_hourly_rows:\n            hour = _hour_key(row.get("time"))\n            if hour not in slots:\n                continue\n            slots[hour]["home_consumption_kwh"] = _as_float(row.get("home_consumption_kwh"))\n'''
+          if old_loop not in text:
+              raise SystemExit('home assignment loop anchor not found')
+          text = text.replace(old_loop, new_loop, 1)
+
+          old_missing = '''        if not home_rows:\n            missing_sources.append("home")\n'''
+          new_missing = '''        if not home_hourly_rows:\n            missing_sources.append("home")\n'''
+          if old_missing not in text:
+              raise SystemExit('home missing-source anchor not found')
+          text = text.replace(old_missing, new_missing, 1)
+
+          old_diag = '''            "forecast_home_hours": home_count,\n            "forecast_solar_hours": solar_count,\n'''
+          new_diag = '''            "forecast_home_hours": home_count,\n            "forecast_home_raw_rows": home_row_diagnostics["raw_rows"],\n            "forecast_home_unique_points": home_row_diagnostics["unique_points"],\n            "forecast_home_hourly_rows": home_row_diagnostics["hourly_rows"],\n            "forecast_home_subhourly_hours": home_row_diagnostics["subhourly_hours"],\n            "forecast_home_max_points_per_hour": home_row_diagnostics["max_points_per_hour"],\n            "forecast_home_aggregation": "sum_energy_per_hour",\n            "forecast_solar_hours": solar_count,\n'''
+          if old_diag not in text:
+              raise SystemExit('forecast diagnostics anchor not found')
+          text = text.replace(old_diag, new_diag, 1)
+
+          old_relevant = '''        relevant = (\n            ("solcast_forecast", "stroomvoorspeller")\n            if data.get("price_architecture_enabled")\n            else ("solcast_forecast", "stroomvoorspeller", "energyzero_prices", "price_forecast")\n        )\n'''
+          new_relevant = '''        relevant = (\n            ("solcast_forecast", "stroomvoorspeller", "home_forecast")\n            if data.get("price_architecture_enabled")\n            else ("solcast_forecast", "stroomvoorspeller", "energyzero_prices", "price_forecast", "home_forecast")\n        )\n'''
+          if old_relevant not in text:
+              raise SystemExit('planner source token anchor not found')
+          text = text.replace(old_relevant, new_relevant, 1)
+
+          old_monitor = '''            "price_forecast": {\n                "entity_ids": [forecast_ids["forecast_price"]],\n                "content": state_payload(forecast_ids["forecast_price"], ("forecasts",)),\n            },\n        }\n'''
+          new_monitor = '''            "price_forecast": {\n                "entity_ids": [forecast_ids["forecast_price"]],\n                "content": state_payload(forecast_ids["forecast_price"], ("forecasts",)),\n            },\n            "home_forecast": {\n                "entity_ids": [forecast_ids["home"]],\n                "content": state_payload(forecast_ids["home"], ("forecasts",)),\n            },\n        }\n'''
+          if old_monitor not in text:
+              raise SystemExit('source monitor anchor not found')
+          text = text.replace(old_monitor, new_monitor, 1)
+
+          path.write_text(text)
+
+          const_path = Path('custom_components/anker_ems/const.py')
+          const_text = const_path.read_text().replace('VERSION = "0.0.1-alpha.66"', 'VERSION = "0.0.1-alpha.67"', 1)
+          const_path.write_text(const_text)
+
+          manifest_path = Path('custom_components/anker_ems/manifest.json')
+          manifest = json.loads(manifest_path.read_text())
+          manifest['version'] = '0.0.1-alpha.67'
+          manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + '\n')
+
+          Path('RELEASE_NOTES_ALPHA67.md').write_text('''# Dummy OS EMS 0.0.1-alpha.67 - Home Forecast Hourly Aggregation Fix\n\n## Samenvatting\nAlpha67 corrigeert de omzetting van sub-uurlijkse woningforecast-energie naar de uurlijkse Plan72-laag. Kwartierwaarden in kWh worden voortaan per uur gesommeerd in plaats van elkaar te overschrijven.\n\n## Opgelost\n- Woningforecastregels worden eerst per unieke timestamp gede-dupliceerd.\n- Meerdere forecastpunten binnen hetzelfde uur worden als energie (kWh) opgeteld.\n- Een bron die al uurlijkse waarden levert blijft ongewijzigd: één punt per uur blijft één uurwaarde.\n- Diagnostiek toegevoegd voor raw rows, unieke punten, uurlijkse rijen, sub-uurlijkse uren en maximaal aantal punten per uur.\n- Wijzigingen in de woningforecast zijn toegevoegd aan de Source Monitor/Plan72 refresh-token, zodat een gewijzigde woningforecast niet tot de volgende periodieke refresh hoeft te wachten.\n\n## Bewust ongewijzigd\n- De externe Home Forecast-entiteit blijft in alpha67 nog de bron van woningforecastdata.\n- Plan72 handelslogica, prijsformules en safety/execution-keten zijn niet gewijzigd.\n- De geplande eigen lerende Home Demand Forecast in de EMS-integratie volgt als aparte uitbreiding na live-validatie van deze hotfix.\n\n## Live validatie\n- Controleer `forecast_home_aggregation = sum_energy_per_hour`.\n- Bij vier kwartierpunten in een uur moet `forecast_home_max_points_per_hour` minimaal 4 kunnen worden.\n- Vergelijk voor een uur de som van de bronkwartieren met `home_consumption_kwh` in de EMS forecast.\n- Controleer daarna of nachtelijke Energy Need en Plan72 SOC-projectie realistischer worden.\n''')
+          PY
+
+          python -m compileall -q custom_components/anker_ems
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          text = Path('custom_components/anker_ems/coordinator.py').read_text()
+          required = [
+              'def _aggregate_home_rows_hourly(',
+              '"forecast_home_aggregation": "sum_energy_per_hour"',
+              '"home_forecast"',
+              'home_hourly_rows',
+              'sum(value for _stamp, value in points)',
+          ]
+          for token in required:
+              if token not in text:
+                  raise SystemExit(f'missing regression token: {token}')
+          assert 'VERSION = "0.0.1-alpha.67"' in Path('custom_components/anker_ems/const.py').read_text()
+          assert json.loads(Path('custom_components/anker_ems/manifest.json').read_text())['version'] == '0.0.1-alpha.67'
+          print('HOME_FORECAST_AGGREGATION_SOURCE_VALIDATION_OK')
+          PY
+          find custom_components/anker_ems -type d -name __pycache__ -prune -exec rm -rf {} +
+          git add custom_components/anker_ems/coordinator.py custom_components/anker_ems/const.py custom_components/anker_ems/manifest.json RELEASE_NOTES_ALPHA67.md
+          git commit -m 'Fix hourly aggregation of home forecast energy'
+          git push origin HEAD:fix-home-forecast-hourly-aggregation
