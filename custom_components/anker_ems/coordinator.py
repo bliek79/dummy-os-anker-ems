@@ -43,6 +43,7 @@ from .const import (
     CONF_DISCHARGE_POWER_ENTITY,
     CONF_GRID_IMPORT_POWER_ENTITY,
     CONF_GRID_EXPORT_POWER_ENTITY,
+    CONF_SOLAR_POWER_ENTITY,
     CONF_OPERATING_MODE_ENTITY,
     CONF_ACTION_DIRECTION_ENTITY,
     CONF_POWER_SETPOINT_ENTITY,
@@ -481,6 +482,55 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _number(self, key: str) -> float | None:
         return _as_float(self._state(key))
+
+    def _home_power_snapshot(self) -> dict[str, Any]:
+        """Build canonical home power from the five directional power sources.
+
+        All configured source sensors are expected to expose positive power in W
+        for their named direction. The EMS home load is therefore:
+        solar + grid import + battery discharge - grid export - battery charge.
+        The raw result is retained for diagnostics; the canonical load is clamped
+        at zero to absorb tiny asynchronous meter timing differences.
+        """
+        source_keys = {
+            "grid_import": CONF_GRID_IMPORT_POWER_ENTITY,
+            "grid_export": CONF_GRID_EXPORT_POWER_ENTITY,
+            "solar": CONF_SOLAR_POWER_ENTITY,
+            "battery_charge": CONF_CHARGE_POWER_ENTITY,
+            "battery_discharge": CONF_DISCHARGE_POWER_ENTITY,
+        }
+        entities = {name: self._entity_id(key) for name, key in source_keys.items()}
+        values = {name: self._number(key) for name, key in source_keys.items()}
+        missing = [name for name in source_keys if not entities.get(name) or values.get(name) is None]
+        if missing:
+            return {
+                "home_power_valid": False,
+                "home_power_status": "waiting_for_sources",
+                "home_power_w": None,
+                "home_power_raw_w": None,
+                "home_power_missing_sources": missing,
+                "home_power_source_entities": entities,
+                "home_power_source_values_w": values,
+                "home_power_formula": "solar + grid_import + battery_discharge - grid_export - battery_charge",
+            }
+
+        raw = (
+            float(values["solar"])
+            + float(values["grid_import"])
+            + float(values["battery_discharge"])
+            - float(values["grid_export"])
+            - float(values["battery_charge"])
+        )
+        return {
+            "home_power_valid": True,
+            "home_power_status": "ready",
+            "home_power_w": round(max(0.0, raw), 3),
+            "home_power_raw_w": round(raw, 3),
+            "home_power_missing_sources": [],
+            "home_power_source_entities": entities,
+            "home_power_source_values_w": values,
+            "home_power_formula": "solar + grid_import + battery_discharge - grid_export - battery_charge",
+        }
 
     def _attributes(self, entity_id: str | None) -> dict[str, Any]:
         if not entity_id:
@@ -1070,10 +1120,12 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "discharge_power_w": self._number(CONF_DISCHARGE_POWER_ENTITY),
             "grid_import_power_w": self._number(CONF_GRID_IMPORT_POWER_ENTITY),
             "grid_export_power_w": self._number(CONF_GRID_EXPORT_POWER_ENTITY),
+            "solar_power_w": self._number(CONF_SOLAR_POWER_ENTITY),
             "operating_mode": self._state(CONF_OPERATING_MODE_ENTITY),
             "action_direction": self._state(CONF_ACTION_DIRECTION_ENTITY),
             "power_setpoint_w": self._number(CONF_POWER_SETPOINT_ENTITY),
         }
+        data.update(self._home_power_snapshot())
         if self._price_architecture_settings()["enabled"]:
             await self._async_refresh_direct_price_forecast()
         data.update(self._build_forecast())

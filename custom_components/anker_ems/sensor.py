@@ -21,6 +21,20 @@ class AnkerEmsSensorDescription(SensorEntityDescription):
     attrs_fn: Callable[[dict[str, Any]], dict[str, Any]] | None = None
 
 
+def _home_power_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "valid": data.get("home_power_valid", False),
+        "status": data.get("home_power_status"),
+        "raw_power_w": data.get("home_power_raw_w"),
+        "formula": data.get("home_power_formula"),
+        "source_entities": data.get("home_power_source_entities", {}),
+        "source_values_w": data.get("home_power_source_values_w", {}),
+        "missing_sources": data.get("home_power_missing_sources", []),
+        "shadow_only": True,
+        "plan72_source": False,
+    }
+
+
 def _forecast_attrs(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "horizon_hours": data.get("forecast_horizon_hours"),
@@ -688,6 +702,13 @@ def _controller_attrs(data: dict[str, Any]) -> dict[str, Any]:
 
 
 SENSORS: tuple[AnkerEmsSensorDescription, ...] = (
+    AnkerEmsSensorDescription(
+        key="home_power",
+        name="DO EMS Home Power",
+        native_unit_of_measurement=UnitOfPower.WATT,
+        value_fn=lambda d: d.get("home_power_w"),
+        attrs_fn=_home_power_attrs,
+    ),
     AnkerEmsSensorDescription(
         key="automatic_execution_shadow",
         name="Dummy OS EMS Automatic Execution Shadow",
