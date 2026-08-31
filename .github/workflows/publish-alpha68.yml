@@ -1,0 +1,51 @@
+name: Publish alpha68 prerelease
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/publish-alpha68.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact source commit
+        uses: actions/checkout@v4
+        with:
+          ref: dbaa90c767a7f123cabb022b95ec179ac47623b7
+          fetch-depth: 0
+
+      - name: Build release archive and checksum
+        shell: bash
+        run: |
+          set -e
+          rm -rf dist
+          mkdir -p dist
+          zip -r dist/dummy-os-anker-ems-alpha68.zip custom_components/anker_ems -x '*/__pycache__/*' '*.pyc'
+          cd dist
+          sha256sum dummy-os-anker-ems-alpha68.zip > SHA256SUMS-alpha68.txt
+          cat SHA256SUMS-alpha68.txt
+
+      - name: Create prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -e
+          TAG='0.0.1-alpha.68'
+          TITLE='Dummy OS EMS 0.0.1-alpha.68 - Internal Home Power'
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --yes --cleanup-tag
+          fi
+          gh release create "$TAG" \
+            --target dbaa90c767a7f123cabb022b95ec179ac47623b7 \
+            --title "$TITLE" \
+            --notes-file RELEASE_NOTES_ALPHA68.md \
+            --prerelease \
+            dist/dummy-os-anker-ems-alpha68.zip \
+            dist/SHA256SUMS-alpha68.txt
