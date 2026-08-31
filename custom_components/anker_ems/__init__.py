@@ -542,8 +542,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     entry.async_on_unload(hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _shutdown))
 
+    # Migrate already-registered entities first, then run the same explicit
+    # naming contract once more after platform setup so newly-created entities
+    # cannot keep an automatically generated Home Assistant object ID.
     await async_migrate_entity_ids(hass, entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    await async_migrate_entity_ids(hass, entry)
     _LOGGER.info(
         "Dummy OS EMS loaded in %s mode",
         "simulation" if coordinator.simulation_mode else "observe",
