@@ -297,6 +297,7 @@ def build_planner_action_bridge(
         "auto_bridge_rolling_window": True,
         "auto_bridge_slot_capacity": PLAN_SLOT_COUNT,
         "auto_bridge_pending_reconciliation_enabled": True,
+        "auto_bridge_active_execution_suppressed_count": 0,
         "auto_bridge_max_charge_power_w": max_charge_power_w,
         "auto_bridge_max_discharge_power_w": max_discharge_power_w,
         "auto_bridge_min_actionable_safety_charge_kwh": MIN_ACTIONABLE_SAFETY_CHARGE_KWH,
@@ -412,6 +413,7 @@ def build_planner_action_bridge(
                 "manual_status": detail.get("status"),
                 "manual_lifecycle_status": detail.get("lifecycle_status"),
                 "manual_origin": detail.get("origin"),
+                "planned_end_time": detail.get("planned_end_time"),
                 "planner_signature": detail.get("planner_signature"),
                 "planner_identity": detail.get("planner_identity") or _identity_from_signature(detail.get("planner_signature")),
             }
@@ -423,12 +425,69 @@ def build_planner_action_bridge(
     # (purpose + source hour(s)) remains the same.
     preview: list[dict[str, Any]] = []
     used_slots: set[int] = set()
+    active_execution_suppressed = 0
+
+    def active_automatic_overlap(
+        item: dict[str, Any],
+        candidate: dict[str, Any],
+        identity: str,
+    ) -> bool:
+        """Return True when candidate duplicates an already active automatic action."""
+        if item.get("manual_origin") != "automatic_72h_planner":
+            return False
+        if str(item.get("manual_lifecycle_status") or "").lower() != "actief":
+            return False
+        if str(item.get("manual_action") or "") != str(candidate.get("action") or ""):
+            return False
+
+        # Stable identity is the strongest signal that the rolling Plan72 refresh
+        # is describing the same physical action that is already executing.
+        if item.get("planner_identity") == identity:
+            return True
+
+        # During an active run the forecast may revise purpose/energy and thereby
+        # change planner identity. A same-direction candidate that starts before
+        # the active plan's explicit end still overlaps the running action and
+        # must not be promoted into a second slot. A genuinely later action is
+        # left untouched.
+        candidate_start = _parse_time(candidate.get("start_time"))
+        active_end = _parse_time(item.get("planned_end_time"))
+        return bool(
+            candidate_start is not None
+            and active_end is not None
+            and candidate_start < active_end
+        )
+
     for candidate in candidates[:PLAN_SLOT_COUNT]:
         enriched = dict(candidate)
         identity = _candidate_identity(enriched)
         signature = _candidate_signature(enriched)
         enriched["planner_identity"] = identity
         enriched["planner_signature"] = signature
+
+        active_match = next(
+            (
+                item
+                for item in slot_statuses
+                if active_automatic_overlap(item, enriched, identity)
+            ),
+            None,
+        )
+        if active_match is not None:
+            active_execution_suppressed += 1
+            enriched["suggested_slot"] = None
+            enriched["manual_slot_available"] = False
+            enriched["manual_slot_status"] = active_match.get("manual_status")
+            enriched["automatic_pending_match"] = False
+            enriched["active_execution_match"] = True
+            enriched["active_execution_slot"] = active_match.get("slot")
+            enriched["plan_store_write_permitted"] = False
+            enriched["scheduler_handoff_permitted"] = False
+            preview.append(enriched)
+            continue
+
+        enriched["active_execution_match"] = False
+        enriched["active_execution_slot"] = None
 
         matched = next(
             (
@@ -477,7 +536,12 @@ def build_planner_action_bridge(
         preview.append(enriched)
 
     invalid_candidates = sum(1 for candidate in candidates if not candidate.get("valid"))
-    preview_conflicts = sum(1 for item in preview if not item.get("manual_slot_available"))
+    preview_conflicts = sum(
+        1
+        for item in preview
+        if not item.get("manual_slot_available")
+        and not item.get("active_execution_match")
+    )
     overflow = max(0, len(candidates) - len(preview))
 
     if not candidates:
@@ -534,6 +598,7 @@ def build_planner_action_bridge(
         "auto_bridge_reason": reason,
         "auto_bridge_candidate_count": len(candidates),
         "auto_bridge_slot_preview_count": len(preview),
+        "auto_bridge_active_execution_suppressed_count": active_execution_suppressed,
         "auto_bridge_suppressed_safety_charge_kwh": round(suppressed_safety_kwh, 3),
         "auto_bridge_suppressed_safety_charge_count": len(suppressed_safety_hours),
         "auto_bridge_suppressed_safety_charge_hours": suppressed_safety_hours,
@@ -547,6 +612,7 @@ def build_planner_action_bridge(
         "auto_bridge_manual_slot_conflict_count": preview_conflicts,
         "auto_bridge_note": (
             "Planner-owned pending plannen worden op stabiele planner identity gereconcilieerd. "
+            "Een overlappende actie van hetzelfde type wordt niet opnieuw naar een vrij slot geschreven zolang de oorspronkelijke automatische actie actief is. "
             "Plan Store-write, Scheduler-handoff en pre-start veiligheidsvalidatie zijn actief; "
             "fysieke automatische uitvoering blijft apart geborgd door de Automatic Execution-arm en safety-keten."
         ),
