@@ -1,0 +1,90 @@
+name: Publish alpha66 release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-alpha66.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate release source
+        shell: bash
+        run: |
+          SOURCE_SHA='2068dcc75f3b3e6282c4f36be0ab6474cdd3d889'
+          git checkout "$SOURCE_SHA"
+          python -m compileall -q custom_components/anker_ems
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          bridge = Path('custom_components/anker_ems/planner_action_bridge.py').read_text()
+          required = [
+              'active_automatic_overlap',
+              'active_execution_match',
+              'active_execution_slot',
+              'auto_bridge_active_execution_suppressed_count',
+              'candidate_start < active_end',
+          ]
+          for token in required:
+              assert token in bridge, token
+          assert 'VERSION = "0.0.1-alpha.66"' in Path('custom_components/anker_ems/const.py').read_text()
+          assert json.loads(Path('custom_components/anker_ems/manifest.json').read_text())['version'] == '0.0.1-alpha.66'
+          assert Path('RELEASE_NOTES_ALPHA66.md').exists()
+          print('ALPHA66_SOURCE_VALIDATION_OK')
+          PY
+          find custom_components/anker_ems -type d -name __pycache__ -prune -exec rm -rf {} +
+          if find custom_components/anker_ems -type f \( -name '*.pyc' -o -name '*.pyo' \) | grep -q .; then exit 1; fi
+          git checkout main
+
+      - name: Build release assets
+        shell: bash
+        run: |
+          SOURCE_SHA='2068dcc75f3b3e6282c4f36be0ab6474cdd3d889'
+          git archive --format=zip --output=dummy-os-anker-ems-alpha66.zip "$SOURCE_SHA" custom_components/anker_ems
+          sha256sum dummy-os-anker-ems-alpha66.zip > SHA256SUMS-alpha66.txt
+          unzip -l dummy-os-anker-ems-alpha66.zip
+
+      - name: Create tag and prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          SOURCE_SHA='2068dcc75f3b3e6282c4f36be0ab6474cdd3d889'
+          if git rev-parse 0.0.1-alpha.66 >/dev/null 2>&1; then
+            echo 'Tag 0.0.1-alpha.66 already exists' >&2
+            exit 1
+          fi
+          git tag -a 0.0.1-alpha.66 "$SOURCE_SHA" -m 'Dummy OS EMS 0.0.1-alpha.66 - Active Plan Duplicate Suppression Hotfix'
+          git push origin refs/tags/0.0.1-alpha.66
+          gh release create 0.0.1-alpha.66 \
+            dummy-os-anker-ems-alpha66.zip SHA256SUMS-alpha66.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --title 'Dummy OS EMS 0.0.1-alpha.66 - Active Plan Duplicate Suppression Hotfix' \
+            --notes-file RELEASE_NOTES_ALPHA66.md \
+            --prerelease \
+            --target "$SOURCE_SHA"
+
+      - name: Remove temporary workflow
+        if: always()
+        shell: bash
+        run: |
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/publish-alpha66.yml
+          git commit -m 'Remove temporary alpha66 publishing workflow'
+          git push origin HEAD:main
