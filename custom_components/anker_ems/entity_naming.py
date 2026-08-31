@@ -13,6 +13,8 @@ _LOGGER = logging.getLogger(__name__)
 # for new canonical EMS entities whose object ID is deliberately fixed.
 EXACT_ENTITY_IDS = {
     ("sensor", "home_power"): "sensor.do_ems_home_power",
+    ("sensor", "home_energy_15m"): "sensor.do_ems_home_energy_15m",
+    ("sensor", "home_history_days"): "sensor.do_ems_home_history_days",
 }
 
 # Alpha28 keeps unique IDs stable and migrates only entity_id object IDs.
