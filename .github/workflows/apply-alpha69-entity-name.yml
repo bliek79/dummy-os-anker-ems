@@ -1,0 +1,66 @@
+name: Apply alpha69 entity naming fix
+
+on:
+  push:
+    branches:
+      - fix-alpha69-home-power-entity-id
+    paths:
+      - '.github/workflows/apply-alpha69-entity-name.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix-alpha69-home-power-entity-id
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Apply exact entity-id migration and version
+        shell: bash
+        run: |
+          set -e
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python - <<'PY'
+          from pathlib import Path
+          import json
+
+          init = Path('custom_components/anker_ems/__init__.py')
+          text = init.read_text()
+          old = '''    await async_migrate_entity_ids(hass, entry)\n    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)\n    _LOGGER.info(\n'''
+          new = '''    # Migrate already-registered entities first, then run the same explicit\n    # naming contract once more after platform setup so newly-created entities\n    # cannot keep an automatically generated Home Assistant object ID.\n    await async_migrate_entity_ids(hass, entry)\n    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)\n    await async_migrate_entity_ids(hass, entry)\n    _LOGGER.info(\n'''
+          if old not in text:
+              raise SystemExit('setup migration anchor missing')
+          init.write_text(text.replace(old, new, 1))
+
+          const = Path('custom_components/anker_ems/const.py')
+          text = const.read_text().replace('VERSION = "0.0.1-alpha.68"', 'VERSION = "0.0.1-alpha.69"', 1)
+          const.write_text(text)
+
+          manifest_path = Path('custom_components/anker_ems/manifest.json')
+          manifest = json.loads(manifest_path.read_text())
+          manifest['version'] = '0.0.1-alpha.69'
+          manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + '\n')
+
+          Path('RELEASE_NOTES_ALPHA69.md').write_text('''# Dummy OS EMS 0.0.1-alpha.69 - Exact Home Power Entity ID\n\n## Correctie\n- De canonieke EMS Home Power krijgt exact de project-afgesproken entity-ID `sensor.do_ems_home_power`.\n- De bestaande alpha68 entity `sensor.dummy_os_ems_do_ems_home_power` wordt via de entity registry gemigreerd zonder de stable unique_id te vervangen.\n- De naming-migratie draait zowel voor als na platform-setup, zodat ook nieuw aangemaakte entiteiten direct aan het expliciete Dummy OS naming-contract worden onderworpen.\n\n## Vaste projectregel\nNieuwe Dummy OS / EMS entity-ID's worden vooraf expliciet vastgelegd en gecontroleerd. Een automatisch door Home Assistant afgeleide object-ID is geen geldige vervanging voor de afgesproken entity-ID.\n\n## Niet gewijzigd\nHome Power formule, bronselectie, forecast, Plan72, safety en fysieke execution blijven ongewijzigd.\n''')
+          PY
+          python -m compileall -q custom_components/anker_ems
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          naming = Path('custom_components/anker_ems/entity_naming.py').read_text()
+          init = Path('custom_components/anker_ems/__init__.py').read_text()
+          assert '("sensor", "home_power"): "sensor.do_ems_home_power"' in naming
+          assert init.count('await async_migrate_entity_ids(hass, entry)') >= 2
+          assert 'VERSION = "0.0.1-alpha.69"' in Path('custom_components/anker_ems/const.py').read_text()
+          assert json.loads(Path('custom_components/anker_ems/manifest.json').read_text())['version'] == '0.0.1-alpha.69'
+          print('ALPHA69_ENTITY_NAME_VALIDATION_OK')
+          PY
+          find custom_components/anker_ems -type d -name __pycache__ -prune -exec rm -rf {} +
+          git add custom_components/anker_ems/entity_naming.py custom_components/anker_ems/__init__.py custom_components/anker_ems/const.py custom_components/anker_ems/manifest.json RELEASE_NOTES_ALPHA69.md
+          git commit -m 'Enforce exact EMS home power entity ID'
+          git push origin HEAD:fix-alpha69-home-power-entity-id
