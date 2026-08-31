@@ -314,9 +314,9 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Return a stable token for content changes relevant to the 72h planner."""
         sources = data.get("source_monitor_sources") or {}
         relevant = (
-            ("solcast_forecast", "stroomvoorspeller")
+            ("solcast_forecast", "stroomvoorspeller", "home_forecast")
             if data.get("price_architecture_enabled")
-            else ("solcast_forecast", "stroomvoorspeller", "energyzero_prices", "price_forecast")
+            else ("solcast_forecast", "stroomvoorspeller", "energyzero_prices", "price_forecast", "home_forecast")
         )
         base = "|".join(
             f"{name}:{(sources.get(name) or {}).get('last_content_change') or ''}"
@@ -664,6 +664,56 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return rows
 
     @staticmethod
+    def _aggregate_home_rows_hourly(
+        rows: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], dict[str, int]]:
+        """Aggregate home-consumption forecast energy to hourly planner slots.
+
+        Forecast values are energy per source interval (kWh). Multiple sub-hourly
+        points in the same hour therefore have to be summed, never overwritten
+        and never averaged. Exact duplicate timestamps are de-duplicated first.
+        A native hourly source remains unchanged because it contributes one point.
+        """
+        per_timestamp: dict[datetime, float] = {}
+        for row in rows:
+            stamp = _parse_datetime(_first(row, ("time", "timestamp", "datetime", "start")))
+            value = _as_float(_first(row, ("predicted", "value", "consumption", "kwh")))
+            if stamp is None or value is None:
+                continue
+            per_timestamp[stamp] = max(0.0, value)
+
+        grouped: dict[datetime, list[tuple[datetime, float]]] = {}
+        for stamp, value in per_timestamp.items():
+            hour = stamp.replace(minute=0, second=0, microsecond=0)
+            grouped.setdefault(hour, []).append((stamp, value))
+
+        aggregated: list[dict[str, Any]] = []
+        subhourly_hours = 0
+        max_points_per_hour = 0
+        for hour in sorted(grouped):
+            points = sorted(grouped[hour], key=lambda item: item[0])
+            point_count = len(points)
+            max_points_per_hour = max(max_points_per_hour, point_count)
+            if point_count > 1:
+                subhourly_hours += 1
+            aggregated.append(
+                {
+                    "time": hour.isoformat(),
+                    "home_consumption_kwh": sum(value for _stamp, value in points),
+                    "source_point_count": point_count,
+                    "forecast_granularity": "subhourly_sum" if point_count > 1 else "hourly",
+                }
+            )
+
+        return aggregated, {
+            "raw_rows": len(rows),
+            "unique_points": len(per_timestamp),
+            "hourly_rows": len(aggregated),
+            "subhourly_hours": subhourly_hours,
+            "max_points_per_hour": max_points_per_hour,
+        }
+
+    @staticmethod
     def _aggregate_market_rows_hourly(
         rows: list[dict[str, Any]],
     ) -> tuple[list[dict[str, Any]], dict[str, int]]:
@@ -764,6 +814,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
         home_rows = self._rows(entity_ids["home"], "forecasts")
+        home_hourly_rows, home_row_diagnostics = self._aggregate_home_rows_hourly(home_rows)
         solar_rows: list[dict[str, Any]] = []
         for key in ("solar_today", "solar_tomorrow", "solar_day3"):
             solar_rows.extend(self._rows(entity_ids[key], "detailedHourly"))
@@ -850,13 +901,11 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 slots[hour]["import_price_source"] = "known"
                 slots[hour]["export_price_source"] = "known"
 
-        for row in home_rows:
-            hour = _hour_key(_first(row, ("time", "timestamp", "datetime", "start")))
+        for row in home_hourly_rows:
+            hour = _hour_key(row.get("time"))
             if hour not in slots:
                 continue
-            slots[hour]["home_consumption_kwh"] = _as_float(
-                _first(row, ("predicted", "value", "consumption", "kwh"))
-            )
+            slots[hour]["home_consumption_kwh"] = _as_float(row.get("home_consumption_kwh"))
 
         for row in solar_rows:
             hour = _hour_key(_first(row, ("period_start", "periodStart", "time", "timestamp")))
@@ -886,7 +935,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 missing_sources.append("price")
         elif not known_rows and not price_rows:
             missing_sources.append("price")
-        if not home_rows:
+        if not home_hourly_rows:
             missing_sources.append("home")
         if not solar_rows:
             missing_sources.append("solar")
@@ -898,6 +947,12 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "forecast_horizon_hours": FORECAST_HORIZON_HOURS,
             "forecast_price_hours": price_count,
             "forecast_home_hours": home_count,
+            "forecast_home_raw_rows": home_row_diagnostics["raw_rows"],
+            "forecast_home_unique_points": home_row_diagnostics["unique_points"],
+            "forecast_home_hourly_rows": home_row_diagnostics["hourly_rows"],
+            "forecast_home_subhourly_hours": home_row_diagnostics["subhourly_hours"],
+            "forecast_home_max_points_per_hour": home_row_diagnostics["max_points_per_hour"],
+            "forecast_home_aggregation": "sum_energy_per_hour",
             "forecast_solar_hours": solar_count,
             "forecast_complete_hours": complete_count,
             "forecast_missing_sources": missing_sources,
@@ -987,6 +1042,10 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "price_forecast": {
                 "entity_ids": [forecast_ids["forecast_price"]],
                 "content": state_payload(forecast_ids["forecast_price"], ("forecasts",)),
+            },
+            "home_forecast": {
+                "entity_ids": [forecast_ids["home"]],
+                "content": state_payload(forecast_ids["home"], ("forecasts",)),
             },
         }
 
