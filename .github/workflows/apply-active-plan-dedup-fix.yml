@@ -1,0 +1,108 @@
+name: Apply active plan duplicate suppression fix
+
+on:
+  push:
+    branches:
+      - fix-active-plan-duplicate-suppression
+    paths:
+      - '.github/workflows/apply-active-plan-dedup-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fix branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix-active-plan-duplicate-suppression
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply targeted bridge fix
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('custom_components/anker_ems/planner_action_bridge.py')
+          text = path.read_text()
+
+          old_base = '''        "auto_bridge_pending_reconciliation_enabled": True,\n        "auto_bridge_max_charge_power_w": max_charge_power_w,\n'''
+          new_base = '''        "auto_bridge_pending_reconciliation_enabled": True,\n        "auto_bridge_active_execution_suppressed_count": 0,\n        "auto_bridge_max_charge_power_w": max_charge_power_w,\n'''
+          if old_base not in text:
+              raise SystemExit('bridge base anchor not found')
+          text = text.replace(old_base, new_base, 1)
+
+          old_slot = '''                "manual_origin": detail.get("origin"),\n                "planner_signature": detail.get("planner_signature"),\n                "planner_identity": detail.get("planner_identity") or _identity_from_signature(detail.get("planner_signature")),\n'''
+          new_slot = '''                "manual_origin": detail.get("origin"),\n                "planned_end_time": detail.get("planned_end_time"),\n                "planner_signature": detail.get("planner_signature"),\n                "planner_identity": detail.get("planner_identity") or _identity_from_signature(detail.get("planner_signature")),\n'''
+          if old_slot not in text:
+              raise SystemExit('slot diagnostics anchor not found')
+          text = text.replace(old_slot, new_slot, 1)
+
+          old_preview = '''    preview: list[dict[str, Any]] = []\n    used_slots: set[int] = set()\n    for candidate in candidates[:PLAN_SLOT_COUNT]:\n        enriched = dict(candidate)\n        identity = _candidate_identity(enriched)\n        signature = _candidate_signature(enriched)\n        enriched["planner_identity"] = identity\n        enriched["planner_signature"] = signature\n\n        matched = next(\n'''
+          new_preview = '''    preview: list[dict[str, Any]] = []\n    used_slots: set[int] = set()\n    active_execution_suppressed = 0\n\n    def active_automatic_overlap(\n        item: dict[str, Any],\n        candidate: dict[str, Any],\n        identity: str,\n    ) -> bool:\n        """Return True when candidate duplicates an already active automatic action."""\n        if item.get("manual_origin") != "automatic_72h_planner":\n            return False\n        if str(item.get("manual_lifecycle_status") or "").lower() != "actief":\n            return False\n        if str(item.get("manual_action") or "") != str(candidate.get("action") or ""):\n            return False\n\n        # Stable identity is the strongest signal that the rolling Plan72 refresh\n        # is describing the same physical action that is already executing.\n        if item.get("planner_identity") == identity:\n            return True\n\n        # During an active run the forecast may revise purpose/energy and thereby\n        # change planner identity. A same-direction candidate that starts before\n        # the active plan's explicit end still overlaps the running action and\n        # must not be promoted into a second slot. A genuinely later action is\n        # left untouched.\n        candidate_start = _parse_time(candidate.get("start_time"))\n        active_end = _parse_time(item.get("planned_end_time"))\n        return bool(\n            candidate_start is not None\n            and active_end is not None\n            and candidate_start < active_end\n        )\n\n    for candidate in candidates[:PLAN_SLOT_COUNT]:\n        enriched = dict(candidate)\n        identity = _candidate_identity(enriched)\n        signature = _candidate_signature(enriched)\n        enriched["planner_identity"] = identity\n        enriched["planner_signature"] = signature\n\n        active_match = next(\n            (\n                item\n                for item in slot_statuses\n                if active_automatic_overlap(item, enriched, identity)\n            ),\n            None,\n        )\n        if active_match is not None:\n            active_execution_suppressed += 1\n            enriched["suggested_slot"] = None\n            enriched["manual_slot_available"] = False\n            enriched["manual_slot_status"] = active_match.get("manual_status")\n            enriched["automatic_pending_match"] = False\n            enriched["active_execution_match"] = True\n            enriched["active_execution_slot"] = active_match.get("slot")\n            enriched["plan_store_write_permitted"] = False\n            enriched["scheduler_handoff_permitted"] = False\n            preview.append(enriched)\n            continue\n\n        enriched["active_execution_match"] = False\n        enriched["active_execution_slot"] = None\n\n        matched = next(\n'''
+          if old_preview not in text:
+              raise SystemExit('preview anchor not found')
+          text = text.replace(old_preview, new_preview, 1)
+
+          old_conflicts = '''    preview_conflicts = sum(1 for item in preview if not item.get("manual_slot_available"))\n'''
+          new_conflicts = '''    preview_conflicts = sum(\n        1\n        for item in preview\n        if not item.get("manual_slot_available")\n        and not item.get("active_execution_match")\n    )\n'''
+          if old_conflicts not in text:
+              raise SystemExit('preview conflict anchor not found')
+          text = text.replace(old_conflicts, new_conflicts, 1)
+
+          old_return = '''        "auto_bridge_slot_preview_count": len(preview),\n        "auto_bridge_suppressed_safety_charge_kwh": round(suppressed_safety_kwh, 3),\n'''
+          new_return = '''        "auto_bridge_slot_preview_count": len(preview),\n        "auto_bridge_active_execution_suppressed_count": active_execution_suppressed,\n        "auto_bridge_suppressed_safety_charge_kwh": round(suppressed_safety_kwh, 3),\n'''
+          if old_return not in text:
+              raise SystemExit('return diagnostics anchor not found')
+          text = text.replace(old_return, new_return, 1)
+
+          old_note = '''            "Planner-owned pending plannen worden op stabiele planner identity gereconcilieerd. "\n            "Plan Store-write, Scheduler-handoff en pre-start veiligheidsvalidatie zijn actief; "\n'''
+          new_note = '''            "Planner-owned pending plannen worden op stabiele planner identity gereconcilieerd. "\n            "Een overlappende actie van hetzelfde type wordt niet opnieuw naar een vrij slot geschreven zolang de oorspronkelijke automatische actie actief is. "\n            "Plan Store-write, Scheduler-handoff en pre-start veiligheidsvalidatie zijn actief; "\n'''
+          if old_note not in text:
+              raise SystemExit('bridge note anchor not found')
+          text = text.replace(old_note, new_note, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Validate source and targeted regression contract
+        shell: bash
+        run: |
+          python -m compileall -q custom_components/anker_ems
+          python - <<'PY'
+          from pathlib import Path
+
+          text = Path('custom_components/anker_ems/planner_action_bridge.py').read_text()
+          required = [
+              'active_automatic_overlap',
+              'active_execution_match',
+              'active_execution_slot',
+              'auto_bridge_active_execution_suppressed_count',
+              'candidate_start < active_end',
+              'plan_store_write_permitted"] = False',
+              'scheduler_handoff_permitted"] = False',
+          ]
+          for token in required:
+              if token not in text:
+                  raise SystemExit(f'missing regression token: {token}')
+
+          if text.count('def active_automatic_overlap(') != 1:
+              raise SystemExit('active overlap helper inserted more than once')
+
+          print('ACTIVE_PLAN_DEDUP_SOURCE_VALIDATION_OK')
+          PY
+          find custom_components/anker_ems -type d -name __pycache__ -prune -exec rm -rf {} +
+          if find custom_components/anker_ems -type f \( -name '*.pyc' -o -name '*.pyo' \) | grep -q .; then exit 1; fi
+
+      - name: Commit targeted fix
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add custom_components/anker_ems/planner_action_bridge.py
+          git commit -m 'Fix duplicate automatic plan during active execution'
+          git push origin HEAD:fix-active-plan-duplicate-suppression
