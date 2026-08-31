@@ -1,0 +1,51 @@
+name: Publish alpha69 prerelease
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/publish-alpha69.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact source commit
+        uses: actions/checkout@v4
+        with:
+          ref: 3653f28df5369d8408fd6f9a5c96eed05e029ed2
+          fetch-depth: 0
+
+      - name: Build release archive and checksum
+        shell: bash
+        run: |
+          set -e
+          rm -rf dist
+          mkdir -p dist
+          zip -r dist/dummy-os-anker-ems-alpha69.zip custom_components/anker_ems -x '*/__pycache__/*' '*.pyc'
+          cd dist
+          sha256sum dummy-os-anker-ems-alpha69.zip > SHA256SUMS-alpha69.txt
+          cat SHA256SUMS-alpha69.txt
+
+      - name: Create prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -e
+          TAG='0.0.1-alpha.69'
+          TITLE='Dummy OS EMS 0.0.1-alpha.69 - Exact Home Power Entity ID'
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --yes --cleanup-tag
+          fi
+          gh release create "$TAG" \
+            --target 3653f28df5369d8408fd6f9a5c96eed05e029ed2 \
+            --title "$TITLE" \
+            --notes-file RELEASE_NOTES_ALPHA69.md \
+            --prerelease \
+            dist/dummy-os-anker-ems-alpha69.zip \
+            dist/SHA256SUMS-alpha69.txt
