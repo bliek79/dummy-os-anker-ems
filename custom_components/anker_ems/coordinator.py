@@ -22,6 +22,7 @@ from .physical_test import AnkerEmsPhysicalTestController
 from .execution import AnkerEmsExecutionController
 from .source_monitor import AnkerEmsSourceMonitor
 from .home_history import AnkerEmsHomeHistory
+from .home_forecast import build_internal_home_forecast
 from .energy_need import build_energy_need_analysis
 from .planner_preview import build_planner_preview
 from .planner_72h import build_72h_plan_preview
@@ -160,6 +161,8 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.execution = execution
         self.source_monitor = source_monitor
         self.home_history = AnkerEmsHomeHistory(hass, entry.entry_id)
+        self._cached_internal_home_forecast: dict[str, Any] | None = None
+        self._internal_home_forecast_history_points = -1
         self._cached_72h_plan: dict[str, Any] | None = None
         self._last_plan_source_token: str | None = None
         self._last_plan_refresh_at: datetime | None = None
@@ -1136,6 +1139,18 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 data.get("home_power_w") if data.get("home_power_valid") else None
             )
         )
+        # Alpha71: rebuild only when a completed 15-minute history point changes.
+        # The internal forecast remains shadow-only and is not used by Plan72.
+        history_points = int(data.get("home_history_points") or 0)
+        if (
+            self._cached_internal_home_forecast is None
+            or history_points != self._internal_home_forecast_history_points
+        ):
+            self._cached_internal_home_forecast = build_internal_home_forecast(
+                self.home_history.history
+            )
+            self._internal_home_forecast_history_points = history_points
+        data.update(deepcopy(self._cached_internal_home_forecast))
         if self._price_architecture_settings()["enabled"]:
             await self._async_refresh_direct_price_forecast()
         data.update(self._build_forecast())

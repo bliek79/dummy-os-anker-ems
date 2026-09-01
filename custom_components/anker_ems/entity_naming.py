@@ -15,6 +15,9 @@ EXACT_ENTITY_IDS = {
     ("sensor", "home_power"): "sensor.do_ems_home_power",
     ("sensor", "home_energy_15m"): "sensor.do_ems_home_energy_15m",
     ("sensor", "home_history_days"): "sensor.do_ems_home_history_days",
+    ("sensor", "home_forecast"): "sensor.do_ems_home_forecast",
+    ("sensor", "home_forecast_coverage"): "sensor.do_ems_home_forecast_coverage",
+    ("sensor", "home_forecast_confidence"): "sensor.do_ems_home_forecast_confidence",
 }
 
 # Alpha28 keeps unique IDs stable and migrates only entity_id object IDs.

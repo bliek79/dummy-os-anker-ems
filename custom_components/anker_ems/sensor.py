@@ -64,6 +64,41 @@ def _home_history_days_attrs(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _internal_home_forecast_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": data.get("internal_home_forecast_status"),
+        "generated_at": data.get("internal_home_forecast_generated_at"),
+        "horizon_hours": data.get("internal_home_forecast_horizon_hours", 72),
+        "resolution_minutes": data.get("internal_home_forecast_resolution_minutes", 15),
+        "history_days": data.get("internal_home_forecast_history_days", 0),
+        "history_points": data.get("internal_home_forecast_history_points", 0),
+        "coverage_percent": data.get("internal_home_forecast_coverage_percent", 0),
+        "confidence_percent": data.get("internal_home_forecast_confidence_percent", 0),
+        "pattern_coverage_percent": data.get("internal_home_forecast_pattern_coverage_percent", 0),
+        "direct_pattern_quarters": data.get("internal_home_forecast_direct_pattern_quarters", 0),
+        "fallback_quarters": data.get("internal_home_forecast_fallback_quarters", 0),
+        "model": data.get("internal_home_forecast_model"),
+        "forecasts": data.get("internal_home_forecast_forecasts", []),
+        "hourly_forecast": data.get("internal_home_forecast_hourly", []),
+        "shadow_only": True,
+        "plan72_source": False,
+    }
+
+
+def _internal_home_forecast_quality_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": data.get("internal_home_forecast_status"),
+        "history_days": data.get("internal_home_forecast_history_days", 0),
+        "history_points": data.get("internal_home_forecast_history_points", 0),
+        "pattern_coverage_percent": data.get("internal_home_forecast_pattern_coverage_percent", 0),
+        "min_source_coverage_percent": data.get("internal_home_forecast_min_source_coverage_percent"),
+        "min_ready_history_days": data.get("internal_home_forecast_min_ready_history_days"),
+        "model": data.get("internal_home_forecast_model"),
+        "shadow_only": True,
+        "plan72_source": False,
+    }
+
+
 def _forecast_attrs(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "horizon_hours": data.get("forecast_horizon_hours"),
@@ -750,6 +785,27 @@ SENSORS: tuple[AnkerEmsSensorDescription, ...] = (
         name="DO EMS Home History Days",
         value_fn=lambda d: d.get("home_history_days", 0),
         attrs_fn=_home_history_days_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="home_forecast",
+        name="DO EMS Home Forecast",
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value_fn=lambda d: d.get("internal_home_forecast_total_72h_kwh"),
+        attrs_fn=_internal_home_forecast_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="home_forecast_coverage",
+        name="DO EMS Home Forecast Coverage",
+        native_unit_of_measurement=PERCENTAGE,
+        value_fn=lambda d: d.get("internal_home_forecast_coverage_percent", 0),
+        attrs_fn=_internal_home_forecast_quality_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="home_forecast_confidence",
+        name="DO EMS Home Forecast Confidence",
+        native_unit_of_measurement=PERCENTAGE,
+        value_fn=lambda d: d.get("internal_home_forecast_confidence_percent", 0),
+        attrs_fn=_internal_home_forecast_quality_attrs,
     ),
     AnkerEmsSensorDescription(
         key="automatic_execution_shadow",
