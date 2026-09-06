@@ -1,0 +1,92 @@
+name: Publish alpha73
+
+on:
+  push:
+    branches:
+      - release-alpha73-publish
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact release target
+        uses: actions/checkout@v4
+        with:
+          ref: be7578c78400efbbc5056dff983680dcf646fe42
+
+      - name: Validate version and compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path('custom_components/anker_ems/manifest.json').read_text())
+          assert manifest['version'] == '0.0.1-alpha.73', manifest['version']
+          text = Path('custom_components/anker_ems/const.py').read_text()
+          assert 'VERSION = "0.0.1-alpha.73"' in text
+          print('version-ok')
+          PY
+          python -m compileall -q custom_components/anker_ems
+
+      - name: Build install zip and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          ZIP='dummy-os-anker-ems-alpha73.zip'
+          rm -f "$ZIP" SHA256SUMS-alpha73.txt
+          zip -r "$ZIP" custom_components/anker_ems -x '*/__pycache__/*' '*.pyc'
+          sha256sum "$ZIP" > SHA256SUMS-alpha73.txt
+
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > release-notes.md <<'EOF'
+          ## Dummy OS EMS 0.0.1-alpha.73 - Legacy Home Forecast Cleanup
+
+          ### Doel
+          Gerichte stabiliteitsrelease om de oude alpha71/alpha72 interne EMS Home Forecast uit de actieve runtime te halen.
+
+          ### Verwijderd / uitgeschakeld
+          - interne EMS Home Forecast bouwt geen 288-slot forecast meer;
+          - live forecast evaluation, shadow comparison en transition/readiness draaien niet meer;
+          - grote forecast-, comparison- en evaluation-attributen worden niet meer actief opgebouwd/gepubliceerd;
+          - de oude diagnostische forecastmodules zijn uit de runtime verwijderd.
+
+          ### Ongewijzigd
+          - Plan72 gebruikt de bestaande externe woningforecast;
+          - Energy Need, Bridge, Scheduler, Safety en Execution blijven functioneel hetzelfde;
+          - prijs- en solarbronnen zijn niet gewijzigd;
+          - handmatige en automatische batterijbesturing en de drie planslots zijn niet gewijzigd;
+          - EMS Home Power / 15-minutenhistorie blijven aanwezig.
+
+          ### Bewaarde ontwerpkennis
+          De bruikbare forecastprincipes uit de verwijderde laag zijn vastgelegd in de Dummy OS Data routebaseline en gaan dus niet verloren voor de nieuwe forecastarchitectuur.
+
+          ### Validatie
+          - PR #18: Hassfest geslaagd;
+          - PR #18: HACS validation geslaagd;
+          - release wordt gebouwd van exact commit be7578c78400efbbc5056dff983680dcf646fe42;
+          - Python compile-check uitgevoerd tijdens releasebouw.
+
+          ### Na installatie controleren
+          - Home Assistant startupduur en bereikbaarheid;
+          - verdwijnen/reduceren van Recorder-waarschuwingen rond `sensor.do_ems_home_forecast` en `sensor.do_ems_home_forecast_comparison`;
+          - Plan72 en batterijsturing blijven normaal functioneren;
+          - verbindings-/hangproblemen vergelijken met alpha.72.
+          EOF
+
+          gh release create 0.0.1-alpha.73 \
+            dummy-os-anker-ems-alpha73.zip \
+            SHA256SUMS-alpha73.txt \
+            --repo bliek79/dummy-os-anker-ems \
+            --target be7578c78400efbbc5056dff983680dcf646fe42 \
+            --title 'Dummy OS EMS 0.0.1-alpha.73 - Legacy Home Forecast Cleanup' \
+            --notes-file release-notes.md \
+            --prerelease
