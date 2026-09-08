@@ -2,7 +2,7 @@ from __future__ import annotations
 
 DOMAIN = "anker_ems"
 NAME = "Dummy OS EMS"
-VERSION = "0.0.1-alpha.75"
+VERSION = "0.0.1-alpha.76"
 
 CONF_SIMULATION_MODE = "simulation_mode"
 
@@ -34,7 +34,6 @@ CONF_SOLAR_POWER_ENTITY = "solar_power_entity"
 CONF_OPERATING_MODE_ENTITY = "operating_mode_entity"
 CONF_ACTION_DIRECTION_ENTITY = "action_direction_entity"
 CONF_POWER_SETPOINT_ENTITY = "power_setpoint_entity"
-
 
 # Alpha40.3 supplier-independent market-price architecture.
 CONF_MARKET_PRICE_ARCHITECTURE_ENABLED = "market_price_architecture_enabled"
