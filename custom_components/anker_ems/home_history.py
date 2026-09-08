@@ -8,11 +8,16 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
+from .forecast_contract_adapter import (
+    FORECAST_PLANNER_CONTRACT_ENTITY,
+    build_forecast_contract_shadow,
+)
 
 STORAGE_VERSION = 1
 RETENTION_DAYS = 42
 MAX_SAMPLE_GAP_SECONDS = 120.0
 QUARTER_SECONDS = 15 * 60
+FORECAST_CONTRACT_SHADOW_ENTITY = "sensor.dummy_os_ems_forecast_contract_shadow"
 
 
 def _quarter_start(value: datetime) -> datetime:
@@ -102,6 +107,56 @@ class AnkerEmsHomeHistory:
         self._prune(now_utc)
         await self._async_save()
 
+    def _publish_forecast_contract_shadow(self) -> None:
+        """Publish compact Step-1 shadow diagnostics without touching Plan72 data."""
+        state = self.hass.states.get(FORECAST_PLANNER_CONTRACT_ENTITY)
+        result = build_forecast_contract_shadow(
+            entity_state=None if state is None else state.state,
+            attributes={} if state is None else dict(state.attributes),
+        )
+        attributes = {
+            "source_entity": result.get("forecast_contract_shadow_entity"),
+            "structural_ready": result.get("forecast_contract_shadow_structural_ready", False),
+            "runtime_operational": result.get("forecast_contract_shadow_runtime_operational", False),
+            "contract_name": result.get("forecast_contract_shadow_contract_name"),
+            "contract_version": result.get("forecast_contract_shadow_contract_version"),
+            "schema_version": result.get("forecast_contract_shadow_schema_version"),
+            "profile_contract_version": result.get("forecast_contract_shadow_profile_contract_version"),
+            "profile": result.get("forecast_contract_shadow_profile"),
+            "producer_status": result.get("forecast_contract_shadow_producer_status"),
+            "producer_ready_for_planner": result.get("forecast_contract_shadow_producer_ready_for_planner", False),
+            "producer_blockers": result.get("forecast_contract_shadow_producer_blockers", []),
+            "runtime_input_status": result.get("forecast_contract_shadow_runtime_input_status"),
+            "forecast_operational_input_ok": result.get("forecast_contract_shadow_forecast_operational_input_ok", False),
+            "runtime_blockers": result.get("forecast_contract_shadow_runtime_blockers", []),
+            "planner_start": result.get("forecast_contract_shadow_planner_start"),
+            "planner_end": result.get("forecast_contract_shadow_planner_end"),
+            "planner_hour_count": result.get("forecast_contract_shadow_planner_hour_count", 0),
+            "native_resolution_minutes": result.get("forecast_contract_shadow_native_resolution_minutes"),
+            "native_slot_count": result.get("forecast_contract_shadow_native_slot_count"),
+            "planner_resolution_minutes": result.get("forecast_contract_shadow_planner_resolution_minutes"),
+            "quarters_per_hour": result.get("forecast_contract_shadow_quarters_per_hour"),
+            "padding_used": result.get("forecast_contract_shadow_padding_used"),
+            "second_forecast_architecture": result.get("forecast_contract_shadow_second_forecast_architecture"),
+            "physical_execution_authority": result.get("forecast_contract_shadow_physical_execution_authority"),
+            "total_72h_kwh": result.get("forecast_contract_shadow_total_72h_kwh"),
+            "min_hour_kwh": result.get("forecast_contract_shadow_min_hour_kwh"),
+            "max_hour_kwh": result.get("forecast_contract_shadow_max_hour_kwh"),
+            "consumer_signature": result.get("forecast_contract_shadow_consumer_signature"),
+            "adapter_blockers": result.get("forecast_contract_shadow_blockers", []),
+            "shadow_only": True,
+            "plan72_source": False,
+            "published_hours": False,
+            "implementation": "step1_raw_state_shadow",
+            "icon": "mdi:connection",
+            "friendly_name": "Dummy OS EMS Forecast Contract Shadow",
+        }
+        self.hass.states.async_set(
+            FORECAST_CONTRACT_SHADOW_ENTITY,
+            str(result.get("forecast_contract_shadow_status") or "blocked"),
+            attributes,
+        )
+
     async def async_observe(self, power_w: float | None) -> dict[str, Any]:
         """Integrate valid canonical home power without inventing energy over data gaps."""
         now_utc = dt_util.utcnow().astimezone(dt_util.UTC)
@@ -138,6 +193,12 @@ class AnkerEmsHomeHistory:
             self._last_sample_at = None
             self._last_power_w = None
 
+        # Step 1 Forecast -> EMS migration: observe the canonical Forecast
+        # contract every coordinator cycle, but publish only compact diagnostics.
+        # No contract-derived values are inserted into coordinator data, so the
+        # existing Home Forecast, Energy Need, Plan72, Bridge, Scheduler, Safety,
+        # and physical Execution paths remain byte-for-byte untouched.
+        self._publish_forecast_contract_shadow()
         return self.snapshot()
 
     def snapshot(self) -> dict[str, Any]:
