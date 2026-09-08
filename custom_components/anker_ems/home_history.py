@@ -12,12 +12,17 @@ from .forecast_contract_adapter import (
     FORECAST_PLANNER_CONTRACT_ENTITY,
     build_forecast_contract_shadow,
 )
+from .forecast_parallel_compare import (
+    LEGACY_HOME_FORECAST_ENTITY,
+    build_forecast_parallel_compare,
+)
 
 STORAGE_VERSION = 1
 RETENTION_DAYS = 42
 MAX_SAMPLE_GAP_SECONDS = 120.0
 QUARTER_SECONDS = 15 * 60
 FORECAST_CONTRACT_SHADOW_ENTITY = "sensor.dummy_os_ems_forecast_contract_shadow"
+FORECAST_PARALLEL_COMPARE_ENTITY = "sensor.dummy_os_ems_forecast_parallel_compare"
 
 
 def _quarter_start(value: datetime) -> datetime:
@@ -107,7 +112,7 @@ class AnkerEmsHomeHistory:
         self._prune(now_utc)
         await self._async_save()
 
-    def _publish_forecast_contract_shadow(self) -> None:
+    def _publish_forecast_contract_shadow(self) -> dict[str, Any]:
         """Publish compact Step-1 shadow diagnostics without touching Plan72 data."""
         state = self.hass.states.get(FORECAST_PLANNER_CONTRACT_ENTITY)
         result = build_forecast_contract_shadow(
@@ -156,6 +161,36 @@ class AnkerEmsHomeHistory:
             str(result.get("forecast_contract_shadow_status") or "blocked"),
             attributes,
         )
+        return result
+
+    def _publish_forecast_parallel_compare(
+        self,
+        contract_shadow: dict[str, Any],
+    ) -> None:
+        """Publish compact Step-2 source comparison without feeding active EMS data."""
+        legacy_state = self.hass.states.get(LEGACY_HOME_FORECAST_ENTITY)
+        result = build_forecast_parallel_compare(
+            legacy_entity_state=None if legacy_state is None else legacy_state.state,
+            legacy_attributes={} if legacy_state is None else dict(legacy_state.attributes),
+            contract_shadow=contract_shadow,
+        )
+        attributes = {
+            key: value
+            for key, value in result.items()
+            if key != "status"
+        }
+        attributes.update(
+            {
+                "implementation": "step2_raw_state_shadow_compare",
+                "icon": "mdi:compare-horizontal",
+                "friendly_name": "Dummy OS EMS Forecast Parallel Compare",
+            }
+        )
+        self.hass.states.async_set(
+            FORECAST_PARALLEL_COMPARE_ENTITY,
+            str(result.get("status") or "blocked"),
+            attributes,
+        )
 
     async def async_observe(self, power_w: float | None) -> dict[str, Any]:
         """Integrate valid canonical home power without inventing energy over data gaps."""
@@ -193,12 +228,12 @@ class AnkerEmsHomeHistory:
             self._last_sample_at = None
             self._last_power_w = None
 
-        # Step 1 Forecast -> EMS migration: observe the canonical Forecast
-        # contract every coordinator cycle, but publish only compact diagnostics.
-        # No contract-derived values are inserted into coordinator data, so the
-        # existing Home Forecast, Energy Need, Plan72, Bridge, Scheduler, Safety,
-        # and physical Execution paths remain byte-for-byte untouched.
-        self._publish_forecast_contract_shadow()
+        # Step 1 validates the canonical Forecast contract. Step 2 reuses that
+        # validated in-memory result to compare exact UTC hours against Package 41.
+        # Neither result is inserted into coordinator.data, so active Home Forecast,
+        # Energy Need, Plan72, Bridge, Scheduler, Safety and Execution remain untouched.
+        contract_shadow = self._publish_forecast_contract_shadow()
+        self._publish_forecast_parallel_compare(contract_shadow)
         return self.snapshot()
 
     def snapshot(self) -> dict[str, Any]:
