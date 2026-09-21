@@ -138,6 +138,30 @@ class AnkerEmsLegacyAuthorityFence:
             await self._async_save()
             return generation, write_type
 
+    async def async_call(
+        self,
+        domain: str,
+        service: str,
+        service_data: dict[str, Any] | None = None,
+        *,
+        target: dict[str, Any] | None = None,
+        blocking: bool = True,
+    ) -> None:
+        """Dispatch one physical Home Assistant service call through the fence."""
+        token = await self.async_begin_dispatch(domain, service, service_data)
+        success = False
+        try:
+            await self.hass.services.async_call(
+                domain,
+                service,
+                service_data or {},
+                target=target,
+                blocking=blocking,
+            )
+            success = True
+        finally:
+            await self.async_end_dispatch(token, success=success)
+
     async def async_end_dispatch(
         self, token: tuple[int, str], *, success: bool
     ) -> None:
