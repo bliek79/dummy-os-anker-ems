@@ -1,0 +1,63 @@
+name: Dummy OS EMS Alpha77 Step 5C CI and Release
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Compile integration and Step 5C tests
+        run: |
+          python -m compileall -q custom_components/anker_ems tests/test_step5c_legacy_authority_fence.py
+      - name: Validate Step 5C contract
+        run: |
+          python -m pytest -q tests/test_step5c_legacy_authority_fence.py
+          grep -F 'VERSION = "0.0.1-alpha.77"' custom_components/anker_ems/const.py
+          grep -F '"version": "0.0.1-alpha.77"' custom_components/anker_ems/manifest.json
+          test -f custom_components/anker_ems/authority_fence.py
+          grep -F 'class AnkerEmsLegacyAuthorityFence' custom_components/anker_ems/authority_fence.py
+          grep -F 'self.status == "closing" and safe_return' custom_components/anker_ems/authority_fence.py
+          grep -F 'authority_fence.async_call(' custom_components/anker_ems/execution.py
+          grep -F 'authority_fence.async_call(' custom_components/anker_ems/physical_test.py
+          grep -F 'authority_fence.async_call(' custom_components/anker_ems/__init__.py
+          ! grep -F 'self.hass.services.async_call(' custom_components/anker_ems/execution.py
+          ! grep -F 'self.hass.services.async_call(' custom_components/anker_ems/physical_test.py
+          ! grep -F 'await hass.services.async_call(' custom_components/anker_ems/__init__.py
+          grep -F 'if armed and not self.authority_fence.is_open' custom_components/anker_ems/coordinator.py
+          grep -F 'key="legacy_authority"' custom_components/anker_ems/sensor.py
+          test -f RELEASE_NOTES_ALPHA77.md
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build release archive
+        run: |
+          zip -r dummy-os-anker-ems-alpha77.zip custom_components/anker_ems README.md LICENSE services.yaml 2>/dev/null ||             zip -r dummy-os-anker-ems-alpha77.zip custom_components/anker_ems README.md LICENSE
+          sha256sum dummy-os-anker-ems-alpha77.zip > SHA256SUMS-alpha77.txt
+          cat SHA256SUMS-alpha77.txt
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view 0.0.1-alpha.77 >/dev/null 2>&1; then
+            gh release edit 0.0.1-alpha.77               --title "Dummy OS EMS 0.0.1-alpha.77 - Step 5C Legacy Authority Fence"               --notes-file RELEASE_NOTES_ALPHA77.md               --prerelease
+            gh release upload 0.0.1-alpha.77 dummy-os-anker-ems-alpha77.zip SHA256SUMS-alpha77.txt --clobber
+          else
+            gh release create 0.0.1-alpha.77 dummy-os-anker-ems-alpha77.zip SHA256SUMS-alpha77.txt               --target main               --title "Dummy OS EMS 0.0.1-alpha.77 - Step 5C Legacy Authority Fence"               --notes-file RELEASE_NOTES_ALPHA77.md               --prerelease
+          fi
