@@ -17,6 +17,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      - run: python -m pip install --upgrade pip pytest
       - name: Compile integration and Step 5C tests
         run: |
           python -m compileall -q custom_components/anker_ems tests/test_step5c_legacy_authority_fence.py
