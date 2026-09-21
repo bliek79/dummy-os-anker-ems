@@ -195,14 +195,14 @@ class AnkerEmsPhysicalTestController:
         await self._async_save()
 
         try:
-            await self.hass.services.async_call(
+            await self._coordinator.authority_fence.async_call(
                 "select",
                 "select_option",
                 {"option": "discharge"},
                 target={"entity_id": direction_entity},
                 blocking=True,
             )
-            await self.hass.services.async_call(
+            await self._coordinator.authority_fence.async_call(
                 "number",
                 "set_value",
                 {"value": power_w},
@@ -263,14 +263,14 @@ class AnkerEmsPhysicalTestController:
         try:
             # Direction first, power second. Operating mode is deliberately not
             # switched automatically in alpha 10; the user must arm it manually.
-            await self.hass.services.async_call(
+            await self._coordinator.authority_fence.async_call(
                 "select",
                 "select_option",
                 {"option": "charge"},
                 target={"entity_id": direction_entity},
                 blocking=True,
             )
-            await self.hass.services.async_call(
+            await self._coordinator.authority_fence.async_call(
                 "number",
                 "set_value",
                 {"value": power_w},
@@ -449,7 +449,7 @@ class AnkerEmsPhysicalTestController:
             errors: list[str] = []
             if power_entity:
                 try:
-                    await self.hass.services.async_call(
+                    await self._coordinator.authority_fence.async_call(
                         "number",
                         "set_value",
                         {"value": 0},
@@ -465,7 +465,7 @@ class AnkerEmsPhysicalTestController:
 
             if mode_entity:
                 try:
-                    await self.hass.services.async_call(
+                    await self._coordinator.authority_fence.async_call(
                         "select",
                         "select_option",
                         {"option": "self_consumption"},
