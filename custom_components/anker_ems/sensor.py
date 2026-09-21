@@ -256,6 +256,24 @@ def _execution_evaluation_attrs(data: dict[str, Any]) -> dict[str, Any]:
         "run_history": data.get("execution_automatic_run_history", []),
     }
 
+def _legacy_authority_attrs(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "physical_authority": data.get("legacy_physical_authority", True),
+        "write_fence": data.get("legacy_write_fence", "open"),
+        "authority_generation": data.get("legacy_authority_generation", 0),
+        "inflight_calls": data.get("legacy_inflight_calls", 0),
+        "write_count": data.get("legacy_write_count", 0),
+        "blocked_write_count": data.get("legacy_blocked_write_count", 0),
+        "last_write_type": data.get("legacy_last_write_type"),
+        "last_write_at": data.get("legacy_last_write_at"),
+        "last_blocked_write_type": data.get("legacy_last_blocked_write_type"),
+        "last_blocked_write_at": data.get("legacy_last_blocked_write_at"),
+        "last_changed_at": data.get("legacy_authority_last_changed_at"),
+        "automatic_execution_armed": data.get("auto_shadow_armed", False),
+        "step5c_foundation": True,
+    }
+
+
 def _auto_shadow_attrs(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "armed": data.get("auto_shadow_armed", False),
@@ -806,6 +824,12 @@ SENSORS: tuple[AnkerEmsSensorDescription, ...] = (
         native_unit_of_measurement=PERCENTAGE,
         value_fn=lambda d: d.get("internal_home_forecast_confidence_percent", 0),
         attrs_fn=_internal_home_forecast_quality_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="legacy_authority",
+        name="Dummy OS EMS Legacy Authority",
+        value_fn=lambda d: d.get("legacy_write_fence") or "open",
+        attrs_fn=_legacy_authority_attrs,
     ),
     AnkerEmsSensorDescription(
         key="automatic_execution_shadow",

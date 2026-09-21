@@ -43,6 +43,7 @@ from .safety_guard import AnkerEmsSafetyGuard
 from .action_controller import AnkerEmsActionController
 from .physical_test import AnkerEmsPhysicalTestController
 from .execution import AnkerEmsExecutionController
+from .authority_fence import AnkerEmsLegacyAuthorityFence
 from .source_monitor import AnkerEmsSourceMonitor
 from .entity_naming import async_migrate_entity_ids
 
@@ -202,7 +203,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             state = hass.states.get(power_entity)
             if state is not None and state.state not in {"unknown", "unavailable"}:
                 try:
-                    await hass.services.async_call(
+                    await coordinator.authority_fence.async_call(
                         "number", "set_value", {"value": 0},
                         target={"entity_id": power_entity}, blocking=True
                     )
@@ -212,7 +213,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             state = hass.states.get(mode_entity)
             if state is not None and state.state not in {"unknown", "unavailable", "self_consumption"}:
                 try:
-                    await hass.services.async_call(
+                    await coordinator.authority_fence.async_call(
                         "select", "select_option", {"option": "self_consumption"},
                         target={"entity_id": mode_entity}, blocking=True
                     )
@@ -321,6 +322,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await physical_test.async_load()
     execution = AnkerEmsExecutionController(hass, entry.entry_id)
     await execution.async_load()
+    authority_fence = AnkerEmsLegacyAuthorityFence(hass, entry.entry_id)
+    await authority_fence.async_load()
     source_monitor = AnkerEmsSourceMonitor(hass, entry.entry_id)
     await source_monitor.async_load()
 
@@ -333,6 +336,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         action_controller,
         physical_test,
         execution,
+        authority_fence,
         source_monitor,
     )
     physical_test.attach_coordinator(coordinator)

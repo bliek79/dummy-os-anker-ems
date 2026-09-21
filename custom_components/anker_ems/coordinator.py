@@ -9,6 +9,7 @@ from aiohttp import ClientError, ClientTimeout
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
@@ -20,6 +21,7 @@ from .prestart_validator import AnkerEmsPreStartValidator
 from .action_controller import AnkerEmsActionController
 from .physical_test import AnkerEmsPhysicalTestController
 from .execution import AnkerEmsExecutionController
+from .authority_fence import AnkerEmsLegacyAuthorityFence
 from .source_monitor import AnkerEmsSourceMonitor
 from .home_history import AnkerEmsHomeHistory
 from .home_forecast import build_internal_home_forecast
@@ -143,6 +145,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         action_controller: AnkerEmsActionController,
         physical_test: AnkerEmsPhysicalTestController,
         execution: AnkerEmsExecutionController,
+        authority_fence: AnkerEmsLegacyAuthorityFence,
         source_monitor: AnkerEmsSourceMonitor,
     ) -> None:
         super().__init__(
@@ -159,6 +162,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.action_controller = action_controller
         self.physical_test = physical_test
         self.execution = execution
+        self.authority_fence = authority_fence
         self.source_monitor = source_monitor
         self.home_history = AnkerEmsHomeHistory(hass, entry.entry_id)
         self._cached_internal_home_forecast: dict[str, Any] | None = None
@@ -185,6 +189,10 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return self._auto_execution_armed
 
     async def async_set_auto_execution_armed(self, armed: bool) -> None:
+        if armed and not self.authority_fence.is_open:
+            raise HomeAssistantError(
+                "Automatic Execution cannot arm while legacy physical authority is fenced"
+            )
         self._auto_execution_armed = bool(armed)
         await self.async_request_refresh()
 
@@ -1343,6 +1351,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         data.update(AnkerEmsPreStartValidator().evaluate(data))
         data["physical_test_active"] = bool(self.physical_test.data.get("active"))
         data["execution_active"] = bool(self.execution.data.get("active"))
+        data.update(self.authority_fence.snapshot())
         data["execution_origin"] = self.execution.data.get("origin")
         data.update(self.safety_guard.evaluate_automatic_handoff(data))
         # Expose the automatic handoff into the Execution Controller as a

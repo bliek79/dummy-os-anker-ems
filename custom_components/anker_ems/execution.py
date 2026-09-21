@@ -526,7 +526,7 @@ class AnkerEmsExecutionController:
             state = self.hass.states.get(power_entity)
             if state is not None and state.state not in {"unknown", "unavailable"}:
                 try:
-                    await self.hass.services.async_call(
+                    await self._coordinator.authority_fence.async_call(
                         "number", "set_value", {"value": 0},
                         target={"entity_id": power_entity}, blocking=True,
                     )
@@ -536,7 +536,7 @@ class AnkerEmsExecutionController:
             state = self.hass.states.get(mode_entity)
             if state is not None and state.state not in {"unknown", "unavailable", _SELF_MODE}:
                 try:
-                    await self.hass.services.async_call(
+                    await self._coordinator.authority_fence.async_call(
                         "select", "select_option", {"option": _SELF_MODE},
                         target={"entity_id": mode_entity}, blocking=True,
                     )
@@ -962,7 +962,7 @@ class AnkerEmsExecutionController:
 
         try:
             # Step 1: zero-power guard. Never issue a non-zero setpoint in alpha40.
-            await self.hass.services.async_call(
+            await self._coordinator.authority_fence.async_call(
                 "number", "set_value", {"value": 0},
                 target={"entity_id": power_entity}, blocking=True,
             )
@@ -974,7 +974,7 @@ class AnkerEmsExecutionController:
             await self._async_save()
 
             if data.get("operating_mode") != _EXTERNAL_MODE:
-                await self.hass.services.async_call(
+                await self._coordinator.authority_fence.async_call(
                     "select", "select_option", {"option": _EXTERNAL_MODE},
                     target={"entity_id": mode_entity}, blocking=True,
                 )
@@ -1011,11 +1011,11 @@ class AnkerEmsExecutionController:
                 "auto_mode_switch_reason": "Mode-switch gevalideerd; veilige terugkeer naar self_consumption",
             })
             await self._async_save()
-            await self.hass.services.async_call(
+            await self._coordinator.authority_fence.async_call(
                 "number", "set_value", {"value": 0},
                 target={"entity_id": power_entity}, blocking=True,
             )
-            await self.hass.services.async_call(
+            await self._coordinator.authority_fence.async_call(
                 "select", "select_option", {"option": _SELF_MODE},
                 target={"entity_id": mode_entity}, blocking=True,
             )
@@ -1036,14 +1036,14 @@ class AnkerEmsExecutionController:
             _LOGGER.exception("Automatic Dummy OS EMS mode-switch validation failed")
             # Fail safe: zero power first, then self_consumption.
             try:
-                await self.hass.services.async_call(
+                await self._coordinator.authority_fence.async_call(
                     "number", "set_value", {"value": 0},
                     target={"entity_id": power_entity}, blocking=True,
                 )
             except Exception:
                 _LOGGER.exception("Failed to apply zero-power guard during mode-switch abort")
             try:
-                await self.hass.services.async_call(
+                await self._coordinator.authority_fence.async_call(
                     "select", "select_option", {"option": _SELF_MODE},
                     target={"entity_id": mode_entity}, blocking=True,
                 )
@@ -1152,7 +1152,7 @@ class AnkerEmsExecutionController:
 
         try:
             if data.get("operating_mode") != _EXTERNAL_MODE:
-                await self.hass.services.async_call(
+                await self._coordinator.authority_fence.async_call(
                     "select",
                     "select_option",
                     {"option": _EXTERNAL_MODE},
@@ -1184,14 +1184,14 @@ class AnkerEmsExecutionController:
             await self._async_save()
             await self._coordinator.async_refresh()
 
-            await self.hass.services.async_call(
+            await self._coordinator.authority_fence.async_call(
                 "select",
                 "select_option",
                 {"option": "charge" if action == "laden" else "discharge"},
                 target={"entity_id": direction_entity},
                 blocking=True,
             )
-            await self.hass.services.async_call(
+            await self._coordinator.authority_fence.async_call(
                 "number",
                 "set_value",
                 {"value": power_w},
@@ -1302,7 +1302,7 @@ class AnkerEmsExecutionController:
             # unavailable in self_consumption, so this step is best-effort.
             power_state = self.hass.states.get(power_entity)
             if power_state is not None and power_state.state not in {"unknown", "unavailable"}:
-                await self.hass.services.async_call(
+                await self._coordinator.authority_fence.async_call(
                     "number", "set_value", {"value": 0},
                     target={"entity_id": power_entity}, blocking=True,
                 )
@@ -1313,7 +1313,7 @@ class AnkerEmsExecutionController:
                     "auto_mode_switch_reason": "Omschakelen naar third_party_control",
                 })
                 await self._async_save()
-                await self.hass.services.async_call(
+                await self._coordinator.authority_fence.async_call(
                     "select", "select_option", {"option": _EXTERNAL_MODE},
                     target={"entity_id": mode_entity}, blocking=True,
                 )
@@ -1322,7 +1322,7 @@ class AnkerEmsExecutionController:
             # Wait for the external controls to appear, then immediately pin
             # the setpoint to zero before waiting for the 60 s stability gate.
             await self._wait_for_external_controls()
-            await self.hass.services.async_call(
+            await self._coordinator.authority_fence.async_call(
                 "number", "set_value", {"value": 0},
                 target={"entity_id": power_entity}, blocking=True,
             )
@@ -1404,12 +1404,12 @@ class AnkerEmsExecutionController:
             })
             await self._async_save()
 
-            await self.hass.services.async_call(
+            await self._coordinator.authority_fence.async_call(
                 "select", "select_option",
                 {"option": "charge" if action == "laden" else "discharge"},
                 target={"entity_id": direction_entity}, blocking=True,
             )
-            await self.hass.services.async_call(
+            await self._coordinator.authority_fence.async_call(
                 "number", "set_value", {"value": power_w},
                 target={"entity_id": power_entity}, blocking=True,
             )
@@ -1442,14 +1442,14 @@ class AnkerEmsExecutionController:
                 try:
                     state = self.hass.states.get(power_entity)
                     if state is not None and state.state not in {"unknown", "unavailable"}:
-                        await self.hass.services.async_call(
+                        await self._coordinator.authority_fence.async_call(
                             "number", "set_value", {"value": 0},
                             target={"entity_id": power_entity}, blocking=True,
                         )
                 except Exception:
                     _LOGGER.exception("Failed to apply automatic execution zero-power abort")
                 try:
-                    await self.hass.services.async_call(
+                    await self._coordinator.authority_fence.async_call(
                         "select", "select_option", {"option": _SELF_MODE},
                         target={"entity_id": mode_entity}, blocking=True,
                     )
@@ -1654,7 +1654,7 @@ class AnkerEmsExecutionController:
             errors: list[str] = []
             if power_entity:
                 try:
-                    await self.hass.services.async_call(
+                    await self._coordinator.authority_fence.async_call(
                         "number",
                         "set_value",
                         {"value": 0},
@@ -1667,7 +1667,7 @@ class AnkerEmsExecutionController:
             await asyncio.sleep(1)
             if mode_entity:
                 try:
-                    await self.hass.services.async_call(
+                    await self._coordinator.authority_fence.async_call(
                         "select",
                         "select_option",
                         {"option": _SELF_MODE},
