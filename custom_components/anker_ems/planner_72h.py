@@ -151,14 +151,10 @@ def build_72h_plan_preview(
                 usable_index = candidate
                 break
 
-        if usable_index is None:
-            # The end of the available forecast is not proof that there will be
-            # no usable solar later. Do not reserve the complete remainder of the
-            # 72-hour horizon. Fall back to the normal hardware + software reserve
-            # and mark the solar horizon as incomplete through first_usable=None.
-            return base_reserve_floor_kwh, 0.0, None
-
-        stop_index = usable_index
+        # The reserve floor is the existing 5% technical minimum plus the
+        # configured software reserve. Forecast demand is diagnostic context and
+        # must not become a fictitious physical hold in self_consumption.
+        stop_index = usable_index if usable_index is not None else len(rows)
         net_home_need_kwh = 0.0
 
         for need_index in range(index, stop_index):
@@ -169,15 +165,8 @@ def build_72h_plan_preview(
                 need_row["home_kwh"] - need_row["solar_kwh"],
             ) * fraction
 
-        stored_need_kwh = net_home_need_kwh / discharge_eff
-        floor_kwh = min(
-            capacity,
-            max(
-                minimum_stored_kwh,
-                base_reserve_floor_kwh + stored_need_kwh,
-            ),
-        )
-        first_usable = rows[usable_index]["time"]
+        floor_kwh = base_reserve_floor_kwh
+        first_usable = rows[usable_index]["time"] if usable_index is not None else None
         return floor_kwh, net_home_need_kwh, first_usable
 
     def _execution_reserve(index: int) -> tuple[float, float, float, datetime | None]:
@@ -485,52 +474,28 @@ def build_72h_plan_preview(
                     stored_kwh += stored_added
                     trade_energy_reserved_kwh += stored_added
 
-        # 4) Home deficit uses battery only when doing so does not consume
-        # energy reserved for a later, more valuable trade discharge.
-        operational_floor = execution_floor_end_kwh + trade_energy_reserved_kwh
-        operational_floor = min(
-            capacity,
-            max(execution_floor_end_kwh, operational_floor),
-        )
-
+        # 4) Normal self_consumption is physical reality. Household deficit
+        # therefore uses the battery down to the technical device minimum.
+        # Cheapest-energy safety charging is what keeps the *planned* route near
+        # 5% + software reserve; reserve/trade intent may not fictitiously stop
+        # normal home discharge.
+        operational_floor = minimum_stored_kwh
         available_stored_above_floor = max(0.0, stored_kwh - operational_floor)
         max_output_from_storage = available_stored_above_floor * discharge_eff
 
-        # Prefer battery for home use when the current price is at least as high
-        # as the best buy price plus the requested trade margin, or when there is
-        # no active future trade reservation.
-        current_price = row["import_price"]
-        threshold_price = None
-        if best_charge_price is not None:
-            threshold_price = best_charge_price / (charge_eff * discharge_eff) + minimum_trade_margin
-
-        allow_home_discharge = trade_energy_reserved_kwh <= _MIN_ENERGY_KWH
-        if (
-            current_price is not None
-            and threshold_price is not None
-            and current_price >= threshold_price
-        ):
-            allow_home_discharge = True
-
-        if allow_home_discharge:
-            discharge_to_home = min(
-                home_deficit,
-                discharge_output_limit,
-                max_output_from_storage,
+        discharge_to_home = min(
+            home_deficit,
+            discharge_output_limit,
+            max_output_from_storage,
+        )
+        if discharge_to_home > _MIN_ENERGY_KWH:
+            stored_used = discharge_to_home / discharge_eff
+            stored_kwh -= stored_used
+            home_deficit -= discharge_to_home
+            trade_energy_reserved_kwh = max(
+                0.0,
+                trade_energy_reserved_kwh - stored_used,
             )
-            if discharge_to_home > _MIN_ENERGY_KWH:
-                stored_used = discharge_to_home / discharge_eff
-                stored_kwh -= stored_used
-                home_deficit -= discharge_to_home
-
-                # If high-value home use happens before the selected trade hour,
-                # it can consume part of the trade reservation because it creates
-                # equal or better economic value than later grid export.
-                if trade_energy_reserved_kwh > _MIN_ENERGY_KWH and current_price is not None:
-                    trade_energy_reserved_kwh = max(
-                        0.0,
-                        trade_energy_reserved_kwh - stored_used,
-                    )
 
         grid_home = max(0.0, home_deficit)
 
@@ -564,9 +529,18 @@ def build_72h_plan_preview(
         soc_end = stored_kwh / capacity * 100.0
         min_soc_seen = min(min_soc_seen, soc_end)
         max_soc_seen = max(max_soc_seen, soc_end)
-        execution_headroom_soc = soc_end - execution_floor_end_soc
-        minimum_execution_headroom_soc = min(minimum_execution_headroom_soc, execution_headroom_soc)
-        if execution_headroom_soc < -0.05:
+        execution_headroom_soc = soc_end - float(MIN_SOC_PERCENT)
+        minimum_execution_headroom_soc = min(
+            minimum_execution_headroom_soc,
+            execution_headroom_soc,
+        )
+        # The higher execution reserve applies to explicit external discharge,
+        # not to ordinary self_consumption. Only a grid-discharge action may
+        # violate that control buffer.
+        if (
+            discharge_to_grid > _MIN_ENERGY_KWH
+            and soc_end - execution_floor_end_soc < -0.05
+        ):
             execution_buffer_breach_hours += 1
 
         action_parts: list[str] = []
@@ -639,8 +613,9 @@ def build_72h_plan_preview(
         "auto_plan_72h_status": "ready",
         "auto_plan_72h_valid": True,
         "auto_plan_72h_reason": (
-            "72-uurs planpreview berekend; veiligheidslading heeft voorrang, "
-            "daarna solar, woningdekking en observerende handel"
+            "72-uurs planpreview berekend; solar heeft voorrang en bestaande "
+            "veiligheidslading koopt vóór een verwachte 5%+7%-margebreuk de "
+            "goedkoopste technisch haalbare netenergie"
         ),
         "auto_plan_72h_plan": plan,
         "auto_plan_72h_count": len(plan),
@@ -685,8 +660,9 @@ def build_72h_plan_preview(
         "auto_plan_72h_observational_only": True,
         "auto_plan_72h_execution_enabled": False,
         "auto_plan_72h_note": (
-            "Dummy OS EMS Plan72 gebruikt de 2 procentpunt uitvoeringsbuffer, "
-            "dynamische reserve en vooruitkijkende reserveplanning. Automatische "
-            "laad/ontlaaduitvoering blijft buiten de huidige fysieke alpha-scope."
+            "Alpha80 houdt de publieke laadcategorieën compact. Solar blijft "
+            "eerste bron; goedkope noodzakelijke netbijlading gebruikt uitsluitend "
+            "veiligheidsladen. Normale self_consumption ontlaadt fysiek tot 5% "
+            "wanneer de geplande 12%-marge technisch niet haalbaar is."
         ),
     }

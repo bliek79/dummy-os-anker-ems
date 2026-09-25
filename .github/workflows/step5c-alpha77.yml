@@ -1,4 +1,4 @@
-name: Dummy OS EMS Alpha78 Bridge Recorder Payload CI and Release
+name: Dummy OS EMS Alpha80 Cheapest Energy Safety Planner CI and Release
 
 on:
   pull_request:
@@ -22,10 +22,10 @@ jobs:
         run: python -m compileall -q custom_components/anker_ems tests
       - name: Run full test suite
         run: python -m pytest -q tests
-      - name: Validate Alpha78 contracts
+      - name: Validate Alpha80 contracts
         run: |
-          grep -F 'VERSION = "0.0.1-alpha.78"' custom_components/anker_ems/const.py
-          grep -F '"version": "0.0.1-alpha.78"' custom_components/anker_ems/manifest.json
+          grep -F 'VERSION = "0.0.1-alpha.80"' custom_components/anker_ems/const.py
+          grep -F '"version": "0.0.1-alpha.80"' custom_components/anker_ems/manifest.json
           grep -F 'class AnkerEmsLegacyAuthorityFence' custom_components/anker_ems/authority_fence.py
           grep -F 'authority_fence.async_call(' custom_components/anker_ems/execution.py
           grep -F 'if armed and not self.authority_fence.is_open' custom_components/anker_ems/coordinator.py
@@ -34,7 +34,10 @@ jobs:
           grep -F 'def _auto_bridge_slots_attrs' custom_components/anker_ems/sensor.py
           ! grep -F 'attrs_fn=_auto_bridge_attrs' custom_components/anker_ems/sensor.py
           test -f tests/test_alpha78_bridge_recorder_payload.py
-          test -f RELEASE_NOTES_ALPHA78.md
+          test -f RELEASE_NOTES_ALPHA80.md
+          test -f tests/test_alpha80_cheapest_energy_safety.py
+          ! grep -R -F 'zelfconsumptie_bijladen' custom_components/anker_ems
+          ! grep -R -F 'charge_from_grid_support_kwh' custom_components/anker_ems
 
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -46,16 +49,16 @@ jobs:
           fetch-depth: 0
       - name: Build release archive
         run: |
-          zip -r dummy-os-anker-ems-alpha78.zip custom_components/anker_ems README.md LICENSE services.yaml 2>/dev/null ||             zip -r dummy-os-anker-ems-alpha78.zip custom_components/anker_ems README.md LICENSE
-          sha256sum dummy-os-anker-ems-alpha78.zip > SHA256SUMS-alpha78.txt
-          cat SHA256SUMS-alpha78.txt
+          zip -r dummy-os-anker-ems-alpha80.zip custom_components/anker_ems README.md LICENSE services.yaml 2>/dev/null ||             zip -r dummy-os-anker-ems-alpha80.zip custom_components/anker_ems README.md LICENSE
+          sha256sum dummy-os-anker-ems-alpha80.zip > SHA256SUMS-alpha80.txt
+          cat SHA256SUMS-alpha80.txt
       - name: Publish prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view 0.0.1-alpha.78 >/dev/null 2>&1; then
-            gh release edit 0.0.1-alpha.78               --title "Dummy OS EMS 0.0.1-alpha.78 - Bridge Recorder Payload Fix"               --notes-file RELEASE_NOTES_ALPHA78.md               --prerelease
-            gh release upload 0.0.1-alpha.78 dummy-os-anker-ems-alpha78.zip SHA256SUMS-alpha78.txt --clobber
+          if gh release view 0.0.1-alpha.80 >/dev/null 2>&1; then
+            gh release edit 0.0.1-alpha.80               --title "Dummy OS EMS 0.0.1-alpha.80 - Cheapest Energy Safety Planner"               --notes-file RELEASE_NOTES_ALPHA80.md               --prerelease
+            gh release upload 0.0.1-alpha.80 dummy-os-anker-ems-alpha80.zip SHA256SUMS-alpha80.txt --clobber
           else
-            gh release create 0.0.1-alpha.78 dummy-os-anker-ems-alpha78.zip SHA256SUMS-alpha78.txt               --target main               --title "Dummy OS EMS 0.0.1-alpha.78 - Bridge Recorder Payload Fix"               --notes-file RELEASE_NOTES_ALPHA78.md               --prerelease
+            gh release create 0.0.1-alpha.80 dummy-os-anker-ems-alpha80.zip SHA256SUMS-alpha80.txt               --target main               --title "Dummy OS EMS 0.0.1-alpha.80 - Cheapest Energy Safety Planner"               --notes-file RELEASE_NOTES_ALPHA80.md               --prerelease
           fi
