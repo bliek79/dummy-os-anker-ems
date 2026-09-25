@@ -124,19 +124,25 @@ def build_energy_need_analysis(
             available_battery_kwh - required_including_reserve, 0.0
         )
 
+    # A missing usable-solar block is no longer a reason to stop planning.
+    # In a low-solar period the complete available horizon is exactly the period
+    # for which cheapest-energy safety planning is needed.
     valid = (
-        first_usable is not None
-        and not missing_home
+        not missing_home
         and not missing_solar
         and available_battery_kwh is not None
+        and bool(rows)
     )
 
-    if first_usable is None:
-        reason = "Geen twee opeenvolgende bruikbare zonne-uren gevonden binnen de forecast"
-    elif available_battery_kwh is None:
+    if available_battery_kwh is None:
         reason = "SOC niet beschikbaar; batterij-energiebalans kan niet worden bepaald"
     elif missing_home or missing_solar:
         reason = "Forecast bevat ontbrekende woning- of solarwaarden voor de benodigde periode"
+    elif first_usable is None:
+        reason = (
+            "Geen twee opeenvolgende bruikbare zonne-uren binnen de horizon; "
+            "Energy Need gebruikt daarom de volledige beschikbare forecast"
+        )
     elif additional_grid_charge_kwh is not None and additional_grid_charge_kwh > 0.01:
         reason = "Aanvullende energie nodig om behoefte plus veiligheidsreserve te dekken"
     else:
@@ -168,7 +174,8 @@ def build_energy_need_analysis(
         "energy_need_battery_capacity_kwh": DEFAULT_BATTERY_CAPACITY_KWH,
         "energy_need_min_soc_percent": MIN_SOC_PERCENT,
         "energy_need_usable_solar_rule": (
-            "eerste van twee opeenvolgende forecasturen waarin solar >= woningverbruik"
+            "eerste van twee opeenvolgende forecasturen waarin solar >= woningverbruik; "
+            "bij ontbreken blijft de volledige horizon planbaar"
         ),
         "energy_need_observational_only": True,
     }
