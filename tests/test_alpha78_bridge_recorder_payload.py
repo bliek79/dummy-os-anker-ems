@@ -248,8 +248,8 @@ def test_bridge_fix_does_not_change_execution_or_safety_runtime() -> None:
     assert "auto_shadow_execution_permitted" in coordinator
 
 
-def test_alpha78_version_contract() -> None:
+def test_alpha78_bridge_fix_survives_alpha79_version_bump() -> None:
     const = (ROOT / "custom_components" / "anker_ems" / "const.py").read_text(encoding="utf-8")
     manifest = (ROOT / "custom_components" / "anker_ems" / "manifest.json").read_text(encoding="utf-8")
-    assert 'VERSION = "0.0.1-alpha.78"' in const
-    assert '"version": "0.0.1-alpha.78"' in manifest
+    assert 'VERSION = "0.0.1-alpha.79"' in const
+    assert '"version": "0.0.1-alpha.79"' in manifest
