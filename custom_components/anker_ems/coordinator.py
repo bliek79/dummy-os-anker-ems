@@ -1170,16 +1170,19 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         reserve_percent = self.entry.options.get(
             CONF_SOFTWARE_RESERVE_PERCENT, DEFAULT_SOFTWARE_RESERVE_PERCENT
         )
-        energy_need = build_energy_need_analysis(
-            data.get("forecast", []), data.get("soc"), reserve_percent
-        )
-        data.update(energy_need)
         charge_efficiency_percent = self.entry.options.get(
             CONF_CHARGE_EFFICIENCY_PERCENT, DEFAULT_CHARGE_EFFICIENCY_PERCENT
         )
         discharge_efficiency_percent = self.entry.options.get(
             CONF_DISCHARGE_EFFICIENCY_PERCENT, DEFAULT_DISCHARGE_EFFICIENCY_PERCENT
         )
+        energy_need = build_energy_need_analysis(
+            data.get("forecast", []),
+            data.get("soc"),
+            reserve_percent,
+            discharge_efficiency_percent=discharge_efficiency_percent,
+        )
+        data.update(energy_need)
         minimum_trade_margin = self.entry.options.get(
             CONF_MINIMUM_TRADE_MARGIN, DEFAULT_MINIMUM_TRADE_MARGIN
         )
