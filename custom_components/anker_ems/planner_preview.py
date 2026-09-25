@@ -41,6 +41,7 @@ def build_planner_preview(
     discharge_efficiency_percent: float,
     minimum_trade_margin: float,
     max_charge_power_w: int = 3500,
+    max_discharge_power_w: int = 3500,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Build an observational planner and financial trade preview.
@@ -62,10 +63,20 @@ def build_planner_preview(
     tradable_kwh = _as_float(energy_need.get("energy_need_tradable_battery_kwh"))
     first_usable = _parse_time(energy_need.get("energy_need_first_usable_solar"))
 
+    # The compact safety contract is the existing technical minimum plus the
+    # configured software reserve. Forecast demand remains planning context and
+    # must not become a fictitious self_consumption hold floor.
     required_min_soc = MIN_SOC_PERCENT + (
-        (need_kwh + reserve_kwh) / DEFAULT_BATTERY_CAPACITY_KWH * 100.0
+        reserve_kwh / DEFAULT_BATTERY_CAPACITY_KWH * 100.0
     )
     required_min_soc = max(float(MIN_SOC_PERCENT), min(100.0, required_min_soc))
+    if soc is not None:
+        tradable_kwh = max(
+            0.0,
+            DEFAULT_BATTERY_CAPACITY_KWH
+            * (min(100.0, float(soc)) - required_min_soc)
+            / 100.0,
+        )
 
     price_rows: list[dict[str, Any]] = []
     for raw in forecast:
@@ -100,42 +111,246 @@ def build_planner_preview(
         price_max - price_min if price_min is not None and price_max is not None else None
     )
 
-    safety_candidates = [
-        row for row in price_rows if first_usable is None or row["time"] < first_usable
-    ]
-    safety_candidates.sort(key=lambda item: (item["import_price"], item["time"]))
+    # Alpha80 cheapest-energy safety planner.
+    #
+    # Solar remains first priority. Normal self_consumption is projected down to
+    # the technical device minimum. Whenever that rolling projection would end
+    # an hour below technical minimum + software reserve, the planner looks back
+    # over all technically feasible charge windows up to that deadline and buys
+    # the required stored energy in the cheapest window. The complete 72-hour
+    # route is then recalculated and the process repeats. This allows a later,
+    # cheaper window to beat an earlier cheap window when the battery can safely
+    # reach it, and allows a cheap window to fill to 100% when that is required
+    # to bridge a later expensive period.
+    minimum_stored_kwh = (
+        DEFAULT_BATTERY_CAPACITY_KWH * float(MIN_SOC_PERCENT) / 100.0
+    )
+    reserve_target_stored_kwh = min(
+        DEFAULT_BATTERY_CAPACITY_KWH,
+        minimum_stored_kwh + reserve_kwh,
+    )
+    start_soc = (
+        max(float(MIN_SOC_PERCENT), min(100.0, float(soc)))
+        if soc is not None
+        else float(MIN_SOC_PERCENT)
+    )
+    start_stored_kwh = DEFAULT_BATTERY_CAPACITY_KWH * start_soc / 100.0
 
-    remaining = max(additional_kwh or 0.0, 0.0)
-    selected_hours: list[dict[str, Any]] = []
-    for row in safety_candidates:
-        if remaining <= _MIN_ENERGY_KWH:
+    def _fraction(hour: datetime) -> float:
+        if hour != current_hour:
+            return 1.0
+        elapsed = now_utc.minute / 60.0 + now_utc.second / 3600.0
+        return max(0.0, min(1.0, 1.0 - elapsed))
+
+    def _simulate_safety(
+        schedule_stored_kwh: dict[str, float],
+    ) -> list[dict[str, Any]]:
+        stored_kwh = start_stored_kwh
+        trace: list[dict[str, Any]] = []
+        for row in price_rows:
+            fraction = _fraction(row["time"])
+            solar = max(0.0, _as_float(row.get("solar_kwh")) or 0.0) * fraction
+            home = max(0.0, _as_float(row.get("home_consumption_kwh")) or 0.0) * fraction
+            solar_to_home = min(solar, home)
+            solar_surplus = max(0.0, solar - solar_to_home)
+            home_deficit = max(0.0, home - solar_to_home)
+
+            charge_input_limit = max_charge_power_w / 1000.0 * fraction
+            discharge_output_limit = max_discharge_power_w / 1000.0 * fraction
+
+            solar_charge_input = min(
+                solar_surplus,
+                charge_input_limit,
+                max(0.0, DEFAULT_BATTERY_CAPACITY_KWH - stored_kwh) / charge_eff,
+            )
+            stored_kwh = min(
+                DEFAULT_BATTERY_CAPACITY_KWH,
+                stored_kwh + solar_charge_input * charge_eff,
+            )
+            available_charge_input = max(0.0, charge_input_limit - solar_charge_input)
+
+            maximum_safety_stored = min(
+                available_charge_input * charge_eff,
+                max(0.0, DEFAULT_BATTERY_CAPACITY_KWH - stored_kwh),
+            )
+            key = row["time"].isoformat()
+            requested_safety_stored = max(
+                0.0,
+                _as_float(schedule_stored_kwh.get(key)) or 0.0,
+            )
+            actual_safety_stored = min(
+                requested_safety_stored,
+                maximum_safety_stored,
+            )
+            stored_kwh += actual_safety_stored
+
+            available_output = max(
+                0.0,
+                (stored_kwh - minimum_stored_kwh) * discharge_eff,
+            )
+            battery_to_home = min(
+                home_deficit,
+                discharge_output_limit,
+                available_output,
+            )
+            if battery_to_home > _MIN_ENERGY_KWH:
+                stored_kwh -= battery_to_home / discharge_eff
+                home_deficit -= battery_to_home
+
+            grid_home = max(0.0, home_deficit)
+            trace.append(
+                {
+                    "time": row["time"],
+                    "import_price": row["import_price"],
+                    "export_price": row["export_price"],
+                    "price_source": row["price_source"],
+                    "stored_end_kwh": stored_kwh,
+                    "soc_end": stored_kwh / DEFAULT_BATTERY_CAPACITY_KWH * 100.0,
+                    "grid_home_kwh": grid_home,
+                    "solar_charge_input_kwh": solar_charge_input,
+                    "maximum_safety_stored_kwh": maximum_safety_stored,
+                    "actual_safety_stored_kwh": actual_safety_stored,
+                    "remaining_safety_stored_headroom_kwh": max(
+                        0.0,
+                        maximum_safety_stored - actual_safety_stored,
+                    ),
+                }
+            )
+        return trace
+
+    safety_schedule: dict[str, float] = {}
+    initial_trace = _simulate_safety(safety_schedule)
+    initial_breach_count = sum(
+        1
+        for item in initial_trace
+        if item["stored_end_kwh"] < reserve_target_stored_kwh - _MIN_ENERGY_KWH
+    )
+
+    max_iterations = max(1, len(price_rows) * 4)
+    for _ in range(max_iterations):
+        trace = _simulate_safety(safety_schedule)
+        breach_index = next(
+            (
+                index
+                for index, item in enumerate(trace)
+                if item["stored_end_kwh"]
+                < reserve_target_stored_kwh - _MIN_ENERGY_KWH
+            ),
+            None,
+        )
+        if breach_index is None:
             break
-        fraction = 1.0
-        if row["time"] == current_hour:
-            elapsed = now_utc.minute / 60.0 + now_utc.second / 3600.0
-            fraction = max(0.0, min(1.0, 1.0 - elapsed))
-        capacity_kwh = max_charge_power_w / 1000.0 * fraction * charge_eff
-        if capacity_kwh <= 0:
+
+        breach_stored = trace[breach_index]["stored_end_kwh"]
+        required_improvement = reserve_target_stored_kwh - breach_stored
+        candidates = [
+            index
+            for index, item in enumerate(trace[: breach_index + 1])
+            if item["import_price"] is not None
+            and item["remaining_safety_stored_headroom_kwh"] > _MIN_ENERGY_KWH
+        ]
+        # Same efficiency applies to every candidate, therefore import price is
+        # sufficient for ordering. For equal prices prefer the latest window:
+        # that preserves headroom for free solar and keeps the plan flexible.
+        candidates.sort(
+            key=lambda index: (
+                trace[index]["import_price"],
+                -trace[index]["time"].timestamp(),
+            )
+        )
+
+        allocation_made = False
+        for candidate_index in candidates:
+            candidate = trace[candidate_index]
+            maximum_add = candidate["remaining_safety_stored_headroom_kwh"]
+            key = candidate["time"].isoformat()
+            existing = safety_schedule.get(key, 0.0)
+
+            trial_schedule = dict(safety_schedule)
+            trial_schedule[key] = existing + maximum_add
+            trial_trace = _simulate_safety(trial_schedule)
+            maximum_improvement = (
+                trial_trace[breach_index]["stored_end_kwh"] - breach_stored
+            )
+            if maximum_improvement <= _MIN_ENERGY_KWH:
+                continue
+
+            allocation = maximum_add
+            if maximum_improvement > required_improvement + _MIN_ENERGY_KWH:
+                low = 0.0
+                high = maximum_add
+                for _binary in range(18):
+                    mid = (low + high) / 2.0
+                    probe_schedule = dict(safety_schedule)
+                    probe_schedule[key] = existing + mid
+                    probe_trace = _simulate_safety(probe_schedule)
+                    improvement = (
+                        probe_trace[breach_index]["stored_end_kwh"] - breach_stored
+                    )
+                    if improvement >= required_improvement:
+                        high = mid
+                    else:
+                        low = mid
+                allocation = high
+
+            if allocation <= _MIN_ENERGY_KWH:
+                continue
+            safety_schedule[key] = existing + allocation
+            allocation_made = True
+            break
+
+        if not allocation_made:
+            break
+
+    final_trace = _simulate_safety(safety_schedule)
+    final_breaches = [
+        item
+        for item in final_trace
+        if item["stored_end_kwh"] < reserve_target_stored_kwh - _MIN_ENERGY_KWH
+    ]
+    selected_hours: list[dict[str, Any]] = []
+    for item in final_trace:
+        stored = item["actual_safety_stored_kwh"]
+        if stored <= _MIN_ENERGY_KWH:
             continue
-        allocated = min(remaining, capacity_kwh)
         selected_hours.append(
             {
-                "time": row["time"].isoformat(),
-                "price": row["import_price"],
-                "import_price": row["import_price"],
-                "export_price": row["export_price"],
-                "price_source": row["price_source"],
-                "max_battery_energy_kwh": round(capacity_kwh, 3),
-                "candidate_battery_energy_kwh": round(allocated, 3),
+                "time": item["time"].isoformat(),
+                "price": item["import_price"],
+                "import_price": item["import_price"],
+                "export_price": item["export_price"],
+                "price_source": item["price_source"],
+                "max_battery_energy_kwh": round(
+                    item["maximum_safety_stored_kwh"], 3
+                ),
+                "candidate_battery_energy_kwh": round(stored, 3),
+                "effective_delivered_cost": round(
+                    item["import_price"] / roundtrip_eff, 6
+                ),
             }
         )
-        remaining -= allocated
 
-    safety_charge_needed = bool(
-        valid and additional_kwh is not None and additional_kwh > _MIN_ENERGY_KWH
+    selected_safety_stored_kwh = sum(
+        item["actual_safety_stored_kwh"] for item in final_trace
     )
-    safety_schedule_sufficient = bool(
-        not safety_charge_needed or remaining <= _MIN_ENERGY_KWH
+    safety_charge_needed = bool(initial_breach_count)
+    safety_schedule_sufficient = not final_breaches
+    safety_first_breach_time = next(
+        (
+            item["time"]
+            for item in initial_trace
+            if item["stored_end_kwh"]
+            < reserve_target_stored_kwh - _MIN_ENERGY_KWH
+        ),
+        None,
+    )
+    current_safety_hour = next(
+        (
+            item
+            for item in selected_hours
+            if _parse_time(item.get("time")) == current_hour
+        ),
+        None,
     )
 
     discharge_possible = bool(
@@ -180,6 +395,7 @@ def build_planner_preview(
     trade_profitable = bool(
         best_trade is not None
         and best_trade["net_margin"] >= min_margin
+        and not safety_charge_needed
     )
 
     current_is_best_charge = bool(
@@ -201,16 +417,23 @@ def build_planner_preview(
         decision = "wachten"
         reason = "Energiebalans is nog niet volledig geldig"
     elif safety_charge_needed:
-        decision = "veiligheidsladen"
-        if safety_schedule_sufficient:
+        if current_safety_hour is not None:
+            decision = "veiligheidsladen"
             reason = (
-                "Batterij-energie is onvoldoende voor behoefte plus reserve; "
-                "goedkoopste benodigde laaduren zijn geselecteerd"
+                "De 72-uurs SOC-route dreigt onder de 5%+7% planningsmarge te "
+                "komen; het huidige uur is een geselecteerd goedkoop veiligheidslaadvenster"
+            )
+        elif selected_hours:
+            decision = "wachten"
+            reason = (
+                "De 72-uurs SOC-route vraagt veiligheidslading; een goedkoper "
+                "technisch haalbaar laadvenster ligt later"
             )
         else:
+            decision = "wachten"
             reason = (
-                "Batterij-energie is onvoldoende en beschikbare laaduren vóór "
-                "bruikbare zon lijken niet genoeg om het tekort volledig te laden"
+                "De 72-uurs SOC-route dreigt onder de planningsmarge te komen, "
+                "maar de beschikbare laadvensters zijn technisch onvoldoende"
             )
     elif current_is_best_discharge and discharge_possible and trade_profitable:
         decision = "ontladen"
@@ -263,12 +486,18 @@ def build_planner_preview(
             round(tradable_kwh, 3) if tradable_kwh is not None else None
         ),
         "planner_preview_safety_charge_needed": safety_charge_needed,
-        "planner_preview_safety_charge_kwh": (
-            round(additional_kwh, 3) if additional_kwh is not None else None
-        ),
+        "planner_preview_safety_charge_kwh": round(selected_safety_stored_kwh, 3),
         "planner_preview_safety_charge_hours": selected_hours,
         "planner_preview_safety_charge_hour_count": len(selected_hours),
         "planner_preview_safety_schedule_sufficient": safety_schedule_sufficient,
+        "planner_preview_safety_reserve_target_soc": round(required_min_soc, 1),
+        "planner_preview_safety_first_breach_time": (
+            safety_first_breach_time.isoformat()
+            if safety_first_breach_time is not None
+            else None
+        ),
+        "planner_preview_safety_initial_breach_count": initial_breach_count,
+        "planner_preview_safety_remaining_breach_count": len(final_breaches),
         "planner_preview_trade_charge_candidate": trade_charge_candidate,
         "planner_preview_discharge_possible": discharge_possible,
         "planner_preview_solar_charge_delay": solar_charge_delay,
@@ -313,8 +542,9 @@ def build_planner_preview(
         "planner_preview_losses_included": True,
         "planner_preview_assumed_max_charge_power_w": int(max_charge_power_w),
         "planner_preview_note": (
-            "Alpha23 rekent handelsrendement observerend door met laad- en "
-            "ontlaadrendement en minimum handelsmarge. Er worden nog geen "
-            "automatische plannen aangemaakt."
+            "Alpha80 gebruikt de bestaande categorie veiligheidsladen voor de "
+            "goedkoopste technisch haalbare energie om de rollende 72-uurs "
+            "self_consumption-route boven 5%+7% planningsmarge te houden. Solar "
+            "blijft eerste bron; er is geen extra laadtype of publieke sensor."
         ),
     }
