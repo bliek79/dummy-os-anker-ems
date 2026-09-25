@@ -35,8 +35,8 @@ def test_alpha77_legacy_authority_fence_contract() -> None:
     assert 'name="Dummy OS EMS Legacy Authority"' in sensor
 
 
-def test_alpha77_version_contract() -> None:
+def test_alpha78_version_contract() -> None:
     const = (INTEGRATION / "const.py").read_text(encoding="utf-8")
     manifest = (INTEGRATION / "manifest.json").read_text(encoding="utf-8")
-    assert 'VERSION = "0.0.1-alpha.77"' in const
-    assert '"version": "0.0.1-alpha.77"' in manifest
+    assert 'VERSION = "0.0.1-alpha.78"' in const
+    assert '"version": "0.0.1-alpha.78"' in manifest
