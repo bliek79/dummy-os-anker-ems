@@ -85,6 +85,9 @@ def _forced_row_action(
     safety_only: bool = False,
 ) -> tuple[str, str, float] | None:
     safety = max(0.0, _as_float(row.get("charge_from_grid_safety_kwh")) or 0.0)
+    support_charge = max(
+        0.0, _as_float(row.get("charge_from_grid_support_kwh")) or 0.0
+    )
     trade_charge = max(0.0, _as_float(row.get("charge_from_grid_trade_kwh")) or 0.0)
     grid_discharge = max(0.0, _as_float(row.get("discharge_to_grid_kwh")) or 0.0)
 
@@ -92,6 +95,7 @@ def _forced_row_action(
     # safety-charge action. Tiny safety residues stay observable in Plan72 but
     # no longer justify taking the battery out of self_consumption.
     safety_actionable = safety >= MIN_ACTIONABLE_SAFETY_CHARGE_KWH
+    support_actionable = support_charge > _MIN_ACTION_ENERGY_KWH
     trade_actionable = trade_charge > _MIN_ACTION_ENERGY_KWH
 
     # Alpha61: when the execution buffer is already unsafe, the bridge must
@@ -103,24 +107,29 @@ def _forced_row_action(
             return "laden", "veiligheidsladen", safety
         return None
 
-    grid_charge = (safety if safety_actionable else 0.0) + (
-        trade_charge if trade_actionable else 0.0
+    grid_charge = (
+        (safety if safety_actionable else 0.0)
+        + (support_charge if support_actionable else 0.0)
+        + (trade_charge if trade_actionable else 0.0)
     )
     if grid_charge > _MIN_ACTION_ENERGY_KWH:
-        if safety_actionable and trade_actionable:
-            purpose = "veiligheidsladen+handelsladen"
-        elif safety_actionable:
-            purpose = "veiligheidsladen"
-        else:
-            purpose = "handelsladen"
-        return "laden", purpose, grid_charge
+        purposes: list[str] = []
+        if safety_actionable:
+            purposes.append("veiligheidsladen")
+        if support_actionable:
+            purposes.append("zelfconsumptie_bijladen")
+        if trade_actionable:
+            purposes.append("handelsladen")
+        return "laden", "+".join(purposes), grid_charge
 
     if grid_discharge > _MIN_ACTION_ENERGY_KWH:
         return "ontladen", "handel_ontladen", grid_discharge
 
     # Solar charging and discharge to the home are intentionally not converted
     # to explicit third-party-control actions. Those flows belong to the normal
-    # self_consumption behaviour of the battery.
+    # self_consumption behaviour of the battery. Alpha79 support charging is
+    # different: it is an explicit temporary charge action chosen to shift
+    # otherwise unavoidable future grid import to a cheaper hour.
     return None
 
 
