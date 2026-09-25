@@ -342,6 +342,7 @@ def build_planner_preview(
     trade_profitable = bool(
         best_trade is not None
         and best_trade["net_margin"] >= min_margin
+        and not support_charge_needed
     )
 
     current_is_best_charge = bool(
