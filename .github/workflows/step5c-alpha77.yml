@@ -33,7 +33,7 @@ jobs:
           grep -F 'def _auto_bridge_candidate_attrs' custom_components/anker_ems/sensor.py
           grep -F 'def _auto_bridge_slots_attrs' custom_components/anker_ems/sensor.py
           ! grep -F 'attrs_fn=_auto_bridge_attrs' custom_components/anker_ems/sensor.py
-          test -f tests/test_alpha80_bridge_recorder_payload.py
+          test -f tests/test_alpha78_bridge_recorder_payload.py
           test -f RELEASE_NOTES_ALPHA80.md
           test -f tests/test_alpha80_cheapest_energy_safety.py
           ! grep -R -F 'zelfconsumptie_bijladen' custom_components/anker_ems
@@ -60,5 +60,5 @@ jobs:
             gh release edit 0.0.1-alpha.80               --title "Dummy OS EMS 0.0.1-alpha.80 - Cheapest Energy Safety Planner"               --notes-file RELEASE_NOTES_ALPHA80.md               --prerelease
             gh release upload 0.0.1-alpha.80 dummy-os-anker-ems-alpha80.zip SHA256SUMS-alpha80.txt --clobber
           else
-            gh release create 0.0.1-alpha.80 dummy-os-anker-ems-alpha80.zip SHA256SUMS-alpha80.txt               --target main               --title "Dummy OS EMS 0.0.1-alpha.80 - Bridge Recorder Payload Fix"               --notes-file RELEASE_NOTES_ALPHA80.md               --prerelease
+            gh release create 0.0.1-alpha.80 dummy-os-anker-ems-alpha80.zip SHA256SUMS-alpha80.txt               --target main               --title "Dummy OS EMS 0.0.1-alpha.80 - Cheapest Energy Safety Planner"               --notes-file RELEASE_NOTES_ALPHA80.md               --prerelease
           fi
