@@ -41,6 +41,7 @@ def build_planner_preview(
     discharge_efficiency_percent: float,
     minimum_trade_margin: float,
     max_charge_power_w: int = 3500,
+    max_discharge_power_w: int = 3500,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Build an observational planner and financial trade preview.
@@ -62,8 +63,11 @@ def build_planner_preview(
     tradable_kwh = _as_float(energy_need.get("energy_need_tradable_battery_kwh"))
     first_usable = _parse_time(energy_need.get("energy_need_first_usable_solar"))
 
+    # Alpha79: this is the enforceable reserve for explicit external-control
+    # discharge only. Forecast demand until usable solar is planning context and
+    # must never become a fictitious self_consumption hold floor.
     required_min_soc = MIN_SOC_PERCENT + (
-        (need_kwh + reserve_kwh) / DEFAULT_BATTERY_CAPACITY_KWH * 100.0
+        reserve_kwh / DEFAULT_BATTERY_CAPACITY_KWH * 100.0
     )
     required_min_soc = max(float(MIN_SOC_PERCENT), min(100.0, required_min_soc))
 
@@ -100,43 +104,201 @@ def build_planner_preview(
         price_max - price_min if price_min is not None and price_max is not None else None
     )
 
-    safety_candidates = [
-        row for row in price_rows if first_usable is None or row["time"] < first_usable
-    ]
-    safety_candidates.sort(key=lambda item: (item["import_price"], item["time"]))
+    # Baseline physical self_consumption projection. Solar surplus charges the
+    # battery, household deficit discharges it down to the technical minimum,
+    # and only the remainder becomes unavoidable direct grid import.
+    minimum_stored_kwh = (
+        DEFAULT_BATTERY_CAPACITY_KWH * float(MIN_SOC_PERCENT) / 100.0
+    )
+    start_soc = (
+        max(float(MIN_SOC_PERCENT), min(100.0, float(soc)))
+        if soc is not None
+        else float(MIN_SOC_PERCENT)
+    )
+    baseline_stored_kwh = DEFAULT_BATTERY_CAPACITY_KWH * start_soc / 100.0
+    baseline_min_soc = start_soc
+    baseline_grid_rows: list[dict[str, Any]] = []
+    support_candidates: list[dict[str, Any]] = []
 
-    remaining = max(additional_kwh or 0.0, 0.0)
-    selected_hours: list[dict[str, Any]] = []
-    for row in safety_candidates:
-        if remaining <= _MIN_ENERGY_KWH:
+    for row in price_rows:
+        if first_usable is not None and row["time"] >= first_usable:
             break
+
         fraction = 1.0
         if row["time"] == current_hour:
             elapsed = now_utc.minute / 60.0 + now_utc.second / 3600.0
             fraction = max(0.0, min(1.0, 1.0 - elapsed))
-        capacity_kwh = max_charge_power_w / 1000.0 * fraction * charge_eff
-        if capacity_kwh <= 0:
-            continue
-        allocated = min(remaining, capacity_kwh)
-        selected_hours.append(
-            {
-                "time": row["time"].isoformat(),
-                "price": row["import_price"],
-                "import_price": row["import_price"],
-                "export_price": row["export_price"],
-                "price_source": row["price_source"],
-                "max_battery_energy_kwh": round(capacity_kwh, 3),
-                "candidate_battery_energy_kwh": round(allocated, 3),
-            }
-        )
-        remaining -= allocated
 
-    safety_charge_needed = bool(
+        solar = max(0.0, _as_float(row.get("solar_kwh")) or 0.0) * fraction
+        home = max(0.0, _as_float(row.get("home_consumption_kwh")) or 0.0) * fraction
+        solar_to_home = min(solar, home)
+        solar_surplus = max(0.0, solar - solar_to_home)
+        home_deficit = max(0.0, home - solar_to_home)
+
+        charge_input_limit = max_charge_power_w / 1000.0 * fraction
+        solar_charge_input = min(
+            solar_surplus,
+            charge_input_limit,
+            max(0.0, DEFAULT_BATTERY_CAPACITY_KWH - baseline_stored_kwh) / charge_eff,
+        )
+        baseline_stored_kwh = min(
+            DEFAULT_BATTERY_CAPACITY_KWH,
+            baseline_stored_kwh + solar_charge_input * charge_eff,
+        )
+
+        # External support charging would happen after free solar but before
+        # normal self_consumption household discharge in this hour.
+        support_input_headroom = max(0.0, charge_input_limit - solar_charge_input)
+        support_stored_headroom = min(
+            support_input_headroom * charge_eff,
+            max(0.0, DEFAULT_BATTERY_CAPACITY_KWH - baseline_stored_kwh),
+        )
+        if row["import_price"] is not None and support_stored_headroom > _MIN_ENERGY_KWH:
+            support_candidates.append(
+                {
+                    "time": row["time"],
+                    "price": row["import_price"],
+                    "import_price": row["import_price"],
+                    "export_price": row["export_price"],
+                    "price_source": row["price_source"],
+                    "remaining_stored_kwh": support_stored_headroom,
+                }
+            )
+
+        available_output = max(
+            0.0,
+            (baseline_stored_kwh - minimum_stored_kwh) * discharge_eff,
+        )
+        discharge_output_limit = max_discharge_power_w / 1000.0 * fraction
+        battery_to_home = min(home_deficit, discharge_output_limit, available_output)
+        if battery_to_home > _MIN_ENERGY_KWH:
+            baseline_stored_kwh -= battery_to_home / discharge_eff
+            home_deficit -= battery_to_home
+
+        grid_home = max(0.0, home_deficit)
+        if grid_home > _MIN_ENERGY_KWH and row["import_price"] is not None:
+            baseline_grid_rows.append(
+                {
+                    "time": row["time"],
+                    "import_price": row["import_price"],
+                    "grid_home_kwh": grid_home,
+                }
+            )
+        baseline_min_soc = min(
+            baseline_min_soc,
+            baseline_stored_kwh / DEFAULT_BATTERY_CAPACITY_KWH * 100.0,
+        )
+
+    baseline_grid_import_kwh = sum(
+        item["grid_home_kwh"] for item in baseline_grid_rows
+    )
+    first_min_soc_time = (
+        baseline_grid_rows[0]["time"] if baseline_grid_rows else None
+    )
+
+    # Shift only genuinely unavoidable future grid import to earlier charge
+    # windows when battery round-trip delivery is cheaper than buying that
+    # future household energy directly. Otherwise self_consumption is allowed
+    # to continue naturally down to the technical minimum.
+    remaining_support_stored = max(additional_kwh or 0.0, 0.0)
+    support_allocations: dict[str, dict[str, Any]] = {}
+    support_savings_eur = 0.0
+    for deficit in sorted(
+        baseline_grid_rows,
+        key=lambda item: (-item["import_price"], item["time"]),
+    ):
+        remaining_output = deficit["grid_home_kwh"]
+        if remaining_output <= _MIN_ENERGY_KWH or remaining_support_stored <= _MIN_ENERGY_KWH:
+            continue
+        candidates = [
+            item
+            for item in support_candidates
+            if item["time"] <= deficit["time"]
+            and item["remaining_stored_kwh"] > _MIN_ENERGY_KWH
+            and (
+                item["import_price"] / (charge_eff * discharge_eff)
+                < deficit["import_price"] - 1e-9
+            )
+        ]
+        candidates.sort(
+            key=lambda item: (
+                item["import_price"] / (charge_eff * discharge_eff),
+                item["time"],
+            )
+        )
+        for candidate in candidates:
+            if remaining_output <= _MIN_ENERGY_KWH or remaining_support_stored <= _MIN_ENERGY_KWH:
+                break
+            max_output = candidate["remaining_stored_kwh"] * discharge_eff
+            shifted_output = min(
+                remaining_output,
+                max_output,
+                remaining_support_stored * discharge_eff,
+            )
+            if shifted_output <= _MIN_ENERGY_KWH:
+                continue
+            stored_allocated = shifted_output / discharge_eff
+            candidate["remaining_stored_kwh"] -= stored_allocated
+            remaining_support_stored -= stored_allocated
+            remaining_output -= shifted_output
+            effective_cost = candidate["import_price"] / (charge_eff * discharge_eff)
+            support_savings_eur += shifted_output * (
+                deficit["import_price"] - effective_cost
+            )
+            key = candidate["time"].isoformat()
+            allocation = support_allocations.setdefault(
+                key,
+                {
+                    "time": key,
+                    "price": candidate["import_price"],
+                    "import_price": candidate["import_price"],
+                    "export_price": candidate["export_price"],
+                    "price_source": candidate["price_source"],
+                    "candidate_battery_energy_kwh": 0.0,
+                    "avoided_grid_kwh": 0.0,
+                    "future_direct_import_price_max": deficit["import_price"],
+                },
+            )
+            allocation["candidate_battery_energy_kwh"] += stored_allocated
+            allocation["avoided_grid_kwh"] += shifted_output
+            allocation["future_direct_import_price_max"] = max(
+                allocation["future_direct_import_price_max"],
+                deficit["import_price"],
+            )
+
+    selected_support_hours = sorted(
+        (
+            {
+                **item,
+                "candidate_battery_energy_kwh": round(
+                    item["candidate_battery_energy_kwh"], 3
+                ),
+                "avoided_grid_kwh": round(item["avoided_grid_kwh"], 3),
+                "future_direct_import_price_max": round(
+                    item["future_direct_import_price_max"], 6
+                ),
+            }
+            for item in support_allocations.values()
+        ),
+        key=lambda item: item["time"],
+    )
+    selected_support_stored_kwh = sum(
+        item["candidate_battery_energy_kwh"] for item in selected_support_hours
+    )
+    support_charge_needed = bool(
         valid and additional_kwh is not None and additional_kwh > _MIN_ENERGY_KWH
     )
-    safety_schedule_sufficient = bool(
-        not safety_charge_needed or remaining <= _MIN_ENERGY_KWH
+    support_charge_economic = selected_support_stored_kwh > _MIN_ENERGY_KWH
+    support_schedule_covers_shortage = bool(
+        not support_charge_needed or remaining_support_stored <= _MIN_ENERGY_KWH
     )
+
+    # The legacy safety-charge contract no longer represents ordinary demand
+    # coverage in self_consumption. Keep the fields for compatibility but empty;
+    # explicit cheap support charging is published separately below.
+    safety_charge_needed = False
+    safety_schedule_sufficient = True
+    selected_hours: list[dict[str, Any]] = []
 
     discharge_possible = bool(
         valid
@@ -148,7 +310,7 @@ def build_planner_preview(
 
     solar_charge_delay = bool(
         valid
-        and not safety_charge_needed
+        and not support_charge_needed
         and first_usable is not None
         and first_usable > now_utc
     )
@@ -191,27 +353,42 @@ def build_planner_preview(
 
     trade_charge_candidate = bool(
         valid
-        and not safety_charge_needed
+        and not support_charge_needed
         and free_capacity_kwh is not None
         and free_capacity_kwh > _MIN_ENERGY_KWH
         and trade_profitable
     )
 
+    support_current = next(
+        (
+            item
+            for item in selected_support_hours
+            if _parse_time(item.get("time")) == current_hour
+        ),
+        None,
+    )
+
     if not valid:
         decision = "wachten"
         reason = "Energiebalans is nog niet volledig geldig"
-    elif safety_charge_needed:
-        decision = "veiligheidsladen"
-        if safety_schedule_sufficient:
-            reason = (
-                "Batterij-energie is onvoldoende voor behoefte plus reserve; "
-                "goedkoopste benodigde laaduren zijn geselecteerd"
-            )
-        else:
-            reason = (
-                "Batterij-energie is onvoldoende en beschikbare laaduren vóór "
-                "bruikbare zon lijken niet genoeg om het tekort volledig te laden"
-            )
+    elif support_charge_needed and support_current is not None:
+        decision = "zelfconsumptie_bijladen"
+        reason = (
+            "Zonder ingreep ontstaat later netimport; dit uur kan die energie "
+            "na laad- en ontlaadverlies goedkoper in de batterij worden gezet"
+        )
+    elif support_charge_needed and support_charge_economic:
+        decision = "wachten"
+        reason = (
+            "Zelfconsumptie mag natuurlijk ontladen; een goedkoper laadvenster "
+            "voor latere onvermijdelijke netimport ligt verderop"
+        )
+    elif support_charge_needed:
+        decision = "geen_actie"
+        reason = (
+            "Zelfconsumptie mag tot minimum-SOC ontladen; er is geen eerder "
+            "laadvenster dat na verliezen goedkoper is dan latere directe netimport"
+        )
     elif current_is_best_discharge and discharge_possible and trade_profitable:
         decision = "ontladen"
         reason = (
@@ -269,6 +446,20 @@ def build_planner_preview(
         "planner_preview_safety_charge_hours": selected_hours,
         "planner_preview_safety_charge_hour_count": len(selected_hours),
         "planner_preview_safety_schedule_sufficient": safety_schedule_sufficient,
+        "planner_preview_support_charge_needed": support_charge_needed,
+        "planner_preview_support_charge_economic": support_charge_economic,
+        "planner_preview_support_charge_kwh": round(selected_support_stored_kwh, 3),
+        "planner_preview_support_charge_hours": selected_support_hours,
+        "planner_preview_support_charge_hour_count": len(selected_support_hours),
+        "planner_preview_support_schedule_covers_shortage": support_schedule_covers_shortage,
+        "planner_preview_support_remaining_stored_kwh": round(max(remaining_support_stored, 0.0), 3),
+        "planner_preview_support_expected_savings_eur": round(support_savings_eur, 4),
+        "planner_preview_baseline_grid_import_kwh": round(baseline_grid_import_kwh, 3),
+        "planner_preview_baseline_min_soc_percent": round(baseline_min_soc, 1),
+        "planner_preview_baseline_first_min_soc_time": (
+            first_min_soc_time.isoformat() if first_min_soc_time is not None else None
+        ),
+        "planner_preview_reserve_enforceable_in_self_consumption": False,
         "planner_preview_trade_charge_candidate": trade_charge_candidate,
         "planner_preview_discharge_possible": discharge_possible,
         "planner_preview_solar_charge_delay": solar_charge_delay,
@@ -313,8 +504,9 @@ def build_planner_preview(
         "planner_preview_losses_included": True,
         "planner_preview_assumed_max_charge_power_w": int(max_charge_power_w),
         "planner_preview_note": (
-            "Alpha23 rekent handelsrendement observerend door met laad- en "
-            "ontlaadrendement en minimum handelsmarge. Er worden nog geen "
-            "automatische plannen aangemaakt."
+            "Alpha79 projecteert normale self_consumption fysiek: woningontlading "
+            "mag tot minimum-SOC doorlopen. Alleen latere onvermijdelijke netimport "
+            "wordt naar een eerder laadvenster verschoven wanneer dat na verliezen "
+            "goedkoper is. De reserve blijft context voor expliciete control-acties."
         ),
     }
