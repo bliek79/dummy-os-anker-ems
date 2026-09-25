@@ -113,11 +113,25 @@ def build_energy_need_analysis(
         usable_soc = max(0.0, min(100.0, float(soc)) - MIN_SOC_PERCENT)
         available_battery_kwh = DEFAULT_BATTERY_CAPACITY_KWH * usable_soc / 100.0
 
+    # Alpha79 self-consumption policy:
+    # forecast demand until usable solar remains planning context, but it is no
+    # longer treated as a physically enforceable battery floor. In normal
+    # self_consumption the battery may discharge to the device minimum. The
+    # unavoidable remainder is therefore a grid-import forecast; a later planner
+    # stage may shift that import to a cheaper charge window.
     required_including_reserve = net_need_kwh + reserve_kwh
     additional_grid_charge_kwh: float | None = None
+    unavoidable_grid_import_kwh: float | None = None
+    charge_needed_to_preserve_reserve_kwh: float | None = None
     tradable_battery_kwh: float | None = None
     if available_battery_kwh is not None:
-        additional_grid_charge_kwh = max(
+        unavoidable_grid_import_kwh = max(
+            net_need_kwh - available_battery_kwh, 0.0
+        )
+        # Compatibility field consumed by Planner Preview. Its Alpha79 meaning is
+        # economical self-consumption support opportunity, not mandatory safety.
+        additional_grid_charge_kwh = unavoidable_grid_import_kwh
+        charge_needed_to_preserve_reserve_kwh = max(
             required_including_reserve - available_battery_kwh, 0.0
         )
         tradable_battery_kwh = max(
@@ -138,9 +152,15 @@ def build_energy_need_analysis(
     elif missing_home or missing_solar:
         reason = "Forecast bevat ontbrekende woning- of solarwaarden voor de benodigde periode"
     elif additional_grid_charge_kwh is not None and additional_grid_charge_kwh > 0.01:
-        reason = "Aanvullende energie nodig om behoefte plus veiligheidsreserve te dekken"
+        reason = (
+            "Woningvraag tot bruikbare zon is groter dan de batterij boven minimum-SOC; "
+            "netimport is zonder voordelig bijladen onvermijdelijk"
+        )
     else:
-        reason = "Beschikbare batterij-energie dekt behoefte plus veiligheidsreserve"
+        reason = (
+            "Batterij kan de verwachte woningvraag tot bruikbare zon afdekken; "
+            "de berekende reserve blijft planningcontext en is in self_consumption niet afdwingbaar"
+        )
 
     return {
         "energy_need_status": "ready" if valid else "waiting_for_complete_forecast",
@@ -159,6 +179,17 @@ def build_energy_need_analysis(
             if additional_grid_charge_kwh is not None
             else None
         ),
+        "energy_need_unavoidable_grid_import_kwh": (
+            round(unavoidable_grid_import_kwh, 3)
+            if unavoidable_grid_import_kwh is not None
+            else None
+        ),
+        "energy_need_charge_needed_to_preserve_reserve_kwh": (
+            round(charge_needed_to_preserve_reserve_kwh, 3)
+            if charge_needed_to_preserve_reserve_kwh is not None
+            else None
+        ),
+        "energy_need_reserve_enforceable_in_self_consumption": False,
         "energy_need_tradable_battery_kwh": (
             round(tradable_battery_kwh, 3)
             if tradable_battery_kwh is not None
