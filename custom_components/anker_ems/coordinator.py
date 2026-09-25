@@ -1194,6 +1194,7 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             discharge_efficiency_percent,
             minimum_trade_margin,
             max_charge_power_w=self.max_charge_power_w,
+            max_discharge_power_w=self.max_discharge_power_w,
         )
         data.update(planner_preview)
 
