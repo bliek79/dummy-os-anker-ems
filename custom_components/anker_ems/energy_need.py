@@ -36,6 +36,7 @@ def build_energy_need_analysis(
     soc: float | None,
     safety_reserve_percent: float,
     now: datetime | None = None,
+    discharge_efficiency_percent: float = 100.0,
 ) -> dict[str, Any]:
     """Build an observational energy balance until usable solar returns.
 
@@ -46,6 +47,7 @@ def build_energy_need_analysis(
     now_utc = (now or dt_util.utcnow()).astimezone(dt_util.UTC)
     reserve_percent = max(0.0, min(30.0, float(safety_reserve_percent)))
     reserve_kwh = DEFAULT_BATTERY_CAPACITY_KWH * reserve_percent / 100.0
+    discharge_eff = max(0.50, min(1.00, float(discharge_efficiency_percent) / 100.0))
 
     rows: list[dict[str, Any]] = []
     for raw in forecast:
@@ -114,23 +116,22 @@ def build_energy_need_analysis(
         available_battery_kwh = DEFAULT_BATTERY_CAPACITY_KWH * usable_soc / 100.0
 
     # Alpha79 self-consumption policy:
-    # forecast demand until usable solar remains planning context, but it is no
-    # longer treated as a physically enforceable battery floor. In normal
-    # self_consumption the battery may discharge to the device minimum. The
-    # unavoidable remainder is therefore a grid-import forecast; a later planner
-    # stage may shift that import to a cheaper charge window.
-    required_including_reserve = net_need_kwh + reserve_kwh
+    # Energy Need describes planning demand, not an enforceable SOC floor.
+    # In normal self_consumption the device may discharge to MIN_SOC_PERCENT.
+    stored_need_until_solar_kwh = net_need_kwh / discharge_eff
+    required_including_reserve = stored_need_until_solar_kwh + reserve_kwh
     additional_grid_charge_kwh: float | None = None
     unavoidable_grid_import_kwh: float | None = None
     charge_needed_to_preserve_reserve_kwh: float | None = None
     tradable_battery_kwh: float | None = None
     if available_battery_kwh is not None:
+        available_home_output_kwh = available_battery_kwh * discharge_eff
         unavoidable_grid_import_kwh = max(
-            net_need_kwh - available_battery_kwh, 0.0
+            net_need_kwh - available_home_output_kwh, 0.0
         )
-        # Compatibility field consumed by Planner Preview. Its Alpha79 meaning is
-        # economical self-consumption support opportunity, not mandatory safety.
-        additional_grid_charge_kwh = unavoidable_grid_import_kwh
+        # Stored battery energy that could economically shift unavoidable future
+        # grid import to an earlier cheap charge window. It is not mandatory.
+        additional_grid_charge_kwh = unavoidable_grid_import_kwh / discharge_eff
         charge_needed_to_preserve_reserve_kwh = max(
             required_including_reserve - available_battery_kwh, 0.0
         )
@@ -167,12 +168,14 @@ def build_energy_need_analysis(
         "energy_need_valid": valid,
         "energy_need_reason": reason,
         "energy_need_until_solar_kwh": round(net_need_kwh, 3),
+        "energy_need_stored_need_until_solar_kwh": round(stored_need_until_solar_kwh, 3),
         "energy_need_first_usable_solar": first_usable.isoformat() if first_usable else None,
         "energy_need_available_battery_kwh": (
             round(available_battery_kwh, 3) if available_battery_kwh is not None else None
         ),
         "energy_need_safety_reserve_percent": round(reserve_percent, 1),
         "energy_need_safety_reserve_kwh": round(reserve_kwh, 3),
+        "energy_need_discharge_efficiency_percent": round(discharge_eff * 100.0, 1),
         "energy_need_required_including_reserve_kwh": round(required_including_reserve, 3),
         "energy_need_additional_grid_charge_kwh": (
             round(additional_grid_charge_kwh, 3)
