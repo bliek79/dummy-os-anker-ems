@@ -169,14 +169,11 @@ def build_72h_plan_preview(
                 need_row["home_kwh"] - need_row["solar_kwh"],
             ) * fraction
 
-        stored_need_kwh = net_home_need_kwh / discharge_eff
-        floor_kwh = min(
-            capacity,
-            max(
-                minimum_stored_kwh,
-                base_reserve_floor_kwh + stored_need_kwh,
-            ),
-        )
+        # Alpha79: demand until usable solar remains planning context. The
+        # enforceable reserve for explicit external-control actions is the fixed
+        # hardware + software reserve; normal self_consumption cannot be held at
+        # a higher calculated SOC without an actual control action.
+        floor_kwh = base_reserve_floor_kwh
         first_usable = rows[usable_index]["time"]
         return floor_kwh, net_home_need_kwh, first_usable
 
@@ -200,6 +197,16 @@ def build_72h_plan_preview(
         if wanted is not None and wanted > 0:
             safety_by_time[t.isoformat()] = wanted
 
+    support_hours_raw = planner_preview.get("planner_preview_support_charge_hours") or []
+    support_by_time: dict[str, float] = {}
+    for item in support_hours_raw:
+        if not isinstance(item, dict):
+            continue
+        t = _parse_time(item.get("time"))
+        wanted = _as_float(item.get("candidate_battery_energy_kwh"))
+        if t is not None and wanted is not None and wanted > 0:
+            support_by_time[t.isoformat()] = wanted
+
     trade_profitable = bool(planner_preview.get("planner_preview_trade_profitable"))
     best_charge_time = _parse_time(planner_preview.get("planner_preview_best_charge_time"))
     best_discharge_time = _parse_time(planner_preview.get("planner_preview_best_discharge_time"))
@@ -207,6 +214,7 @@ def build_72h_plan_preview(
     plan: list[dict[str, Any]] = []
     total_solar_charge = 0.0
     total_grid_safety_charge = 0.0
+    total_grid_support_charge = 0.0
     total_grid_trade_charge = 0.0
     total_home_discharge = 0.0
     total_grid_trade_discharge = 0.0
@@ -399,6 +407,7 @@ def build_72h_plan_preview(
 
         solar_charge_input = 0.0
         grid_safety_input = 0.0
+        grid_support_input = 0.0
         grid_trade_input = 0.0
         discharge_to_home = 0.0
         discharge_to_grid = 0.0
@@ -441,7 +450,26 @@ def build_72h_plan_preview(
             stored_kwh += grid_safety_input * charge_eff
             available_charge_input -= grid_safety_input
 
-        # 3) Trade charging is blocked when expected solar can fill the same
+        # 3) Economic self-consumption support. This is an explicit temporary
+        # charge action chosen only when it shifts otherwise unavoidable later
+        # grid import to a cheaper earlier window. It is not a reserve hold.
+        support_target_stored = support_by_time.get(hour.isoformat(), 0.0)
+        if (
+            support_target_stored > _MIN_ENERGY_KWH
+            and available_charge_input > _MIN_ENERGY_KWH
+            and stored_kwh < capacity - _MIN_ENERGY_KWH
+        ):
+            max_input_by_capacity = (capacity - stored_kwh) / charge_eff
+            requested_input = support_target_stored / charge_eff
+            grid_support_input = min(
+                requested_input,
+                available_charge_input,
+                max_input_by_capacity,
+            )
+            stored_kwh += grid_support_input * charge_eff
+            available_charge_input -= grid_support_input
+
+        # 4) Trade charging is blocked when expected solar can fill the same
         # free capacity before the selected sell hour (Solar Charge Delay).
         if (
             trade_profitable
@@ -485,56 +513,33 @@ def build_72h_plan_preview(
                     stored_kwh += stored_added
                     trade_energy_reserved_kwh += stored_added
 
-        # 4) Home deficit uses battery only when doing so does not consume
-        # energy reserved for a later, more valuable trade discharge.
-        operational_floor = execution_floor_end_kwh + trade_energy_reserved_kwh
-        operational_floor = min(
-            capacity,
-            max(execution_floor_end_kwh, operational_floor),
-        )
-
+        # 5) Normal self_consumption is physical reality, not a controllable
+        # planner reservation. Household deficit therefore uses the battery down
+        # to the device minimum regardless of requested reserve or trade intent.
+        # Any trade energy that is naturally consumed by the home simply no
+        # longer exists for a later export action.
+        operational_floor = minimum_stored_kwh
         available_stored_above_floor = max(0.0, stored_kwh - operational_floor)
         max_output_from_storage = available_stored_above_floor * discharge_eff
-
-        # Prefer battery for home use when the current price is at least as high
-        # as the best buy price plus the requested trade margin, or when there is
-        # no active future trade reservation.
         current_price = row["import_price"]
-        threshold_price = None
-        if best_charge_price is not None:
-            threshold_price = best_charge_price / (charge_eff * discharge_eff) + minimum_trade_margin
 
-        allow_home_discharge = trade_energy_reserved_kwh <= _MIN_ENERGY_KWH
-        if (
-            current_price is not None
-            and threshold_price is not None
-            and current_price >= threshold_price
-        ):
-            allow_home_discharge = True
-
-        if allow_home_discharge:
-            discharge_to_home = min(
-                home_deficit,
-                discharge_output_limit,
-                max_output_from_storage,
+        discharge_to_home = min(
+            home_deficit,
+            discharge_output_limit,
+            max_output_from_storage,
+        )
+        if discharge_to_home > _MIN_ENERGY_KWH:
+            stored_used = discharge_to_home / discharge_eff
+            stored_kwh -= stored_used
+            home_deficit -= discharge_to_home
+            trade_energy_reserved_kwh = max(
+                0.0,
+                trade_energy_reserved_kwh - stored_used,
             )
-            if discharge_to_home > _MIN_ENERGY_KWH:
-                stored_used = discharge_to_home / discharge_eff
-                stored_kwh -= stored_used
-                home_deficit -= discharge_to_home
-
-                # If high-value home use happens before the selected trade hour,
-                # it can consume part of the trade reservation because it creates
-                # equal or better economic value than later grid export.
-                if trade_energy_reserved_kwh > _MIN_ENERGY_KWH and current_price is not None:
-                    trade_energy_reserved_kwh = max(
-                        0.0,
-                        trade_energy_reserved_kwh - stored_used,
-                    )
 
         grid_home = max(0.0, home_deficit)
 
-        # 5) At the selected best sell hour, discharge only energy above the
+        # 6) At the selected best sell hour, discharge only energy above the
         # operational reserve. Home has priority, remainder may go to the grid.
         if (
             trade_profitable
@@ -564,14 +569,27 @@ def build_72h_plan_preview(
         soc_end = stored_kwh / capacity * 100.0
         min_soc_seen = min(min_soc_seen, soc_end)
         max_soc_seen = max(max_soc_seen, soc_end)
-        execution_headroom_soc = soc_end - execution_floor_end_soc
-        minimum_execution_headroom_soc = min(minimum_execution_headroom_soc, execution_headroom_soc)
-        if execution_headroom_soc < -0.05:
+        control_execution_headroom_soc = soc_end - execution_floor_end_soc
+        self_consumption_headroom_soc = soc_end - float(MIN_SOC_PERCENT)
+        # For the rolling self_consumption projection the relevant physical
+        # headroom is distance to the device minimum. The higher external-control
+        # reserve is enforced only when an explicit discharge action is selected.
+        execution_headroom_soc = self_consumption_headroom_soc
+        minimum_execution_headroom_soc = min(
+            minimum_execution_headroom_soc,
+            self_consumption_headroom_soc,
+        )
+        if (
+            discharge_to_grid > _MIN_ENERGY_KWH
+            and control_execution_headroom_soc < -0.05
+        ):
             execution_buffer_breach_hours += 1
 
         action_parts: list[str] = []
         if grid_safety_input > _MIN_ENERGY_KWH:
             action_parts.append("veiligheidsladen")
+        if grid_support_input > _MIN_ENERGY_KWH:
+            action_parts.append("zelfconsumptie_bijladen")
         if grid_trade_input > _MIN_ENERGY_KWH:
             action_parts.append("handelsladen")
         if solar_charge_input > _MIN_ENERGY_KWH:
@@ -585,6 +603,7 @@ def build_72h_plan_preview(
 
         total_solar_charge += solar_charge_input
         total_grid_safety_charge += grid_safety_input
+        total_grid_support_charge += grid_support_input
         total_grid_trade_charge += grid_trade_input
         total_home_discharge += discharge_to_home
         total_grid_trade_discharge += discharge_to_grid
@@ -605,8 +624,11 @@ def build_72h_plan_preview(
                 "solar_to_home_kwh": round(solar_to_home, 3),
                 "charge_from_solar_kwh": round(solar_charge_input, 3),
                 "charge_from_grid_safety_kwh": round(grid_safety_input, 3),
+                "charge_from_grid_support_kwh": round(grid_support_input, 3),
                 "charge_from_grid_trade_kwh": round(grid_trade_input, 3),
-                "charge_from_grid_kwh": round(grid_safety_input + grid_trade_input, 3),
+                "charge_from_grid_kwh": round(
+                    grid_safety_input + grid_support_input + grid_trade_input, 3
+                ),
                 "discharge_to_home_kwh": round(discharge_to_home, 3),
                 "discharge_to_grid_kwh": round(discharge_to_grid, 3),
                 "grid_import_for_home_kwh": round(grid_home, 3),
@@ -619,6 +641,21 @@ def build_72h_plan_preview(
                 "execution_reserve_floor_start_soc": round(execution_floor_start_soc, 1),
                 "execution_buffer_percent": round(execution_buffer_percent, 1),
                 "execution_headroom_soc": round(execution_headroom_soc, 1),
+                "control_execution_headroom_soc": round(control_execution_headroom_soc, 1),
+                "self_consumption_floor_soc": round(float(MIN_SOC_PERCENT), 1),
+                "reserve_enforceable_in_self_consumption": False,
+                "planning_need_soc_equivalent": round(
+                    min(
+                        100.0,
+                        (
+                            base_reserve_floor_kwh
+                            + (reserve_need_end_kwh / discharge_eff)
+                        )
+                        / capacity
+                        * 100.0,
+                    ),
+                    1,
+                ),
                 "dynamic_need_until_solar_kwh": round(reserve_need_start_kwh, 3),
                 "dynamic_need_after_hour_kwh": round(reserve_need_end_kwh, 3),
                 "next_usable_solar": (
@@ -639,8 +676,9 @@ def build_72h_plan_preview(
         "auto_plan_72h_status": "ready",
         "auto_plan_72h_valid": True,
         "auto_plan_72h_reason": (
-            "72-uurs planpreview berekend; veiligheidslading heeft voorrang, "
-            "daarna solar, woningdekking en observerende handel"
+            "72-uurs planpreview berekend met fysieke self_consumption-projectie; "
+            "woningontlading loopt tot minimum-SOC en alleen economisch gunstige "
+            "bijlading wordt als expliciete control-actie gepland"
         ),
         "auto_plan_72h_plan": plan,
         "auto_plan_72h_count": len(plan),
@@ -674,6 +712,7 @@ def build_72h_plan_preview(
         ),
         "auto_plan_72h_solar_charge_kwh": round(total_solar_charge, 3),
         "auto_plan_72h_grid_safety_charge_kwh": round(total_grid_safety_charge, 3),
+        "auto_plan_72h_grid_support_charge_kwh": round(total_grid_support_charge, 3),
         "auto_plan_72h_grid_trade_charge_kwh": round(total_grid_trade_charge, 3),
         "auto_plan_72h_home_discharge_kwh": round(total_home_discharge, 3),
         "auto_plan_72h_grid_trade_discharge_kwh": round(total_grid_trade_discharge, 3),
@@ -685,8 +724,9 @@ def build_72h_plan_preview(
         "auto_plan_72h_observational_only": True,
         "auto_plan_72h_execution_enabled": False,
         "auto_plan_72h_note": (
-            "Dummy OS EMS Plan72 gebruikt de 2 procentpunt uitvoeringsbuffer, "
-            "dynamische reserve en vooruitkijkende reserveplanning. Automatische "
-            "laad/ontlaaduitvoering blijft buiten de huidige fysieke alpha-scope."
+            "Alpha79 scheidt planningbehoefte van afdwingbare control-reserve. "
+            "Normale self_consumption ontlaadt fysiek tot minimum-SOC. Goedkope "
+            "bijlading wordt alleen als expliciete tijdelijke control-actie gepland "
+            "wanneer daarmee latere directe netimport na verliezen goedkoper wordt."
         ),
     }

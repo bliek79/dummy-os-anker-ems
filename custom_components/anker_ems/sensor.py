@@ -467,6 +467,12 @@ def _energy_need_attrs(data: dict[str, Any]) -> dict[str, Any]:
         "safety_reserve_kwh": data.get("energy_need_safety_reserve_kwh"),
         "required_including_reserve_kwh": data.get("energy_need_required_including_reserve_kwh"),
         "additional_grid_charge_kwh": data.get("energy_need_additional_grid_charge_kwh"),
+        "unavoidable_grid_import_kwh": data.get("energy_need_unavoidable_grid_import_kwh"),
+        "stored_need_until_solar_kwh": data.get("energy_need_stored_need_until_solar_kwh"),
+        "charge_needed_to_preserve_reserve_kwh": data.get("energy_need_charge_needed_to_preserve_reserve_kwh"),
+        "reserve_enforceable_in_self_consumption": data.get(
+            "energy_need_reserve_enforceable_in_self_consumption", False
+        ),
         "tradable_battery_kwh": data.get("energy_need_tradable_battery_kwh"),
         "contributing_hours": data.get("energy_need_contributing_hours"),
         "battery_capacity_kwh": data.get("energy_need_battery_capacity_kwh"),
@@ -485,6 +491,27 @@ def _planner_preview_attrs(data: dict[str, Any]) -> dict[str, Any]:
         "safety_charge_kwh": data.get("planner_preview_safety_charge_kwh"),
         "safety_charge_hours": data.get("planner_preview_safety_charge_hours", []),
         "safety_schedule_sufficient": data.get("planner_preview_safety_schedule_sufficient", False),
+        "support_charge_needed": data.get("planner_preview_support_charge_needed", False),
+        "support_charge_economic": data.get("planner_preview_support_charge_economic", False),
+        "support_charge_kwh": data.get("planner_preview_support_charge_kwh"),
+        "support_charge_hours": data.get("planner_preview_support_charge_hours", []),
+        "support_schedule_covers_shortage": data.get(
+            "planner_preview_support_schedule_covers_shortage", False
+        ),
+        "support_remaining_stored_kwh": data.get(
+            "planner_preview_support_remaining_stored_kwh"
+        ),
+        "support_expected_savings_eur": data.get(
+            "planner_preview_support_expected_savings_eur"
+        ),
+        "baseline_grid_import_kwh": data.get("planner_preview_baseline_grid_import_kwh"),
+        "baseline_min_soc_percent": data.get("planner_preview_baseline_min_soc_percent"),
+        "baseline_first_min_soc_time": data.get(
+            "planner_preview_baseline_first_min_soc_time"
+        ),
+        "reserve_enforceable_in_self_consumption": data.get(
+            "planner_preview_reserve_enforceable_in_self_consumption", False
+        ),
         "trade_charge_candidate": data.get("planner_preview_trade_charge_candidate", False),
         "discharge_possible": data.get("planner_preview_discharge_possible", False),
         "solar_charge_delay": data.get("planner_preview_solar_charge_delay", False),
@@ -541,6 +568,7 @@ def _auto_plan_72h_summary_attrs(data: dict[str, Any]) -> dict[str, Any]:
         "solar_horizon_incomplete_hours": data.get("auto_plan_72h_solar_horizon_incomplete_hours"),
         "solar_charge_kwh": data.get("auto_plan_72h_solar_charge_kwh"),
         "grid_safety_charge_kwh": data.get("auto_plan_72h_grid_safety_charge_kwh"),
+        "grid_support_charge_kwh": data.get("auto_plan_72h_grid_support_charge_kwh"),
         "grid_trade_charge_kwh": data.get("auto_plan_72h_grid_trade_charge_kwh"),
         "home_discharge_kwh": data.get("auto_plan_72h_home_discharge_kwh"),
         "grid_trade_discharge_kwh": data.get("auto_plan_72h_grid_trade_discharge_kwh"),
@@ -1148,6 +1176,13 @@ SENSORS: tuple[AnkerEmsSensorDescription, ...] = (
         name='Dummy OS EMS Plan72 Safety Charge',
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         value_fn=lambda d: d.get("auto_plan_72h_grid_safety_charge_kwh"),
+        attrs_fn=_auto_plan_72h_summary_attrs,
+    ),
+    AnkerEmsSensorDescription(
+        key="auto_plan_72h_grid_support_charge",
+        name='Dummy OS EMS Plan72 Self-Consumption Support Charge',
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        value_fn=lambda d: d.get("auto_plan_72h_grid_support_charge_kwh"),
         attrs_fn=_auto_plan_72h_summary_attrs,
     ),
     AnkerEmsSensorDescription(
