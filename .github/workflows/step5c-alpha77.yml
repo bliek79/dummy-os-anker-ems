@@ -62,5 +62,5 @@ jobs:
             gh release edit 0.0.1-alpha.79               --title "Dummy OS EMS 0.0.1-alpha.79 - Physical Self-Consumption Planner"               --notes-file RELEASE_NOTES_ALPHA79.md               --prerelease
             gh release upload 0.0.1-alpha.79 dummy-os-anker-ems-alpha79.zip SHA256SUMS-alpha79.txt --clobber
           else
-            gh release create 0.0.1-alpha.79 dummy-os-anker-ems-alpha79.zip SHA256SUMS-alpha79.txt               --target main               --title "Dummy OS EMS 0.0.1-alpha.79 - Bridge Recorder Payload Fix"               --notes-file RELEASE_NOTES_ALPHA79.md               --prerelease
+            gh release create 0.0.1-alpha.79 dummy-os-anker-ems-alpha79.zip SHA256SUMS-alpha79.txt               --target main               --title "Dummy OS EMS 0.0.1-alpha.79 - Physical Self-Consumption Planner"               --notes-file RELEASE_NOTES_ALPHA79.md               --prerelease
           fi
