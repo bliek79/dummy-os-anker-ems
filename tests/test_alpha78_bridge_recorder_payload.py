@@ -182,7 +182,7 @@ def _representative_data() -> dict[str, Any]:
         "execution_control_path_required_stable_seconds": 60,
         "auto_bridge_execution_enabled": True,
         "auto_bridge_observational_only": False,
-        "auto_bridge_note": "alpha78 recorder payload fixture",
+        "auto_bridge_note": "alpha80 recorder payload fixture",
     }
     data.update(scalar_defaults)
     return data
@@ -248,8 +248,8 @@ def test_bridge_fix_does_not_change_execution_or_safety_runtime() -> None:
     assert "auto_shadow_execution_permitted" in coordinator
 
 
-def test_alpha78_version_contract() -> None:
+def test_alpha80_version_contract() -> None:
     const = (ROOT / "custom_components" / "anker_ems" / "const.py").read_text(encoding="utf-8")
     manifest = (ROOT / "custom_components" / "anker_ems" / "manifest.json").read_text(encoding="utf-8")
-    assert 'VERSION = "0.0.1-alpha.78"' in const
-    assert '"version": "0.0.1-alpha.78"' in manifest
+    assert 'VERSION = "0.0.1-alpha.80"' in const
+    assert '"version": "0.0.1-alpha.80"' in manifest
