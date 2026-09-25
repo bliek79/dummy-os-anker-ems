@@ -106,10 +106,13 @@ class Alpha80CheapestEnergySafetyTests(unittest.TestCase):
         self.assertEqual(preview["planner_preview_safety_reserve_target_soc"], 12.0)
 
     def test_solar_first_means_no_grid_safety_charge_when_route_stays_safe(self) -> None:
-        home = [0.12] * 72
+        home = [0.08] * 72
         solar = [0.0] * 72
-        for i in range(4, 10):
-            solar[i] = 0.8
+        # Daily solar windows are strong enough to cover the complete rolling
+        # 72-hour route without grid safety energy.
+        for start in (4, 28, 52):
+            for i in range(start, start + 6):
+                solar[i] = 0.8
         prices = [0.30] * 72
         _need, preview, plan = rows(start_soc=65.0, home=home, solar=solar, prices=prices)
         self.assertFalse(preview["planner_preview_safety_charge_needed"])
@@ -121,8 +124,11 @@ class Alpha80CheapestEnergySafetyTests(unittest.TestCase):
         solar = [0.0] * 72
         prices = [0.34] * 72
         prices[6] = 0.20
-        prices[18] = 0.10
-        for i in range(19, 40):
+        # A three-hour midday valley has enough charge power to cover the later
+        # expensive period, so the earlier night window must remain unused.
+        for i in range(18, 21):
+            prices[i] = 0.10
+        for i in range(21, 40):
             prices[i] = 0.45
         _need, preview, _plan = rows(start_soc=60.0, home=home, solar=solar, prices=prices)
         selected = preview["planner_preview_safety_charge_hours"]
