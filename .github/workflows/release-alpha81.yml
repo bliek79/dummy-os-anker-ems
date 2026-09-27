@@ -1,0 +1,49 @@
+name: Publish Alpha81 Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: github.event.head_commit.message == 'Publish alpha81 release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = '0.0.1-alpha.81';
+            const name = 'Dummy OS EMS 0.0.1-alpha.81 - Multi-rate Planner Runtime';
+            const body = [
+              'Alpha81 separates the 10-second live/safety coordinator path from the heavy Alpha80 planner bundle.',
+              '',
+              '- Native 15-minute planner cadence plus source/recovery/start-critical events.',
+              '- Heavy Energy Need + Planner Preview + Plan72 runs outside the Home Assistant event loop.',
+              '- Single-flight, deterministic input signatures, generation fencing and stale-result discard.',
+              '- Alpha80 planner policy files remain byte-for-byte frozen.',
+              '- DOEMS alpha21 remains the unchanged live-green reference.'
+            ].join('\n');
+            try {
+              await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag
+              });
+              core.info('Release already exists; nothing to do.');
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              await github.rest.repos.createRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag_name: tag,
+                target_commitish: context.sha,
+                name,
+                body,
+                prerelease: true,
+                draft: false
+              });
+            }
