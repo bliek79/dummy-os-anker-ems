@@ -570,6 +570,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await coordinator.physical_test.async_stop("integration_unload", emergency=True)
     if coordinator is not None and coordinator.execution.data.get("active"):
         await coordinator.execution.async_stop("integration_unload", emergency=True)
+    if coordinator is not None:
+        await coordinator.async_shutdown()
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:

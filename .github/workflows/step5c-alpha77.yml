@@ -1,4 +1,4 @@
-name: Dummy OS EMS Alpha80 Cheapest Energy Safety Planner CI and Release
+name: Dummy OS EMS Alpha81 Multi-rate Planner Runtime CI
 
 on:
   pull_request:
@@ -6,8 +6,7 @@ on:
     branches:
       - main
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
   validate:
@@ -22,43 +21,28 @@ jobs:
         run: python -m compileall -q custom_components/anker_ems tests
       - name: Run full test suite
         run: python -m pytest -q tests
-      - name: Validate Alpha80 contracts
+      - name: Validate Alpha81 contracts
         run: |
-          grep -F 'VERSION = "0.0.1-alpha.80"' custom_components/anker_ems/const.py
-          grep -F '"version": "0.0.1-alpha.80"' custom_components/anker_ems/manifest.json
+          grep -F 'VERSION = "0.0.1-alpha.81"' custom_components/anker_ems/const.py
+          grep -F '"version": "0.0.1-alpha.81"' custom_components/anker_ems/manifest.json
+          grep -F 'MULTIRATE_RUNTIME_VERSION = "alpha81_multirate_runtime_v1"' custom_components/anker_ems/planner_multirate.py
+          grep -F 'PLANNER_POLICY_VERSION = "alpha80_cheapest_energy_safety_v1"' custom_components/anker_ems/planner_multirate.py
+          grep -F 'async_add_executor_job' custom_components/anker_ems/coordinator.py
+          grep -F '"native_quarter_plus_events"' custom_components/anker_ems/coordinator.py
+          ! grep -F 'build_energy_need_analysis(' custom_components/anker_ems/coordinator.py
+          ! grep -F 'build_planner_preview(' custom_components/anker_ems/coordinator.py
+          ! grep -F 'build_72h_plan_preview(' custom_components/anker_ems/coordinator.py
+          printf '%s  %s\n' '9d7dd824a0f9e5cb3835705326b4037b1ef45e9b549a17d138bb859cd99e9864' 'custom_components/anker_ems/energy_need.py' | sha256sum -c -
+          printf '%s  %s\n' 'f7f453c6f48dd72514604e2367c69cdefc4fdadad6c7004d5f38647aecb3eb38' 'custom_components/anker_ems/planner_preview.py' | sha256sum -c -
+          printf '%s  %s\n' '71f6247a898ec8c1ffcf765534c83d485c6386fe8ccbdfcc465efa75c632be34' 'custom_components/anker_ems/planner_72h.py' | sha256sum -c -
+          test -f tests/test_alpha80_cheapest_energy_safety.py
+          test -f tests/test_alpha81_multirate_runtime.py
+          test -f RELEASE_NOTES_ALPHA81.md
           grep -F 'class AnkerEmsLegacyAuthorityFence' custom_components/anker_ems/authority_fence.py
           grep -F 'authority_fence.async_call(' custom_components/anker_ems/execution.py
           grep -F 'if armed and not self.authority_fence.is_open' custom_components/anker_ems/coordinator.py
-          grep -F 'def _auto_bridge_status_attrs' custom_components/anker_ems/sensor.py
-          grep -F 'def _auto_bridge_candidate_attrs' custom_components/anker_ems/sensor.py
-          grep -F 'def _auto_bridge_slots_attrs' custom_components/anker_ems/sensor.py
-          ! grep -F 'attrs_fn=_auto_bridge_attrs' custom_components/anker_ems/sensor.py
-          test -f tests/test_alpha78_bridge_recorder_payload.py
-          test -f RELEASE_NOTES_ALPHA80.md
-          test -f tests/test_alpha80_cheapest_energy_safety.py
           ! grep -R -F 'zelfconsumptie_bijladen' custom_components/anker_ems
           ! grep -R -F 'charge_from_grid_support_kwh' custom_components/anker_ems
 
-  publish:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: validate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Build release archive
-        run: |
-          zip -r dummy-os-anker-ems-alpha80.zip custom_components/anker_ems README.md LICENSE services.yaml 2>/dev/null ||             zip -r dummy-os-anker-ems-alpha80.zip custom_components/anker_ems README.md LICENSE
-          sha256sum dummy-os-anker-ems-alpha80.zip > SHA256SUMS-alpha80.txt
-          cat SHA256SUMS-alpha80.txt
-      - name: Publish prerelease
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if gh release view 0.0.1-alpha.80 >/dev/null 2>&1; then
-            gh release edit 0.0.1-alpha.80               --title "Dummy OS EMS 0.0.1-alpha.80 - Cheapest Energy Safety Planner"               --notes-file RELEASE_NOTES_ALPHA80.md               --prerelease
-            gh release upload 0.0.1-alpha.80 dummy-os-anker-ems-alpha80.zip SHA256SUMS-alpha80.txt --clobber
-          else
-            gh release create 0.0.1-alpha.80 dummy-os-anker-ems-alpha80.zip SHA256SUMS-alpha80.txt               --target main               --title "Dummy OS EMS 0.0.1-alpha.80 - Cheapest Energy Safety Planner"               --notes-file RELEASE_NOTES_ALPHA80.md               --prerelease
-          fi
+  # Deliberately no publish job.
+  # Alpha81 merge/release remains a separate explicit user gate.

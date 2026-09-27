@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from copy import deepcopy
+from functools import partial
+import asyncio
 import logging
 from typing import Any, Iterable
 
@@ -25,10 +27,13 @@ from .authority_fence import AnkerEmsLegacyAuthorityFence
 from .source_monitor import AnkerEmsSourceMonitor
 from .home_history import AnkerEmsHomeHistory
 from .home_forecast import build_internal_home_forecast
-from .energy_need import build_energy_need_analysis
-from .planner_preview import build_planner_preview
-from .planner_72h import build_72h_plan_preview
 from .planner_action_bridge import build_planner_action_bridge
+from .planner_multirate import (
+    MULTIRATE_RUNTIME_VERSION,
+    compute_alpha80_planner_bundle,
+    planner_cycle_id,
+    planner_input_signature,
+)
 
 from .const import (
     NAME,
@@ -167,15 +172,28 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.home_history = AnkerEmsHomeHistory(hass, entry.entry_id)
         self._cached_internal_home_forecast: dict[str, Any] | None = None
         self._internal_home_forecast_history_points = -1
-        self._cached_72h_plan: dict[str, Any] | None = None
+        self._cached_planner_bundle: dict[str, Any] | None = None
         self._last_plan_source_token: str | None = None
         self._last_plan_refresh_at: datetime | None = None
         self._last_plan_refresh_reason: str | None = None
-        self._last_plan_periodic_bucket: str | None = None
+        self._last_plan_quarter_bucket: str | None = None
         self._last_plan_start_critical_key: str | None = None
         self._last_forecast_ready: bool | None = None
+        self._last_planner_soc_valid: bool | None = None
         self._plan_refresh_count_date = dt_util.now().date()
         self._plan_refresh_count_today = 0
+        self._planner_generation = 0
+        self._planner_published_generation = 0
+        self._planner_compute_count = 0
+        self._planner_stale_discard_count = 0
+        self._planner_same_signature_skip_count = 0
+        self._planner_last_input_signature: str | None = None
+        self._planner_last_cycle_id: str | None = None
+        self._planner_last_error: str | None = None
+        self._planner_active_signature: str | None = None
+        self._planner_pending_request: dict[str, Any] | None = None
+        self._planner_task: asyncio.Task[None] | None = None
+        self._planner_shutdown = False
         self._direct_price_forecast_payload: dict[str, Any] | None = None
         self._direct_price_forecast_last_fetch_at: datetime | None = None
         self._direct_price_forecast_last_success_at: datetime | None = None
@@ -367,68 +385,256 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return f"near:{identity}"
         return None
 
-    def _should_refresh_72h_plan(
+    def _planner_refresh_decision(
         self,
         data: dict[str, Any],
         scheduler_data: dict[str, Any],
-    ) -> tuple[bool, str, str, str | None]:
-        """Apply alpha40.2 planner refresh policy.
+    ) -> tuple[bool, str, str, str | None, str]:
+        """Select the heavy Alpha80 planner cadence for Alpha81.
 
-        The coordinator itself remains fast for live safety/execution state, while
-        the expensive 72-hour planner is refreshed at most once per local hour
-        between 05:00 and 22:00, plus immediate event-driven exceptions.
+        Fast coordinator/safety/execution state remains on the 10-second poll.
+        The expensive Energy Need -> Planner Preview -> Plan72 bundle is allowed
+        only at native quarter boundaries or explicit planner events.
         """
         now_local = dt_util.now()
+        now_utc = dt_util.utcnow().astimezone(dt_util.UTC)
         if self._plan_refresh_count_date != now_local.date():
             self._plan_refresh_count_date = now_local.date()
             self._plan_refresh_count_today = 0
-        # Direct Stroomvoorspeller cache belongs to the coordinator lifetime.
-        # Do not reset it during every Plan72 refresh decision: doing so bypassed
-        # the 30-minute fetch guard and caused a request storm when the provider
-        # returned HTTP 403.
 
         source_token = self._planner_source_token(data)
-        hour_bucket = now_local.strftime("%Y-%m-%dT%H")
+        quarter_bucket = planner_cycle_id(now_utc)
         start_key = self._planner_start_critical_key(scheduler_data)
         forecast_ready = bool(data.get("forecast_ready"))
+        soc_valid = _as_float(data.get("soc")) is not None
 
-        # Alpha64: make SOC recovery part of the coordinator refresh policy itself.
-        # The first startup pass can cache waiting_for_soc before the configured
-        # SOC entity has restored. As soon as a later coordinator cycle sees a
-        # numeric SOC, force exactly the Plan72 rebuild that the cached state needs.
-        # The direct Stroomvoorspeller cache remains untouched.
-        cached_plan = self._cached_72h_plan or {}
-        cached_waiting_for_soc = bool(
-            str(cached_plan.get("auto_plan_72h_status") or "") == "waiting_for_soc"
-            or (
-                cached_plan.get("auto_plan_72h_valid") is not True
-                and int(cached_plan.get("auto_plan_72h_count") or 0) == 0
-                and str(cached_plan.get("auto_plan_72h_reason") or "") == "Geen geldige SOC beschikbaar"
-            )
-        )
-        if cached_waiting_for_soc and _as_float(data.get("soc")) is not None:
-            return True, "soc_recovered_after_startup", source_token, start_key
+        if not forecast_ready:
+            return False, "waiting_for_forecast", source_token, start_key, quarter_bucket
+        if not soc_valid:
+            return False, "waiting_for_soc", source_token, start_key, quarter_bucket
 
-        if self._cached_72h_plan is None:
-            return True, "startup", source_token, start_key
+        if self._cached_planner_bundle is None:
+            return True, "startup", source_token, start_key, quarter_bucket
 
-        if source_token != self._last_plan_source_token:
-            return True, "source_content_changed", source_token, start_key
+        if self._last_planner_soc_valid is False and soc_valid:
+            return True, "soc_recovered", source_token, start_key, quarter_bucket
 
         if self._last_forecast_ready is False and forecast_ready:
-            return True, "forecast_recovered", source_token, start_key
+            return True, "forecast_recovered", source_token, start_key, quarter_bucket
+
+        if source_token != self._last_plan_source_token:
+            return True, "source_content_changed", source_token, start_key, quarter_bucket
 
         if start_key is not None and start_key != self._last_plan_start_critical_key:
-            return True, "start_critical", source_token, start_key
+            return True, "start_critical", source_token, start_key, quarter_bucket
 
-        if 5 <= now_local.hour <= 22 and hour_bucket != self._last_plan_periodic_bucket:
-            return True, "hourly_window", source_token, start_key
+        if quarter_bucket != self._last_plan_quarter_bucket:
+            return True, "quarter_boundary", source_token, start_key, quarter_bucket
 
-        return False, "cached", source_token, start_key
+        return False, "cached", source_token, start_key, quarter_bucket
+
+    def _freeze_planner_request(
+        self,
+        data: dict[str, Any],
+        *,
+        reason: str,
+        source_token: str,
+        start_key: str | None,
+        quarter_bucket: str,
+    ) -> dict[str, Any] | None:
+        """Freeze one complete Alpha80 planner input for the worker thread."""
+        soc = _as_float(data.get("soc"))
+        if soc is None or not data.get("forecast_ready"):
+            return None
+
+        reference = dt_util.utcnow().astimezone(dt_util.UTC)
+        forecast = deepcopy(data.get("forecast") or [])
+        safety_reserve_percent = self.entry.options.get(
+            CONF_SOFTWARE_RESERVE_PERCENT,
+            DEFAULT_SOFTWARE_RESERVE_PERCENT,
+        )
+        charge_efficiency_percent = self.entry.options.get(
+            CONF_CHARGE_EFFICIENCY_PERCENT,
+            DEFAULT_CHARGE_EFFICIENCY_PERCENT,
+        )
+        discharge_efficiency_percent = self.entry.options.get(
+            CONF_DISCHARGE_EFFICIENCY_PERCENT,
+            DEFAULT_DISCHARGE_EFFICIENCY_PERCENT,
+        )
+        minimum_trade_margin = self.entry.options.get(
+            CONF_MINIMUM_TRADE_MARGIN,
+            DEFAULT_MINIMUM_TRADE_MARGIN,
+        )
+        signature = planner_input_signature(
+            forecast=forecast,
+            soc=soc,
+            safety_reserve_percent=safety_reserve_percent,
+            charge_efficiency_percent=charge_efficiency_percent,
+            discharge_efficiency_percent=discharge_efficiency_percent,
+            minimum_trade_margin=minimum_trade_margin,
+            max_charge_power_w=self.max_charge_power_w,
+            max_discharge_power_w=self.max_discharge_power_w,
+            reference=reference,
+        )
+        return {
+            "reason": reason,
+            "source_token": source_token,
+            "start_key": start_key,
+            "quarter_bucket": quarter_bucket,
+            "reference": reference,
+            "forecast": forecast,
+            "soc": soc,
+            "safety_reserve_percent": safety_reserve_percent,
+            "charge_efficiency_percent": charge_efficiency_percent,
+            "discharge_efficiency_percent": discharge_efficiency_percent,
+            "minimum_trade_margin": minimum_trade_margin,
+            "max_charge_power_w": self.max_charge_power_w,
+            "max_discharge_power_w": self.max_discharge_power_w,
+            "signature": signature,
+            "cycle_id": planner_cycle_id(reference),
+        }
+
+    def _queue_planner_request(
+        self,
+        data: dict[str, Any],
+        *,
+        reason: str,
+        source_token: str,
+        start_key: str | None,
+        quarter_bucket: str,
+    ) -> bool:
+        """Queue at most one newest heavy planner generation."""
+        request = self._freeze_planner_request(
+            data,
+            reason=reason,
+            source_token=source_token,
+            start_key=start_key,
+            quarter_bucket=quarter_bucket,
+        )
+        if request is None:
+            return False
+
+        # One queued compute satisfies the current source/quarter/start markers.
+        # On a current-generation failure these markers are reset for retry.
+        self._last_plan_source_token = source_token
+        self._last_plan_quarter_bucket = quarter_bucket
+        self._last_plan_start_critical_key = start_key
+
+        signature = str(request["signature"])
+        pending_signature = (
+            str(self._planner_pending_request.get("signature"))
+            if self._planner_pending_request is not None
+            else None
+        )
+        if (
+            (self._cached_planner_bundle is not None
+             and signature == self._planner_last_input_signature)
+            or signature == self._planner_active_signature
+            or signature == pending_signature
+        ):
+            self._planner_same_signature_skip_count += 1
+            return False
+
+        self._planner_generation += 1
+        request["generation"] = self._planner_generation
+        self._planner_pending_request = request
+        if self._planner_task is None or self._planner_task.done():
+            self._planner_task = self.hass.async_create_task(
+                self._async_planner_loop(),
+                "Dummy OS EMS Alpha81 planner",
+            )
+        return True
+
+    async def _async_planner_loop(self) -> None:
+        """Run newest planner requests single-flight outside the HA event loop."""
+        try:
+            while self._planner_pending_request is not None and not self._planner_shutdown:
+                request = self._planner_pending_request
+                self._planner_pending_request = None
+                await self._async_compute_planner_request(request)
+        finally:
+            self._planner_active_signature = None
+            self._planner_task = None
+            if self._planner_pending_request is not None and not self._planner_shutdown:
+                self._planner_task = self.hass.async_create_task(
+                    self._async_planner_loop(),
+                    "Dummy OS EMS Alpha81 planner",
+                )
+
+    async def _async_compute_planner_request(self, request: dict[str, Any]) -> None:
+        """Compute one frozen planner generation and publish only if current."""
+        generation = int(request["generation"])
+        signature = str(request["signature"])
+        self._planner_active_signature = signature
+        self._planner_compute_count += 1
+        try:
+            worker = partial(
+                compute_alpha80_planner_bundle,
+                forecast=request["forecast"],
+                soc=float(request["soc"]),
+                safety_reserve_percent=float(request["safety_reserve_percent"]),
+                charge_efficiency_percent=float(request["charge_efficiency_percent"]),
+                discharge_efficiency_percent=float(request["discharge_efficiency_percent"]),
+                minimum_trade_margin=float(request["minimum_trade_margin"]),
+                max_charge_power_w=int(request["max_charge_power_w"]),
+                max_discharge_power_w=int(request["max_discharge_power_w"]),
+                reference=request["reference"],
+            )
+            bundle = await self.hass.async_add_executor_job(worker)
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
+            if generation == self._planner_generation:
+                self._planner_last_error = f"{type(err).__name__}: {err}"
+                self._last_plan_source_token = None
+                self._last_plan_quarter_bucket = None
+                self._last_plan_start_critical_key = None
+            _LOGGER.exception("Alpha81 planner generation failed")
+            return
+        finally:
+            if self._planner_active_signature == signature:
+                self._planner_active_signature = None
+
+        if generation != self._planner_generation:
+            self._planner_stale_discard_count += 1
+            return
+
+        self._cached_planner_bundle = bundle
+        self._planner_published_generation = generation
+        self._planner_last_input_signature = signature
+        self._planner_last_cycle_id = str(request["cycle_id"])
+        self._planner_last_error = None
+        self._last_plan_refresh_at = dt_util.now()
+        self._last_plan_refresh_reason = str(request["reason"])
+        self._plan_refresh_count_today += 1
+
+        # Reconcile bridge/scheduler/safety promptly against the atomically
+        # published bundle. This follow-up is fast-only because the request
+        # markers above already identify the current source/quarter.
+        self.hass.async_create_task(self.async_request_refresh())
+
+    async def async_shutdown(self) -> None:
+        """Stop background Alpha81 planner work on integration unload."""
+        self._planner_shutdown = True
+        self._planner_pending_request = None
+        task = self._planner_task
+        self._planner_task = None
+        if task is not None and not task.done():
+            task.cancel()
+
+    def _apply_cached_planner_bundle(self, data: dict[str, Any]) -> None:
+        """Publish Energy Need, Planner Preview and Plan72 atomically."""
+        bundle = self._cached_planner_bundle
+        if bundle is None:
+            return
+        for section in ("energy_need", "planner_preview", "plan72"):
+            payload = bundle.get(section)
+            if isinstance(payload, dict):
+                data.update(deepcopy(payload))
 
     def _planner_refresh_metadata(self, reason: str) -> dict[str, Any]:
         return {
-            "auto_plan_72h_refresh_policy": "hourly_05_22_plus_events",
+            "auto_plan_72h_refresh_policy": "native_quarter_plus_events",
             "auto_plan_72h_refresh_cached": reason == "cached",
             "auto_plan_72h_refresh_reason": reason,
             "auto_plan_72h_last_refreshed_at": (
@@ -437,9 +643,21 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 else None
             ),
             "auto_plan_72h_refresh_count_today": self._plan_refresh_count_today,
-            "auto_plan_72h_periodic_window": "05:00-22:00",
-            "auto_plan_72h_periodic_max_per_hour": 1,
+            "auto_plan_72h_periodic_window": "00/15/30/45",
+            "auto_plan_72h_periodic_max_per_hour": 4,
             "auto_plan_72h_event_refresh_enabled": True,
+            "auto_plan_72h_multirate_runtime": MULTIRATE_RUNTIME_VERSION,
+            "auto_plan_72h_planner_generation": self._planner_generation,
+            "auto_plan_72h_planner_published_generation": self._planner_published_generation,
+            "auto_plan_72h_planner_compute_count": self._planner_compute_count,
+            "auto_plan_72h_planner_stale_discard_count": self._planner_stale_discard_count,
+            "auto_plan_72h_planner_same_signature_skip_count": self._planner_same_signature_skip_count,
+            "auto_plan_72h_planner_last_input_signature": self._planner_last_input_signature,
+            "auto_plan_72h_planner_last_cycle_id": self._planner_last_cycle_id,
+            "auto_plan_72h_planner_worker_active": bool(
+                self._planner_task is not None and not self._planner_task.done()
+            ),
+            "auto_plan_72h_planner_last_error": self._planner_last_error,
         }
 
     @property
@@ -1167,13 +1385,11 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # refreshes without polling the heavy planner every 10 seconds.
         data.update(await self.source_monitor.async_observe(self._source_monitor_specs()))
 
+        # Alpha81: Energy Need, Planner Preview and Plan72 now form one cached
+        # heavy planner bundle. The 10-second coordinator remains the fast lane.
         reserve_percent = self.entry.options.get(
             CONF_SOFTWARE_RESERVE_PERCENT, DEFAULT_SOFTWARE_RESERVE_PERCENT
         )
-        energy_need = build_energy_need_analysis(
-            data.get("forecast", []), data.get("soc"), reserve_percent
-        )
-        data.update(energy_need)
         charge_efficiency_percent = self.entry.options.get(
             CONF_CHARGE_EFFICIENCY_PERCENT, DEFAULT_CHARGE_EFFICIENCY_PERCENT
         )
@@ -1183,17 +1399,6 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         minimum_trade_margin = self.entry.options.get(
             CONF_MINIMUM_TRADE_MARGIN, DEFAULT_MINIMUM_TRADE_MARGIN
         )
-        planner_preview = build_planner_preview(
-            data.get("forecast", []),
-            energy_need,
-            data.get("soc"),
-            charge_efficiency_percent,
-            discharge_efficiency_percent,
-            minimum_trade_margin,
-            max_charge_power_w=self.max_charge_power_w,
-            max_discharge_power_w=self.max_discharge_power_w,
-        )
-        data.update(planner_preview)
 
         # Alpha53: use the Scheduler's own lifecycle decision as the primary
         # signal for releasing an expired automatic slot. This avoids keeping a
@@ -1224,36 +1429,36 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         scheduler_snapshot = self.scheduler.evaluate(
             self.max_charge_power_w, self.max_discharge_power_w
         )
-        refresh, refresh_reason, source_token, start_key = self._should_refresh_72h_plan(
-            data, scheduler_snapshot
-        )
+        (
+            refresh,
+            refresh_reason,
+            source_token,
+            start_key,
+            quarter_bucket,
+        ) = self._planner_refresh_decision(data, scheduler_snapshot)
+        queued = False
         if refresh:
-            self._cached_72h_plan = build_72h_plan_preview(
-                data.get("forecast", []),
-                energy_need,
-                planner_preview,
-                data.get("soc"),
-                charge_efficiency_percent,
-                discharge_efficiency_percent,
-                max_charge_power_w=self.max_charge_power_w,
-                max_discharge_power_w=self.max_discharge_power_w,
+            queued = self._queue_planner_request(
+                data,
+                reason=refresh_reason,
+                source_token=source_token,
+                start_key=start_key,
+                quarter_bucket=quarter_bucket,
             )
-            now_local = dt_util.now()
-            self._last_plan_refresh_at = now_local
-            self._last_plan_refresh_reason = refresh_reason
-            self._last_plan_source_token = source_token
-            self._last_forecast_ready = bool(data.get("forecast_ready"))
-            self._last_plan_start_critical_key = start_key
-            self._plan_refresh_count_today += 1
-            if 5 <= now_local.hour <= 22:
-                # Any event-driven refresh during this hour also satisfies the
-                # hourly periodic refresh, preventing a redundant second pass.
-                self._last_plan_periodic_bucket = now_local.strftime("%Y-%m-%dT%H")
-        else:
-            self._last_forecast_ready = bool(data.get("forecast_ready"))
 
-        if self._cached_72h_plan is not None:
-            data.update(deepcopy(self._cached_72h_plan))
+            # Startup may wait for the executor result so the integration exposes
+            # a complete first planner bundle without ever running policy code on
+            # the Home Assistant event loop. Later generations stay background.
+            if (
+                queued
+                and self._cached_planner_bundle is None
+                and self._planner_task is not None
+            ):
+                await self._planner_task
+
+        self._last_forecast_ready = bool(data.get("forecast_ready"))
+        self._last_planner_soc_valid = _as_float(data.get("soc")) is not None
+        self._apply_cached_planner_bundle(data)
         data.update(self._planner_refresh_metadata(refresh_reason))
         data.update(scheduler_snapshot)
         bridge = build_planner_action_bridge(data)
