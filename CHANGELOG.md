@@ -1,3 +1,16 @@
+## 0.0.1-alpha.81 - 2026-09-27
+
+- Separates the 10-second live/safety coordinator path from the heavy planner path.
+- Moves Energy Need, Planner Preview and Plan72 into one atomic cached planner bundle.
+- Runs the unchanged Alpha80 planner policy off the Home Assistant event loop through the executor.
+- Refreshes the heavy planner at native 15-minute boundaries plus source/recovery/start-critical events.
+- Adds deterministic planner-input signatures, single-flight compute, generation fencing and stale-result discard.
+- Keeps the previous valid planner bundle available while a newer generation computes.
+- Adds compact multi-rate runtime diagnostics without changing physical execution authority.
+- Freezes Alpha80 policy files byte-for-byte and adds exact bundle-parity regression tests.
+- Keeps DOEMS alpha21 untouched as the live-green multi-rate reference.
+- Release publication remains explicitly gated; this change does not auto-publish alpha81.
+
 ## 0.0.1-alpha.58 - 2026-08-25
 
 - Adds a dedicated 0.10 kWh minimum actionable threshold for automatic **safety-charge** actions in the Plan72 -> Automatic Plan Bridge handoff.
