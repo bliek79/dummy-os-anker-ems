@@ -499,16 +499,16 @@ def build_planner_action_bridge(
         (index for index, item in enumerate(candidates) if not item.get("valid")),
         len(candidates),
     )
-    first_limited_index = next(
-        (index for index, item in enumerate(candidates) if item.get("capacity_limited")),
-        len(candidates),
-    )
-    # A partial charge changes the SOC trajectory used by later Plan72 actions.
-    # Permit that charge itself, but hold all subsequent proposals until a
-    # quarter-hour replan incorporates observed SOC. Never silently promote a
-    # stale dependent tail.
-    safe_end_index = min(first_invalid_index, first_limited_index + 1)
-    safe_prefix = candidates[:safe_end_index]
+    # A partially feasible charge has already been limited to what the
+    # configured max power can actually supply; its missing energy remains
+    # explicit in the candidate diagnostics. Do not hold later individually
+    # valid Plan72 actions solely because a prior action was power-limited:
+    # normal quarter-hour replanning, active-plan protection and start-time
+    # safety/final revalidation remain authoritative.
+    #
+    # Truly invalid actions retain the fail-closed chronological prefix:
+    # never promote their potentially dependent successors.
+    safe_prefix = candidates[:first_invalid_index]
     invalid_details = [
         {
             "start_time": item.get("start_time"),
@@ -705,10 +705,10 @@ def build_planner_action_bridge(
             max(0, len(candidates) - first_invalid_index - 1)
             if invalid_candidates else 0
         ),
-        "auto_bridge_held_after_limited_count": (
-            max(0, len(candidates) - first_limited_index - 1)
-            if first_limited_index < len(candidates) else 0
-        ),
+        # Kept for existing dashboard/diagnostic compatibility. The blanket
+        # post-limit hold was removed; only truly invalid actions can cut the
+        # chronological preview short.
+        "auto_bridge_held_after_limited_count": 0,
         "auto_bridge_capacity_limited_count": len(capacity_limited_details),
         "auto_bridge_capacity_limited_candidates": capacity_limited_details,
         "auto_bridge_unmet_requested_energy_kwh": total_shortfall_kwh,
