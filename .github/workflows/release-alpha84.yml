@@ -36,7 +36,7 @@ jobs:
           const = (root/'const.py').read_text()
           manifest = json.loads((root/'manifest.json').read_text())
           assert manifest['version'] == '0.0.1-alpha.84'
-          assert re.search(r'^VERSION = "0\.0\.1-alpha\.83"$', const, re.M)
+          assert re.search(r'^VERSION = "0\.0\.1-alpha\.84"$', const, re.M)
           assert '"button"' in const
           assert 'SERVICE_RESET_EXECUTION_STATUS' in const
           assert 'AUTOMATIC_ARM_CONTRACT_VERSION = "alpha84_three_slot_after_limit_v1"' in const
