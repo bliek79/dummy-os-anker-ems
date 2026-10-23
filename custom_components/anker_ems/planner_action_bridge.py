@@ -143,7 +143,8 @@ def _build_candidate(
     planned_start = max(first_hour, now_utc)
     planned_end = last_hour + timedelta(hours=1)
     duration_h = max(0.0, (planned_end - planned_start).total_seconds() / 3600.0)
-    energy_kwh = sum(float(item["bridge_energy_kwh"]) for item in segment)
+    requested_energy_kwh = sum(float(item["bridge_energy_kwh"]) for item in segment)
+    energy_kwh = requested_energy_kwh
 
     # Alpha62: the explicit Plan72 grid energy is authoritative for physical
     # execution. Reserve a small part of the remaining price window for the
@@ -153,6 +154,26 @@ def _build_candidate(
     handoff_allowance_h = _EXECUTION_HANDOFF_ALLOWANCE_MIN / 60.0
     effective_duration_h = max(0.0, duration_h - handoff_allowance_h)
     max_power_w = max_charge_power_w if action == "laden" else max_discharge_power_w
+    # Alpha83: a charge that exceeds the configured EMS power limit may
+    # deliver a smaller feasible energy INSIDE the original price window.
+    # The shortfall is disclosed rather than counted as delivered. Plan72
+    # policy is unchanged; the next native replan uses the measured SOC.
+    requested_average_power_w = (
+        requested_energy_kwh * 1000.0 / effective_duration_h
+        if effective_duration_h > 0 else 0.0
+    )
+    max_deliverable_kwh = max(0.0, max_power_w * effective_duration_h / 1000.0)
+    # Round DOWN to 0.001 kWh: never overstate what max power can deliver.
+    feasible_energy_kwh = math.floor(max_deliverable_kwh * 1000.0 + 1e-9) / 1000.0
+    capacity_limited = bool(
+        action == "laden"
+        and requested_energy_kwh > feasible_energy_kwh + 0.0005
+        and feasible_energy_kwh >= MIN_ACTIONABLE_SAFETY_CHARGE_KWH
+        and max_power_w >= 100
+    )
+    if capacity_limited:
+        energy_kwh = feasible_energy_kwh
+    energy_shortfall_kwh = max(0.0, requested_energy_kwh - energy_kwh)
     average_power_w = energy_kwh * 1000.0 / effective_duration_h if effective_duration_h > 0 else 0.0
     power_w = _round_power_up(average_power_w, max_power_w)
 
@@ -186,6 +207,10 @@ def _build_candidate(
         valid = False
         reasons.append("invalid_target_soc")
 
+    warnings: list[str] = []
+    if capacity_limited:
+        warnings.append("partial_charge_due_to_configured_power_limit")
+
     prices = [
         value
         for value in (_as_float(item.get("price")) for item in segment)
@@ -203,8 +228,15 @@ def _build_candidate(
         "start_time": planned_start.isoformat(),
         "planned_end_time": planned_end.isoformat(),
         "planned_energy_kwh": round(energy_kwh, 3),
+        "requested_energy_kwh": round(requested_energy_kwh, 3),
+        "feasible_energy_kwh": round(energy_kwh, 3),
+        "energy_shortfall_kwh": round(energy_shortfall_kwh, 3),
+        "capacity_limited": capacity_limited,
+        "power_limit_w": max_power_w,
+        "handoff_allowance_min": _EXECUTION_HANDOFF_ALLOWANCE_MIN,
         "power_w": power_w,
-        "average_required_power_w": round(average_power_w, 1),
+        "average_required_power_w": round(requested_average_power_w, 1),
+        "average_feasible_power_w": round(average_power_w, 1),
         "target_soc": round(target_soc, 1) if target_soc is not None else None,
         "max_runtime_h": round(max(0.25, min(12.0, duration_h)), 2),
         "max_start_delay_min": _DEFAULT_START_DELAY_MIN,
@@ -221,6 +253,7 @@ def _build_candidate(
         "execution_reserve_end_soc": _as_float(last.get("execution_reserve_floor_soc")),
         "valid": valid,
         "validation_reasons": reasons,
+        "validation_warnings": warnings,
         "origin": "automatic_72h_planner",
         "observational_only": True,
     }
@@ -458,7 +491,51 @@ def build_planner_action_bridge(
             and candidate_start < active_end
         )
 
-    for candidate in candidates[:PLAN_SLOT_COUNT]:
+    # One invalid future action must not stop a valid earlier safety charge.
+    # A later plan can depend on the invalid action's projected SOC, however:
+    # only hand over a valid CHRONOLOGICAL PREFIX, not an unsafe later tail.
+    invalid_candidates = sum(not candidate.get("valid") for candidate in candidates)
+    first_invalid_index = next(
+        (index for index, item in enumerate(candidates) if not item.get("valid")),
+        len(candidates),
+    )
+    first_limited_index = next(
+        (index for index, item in enumerate(candidates) if item.get("capacity_limited")),
+        len(candidates),
+    )
+    # A partial charge changes the SOC trajectory used by later Plan72 actions.
+    # Permit that charge itself, but hold all subsequent proposals until a
+    # quarter-hour replan incorporates observed SOC. Never silently promote a
+    # stale dependent tail.
+    safe_end_index = min(first_invalid_index, first_limited_index + 1)
+    safe_prefix = candidates[:safe_end_index]
+    invalid_details = [
+        {
+            "start_time": item.get("start_time"),
+            "action": item.get("action"),
+            "purpose": item.get("purpose"),
+            "validation_reasons": list(item.get("validation_reasons") or []),
+            "requested_energy_kwh": item.get("requested_energy_kwh"),
+        }
+        for item in candidates if not item.get("valid")
+    ]
+    capacity_limited_details = [
+        {
+            "start_time": item.get("start_time"),
+            "action": item.get("action"),
+            "requested_energy_kwh": item.get("requested_energy_kwh"),
+            "planned_energy_kwh": item.get("planned_energy_kwh"),
+            "energy_shortfall_kwh": item.get("energy_shortfall_kwh"),
+            "power_limit_w": item.get("power_limit_w"),
+        }
+        for item in candidates if item.get("capacity_limited")
+    ]
+    total_shortfall_kwh = round(sum(
+        float(item.get("energy_shortfall_kwh") or 0.0)
+        for item in candidates
+    ), 3)
+
+    for candidate in safe_prefix[:PLAN_SLOT_COUNT]:
         enriched = dict(candidate)
         identity = _candidate_identity(enriched)
         signature = _candidate_signature(enriched)
@@ -535,7 +612,6 @@ def build_planner_action_bridge(
         )
         preview.append(enriched)
 
-    invalid_candidates = sum(1 for candidate in candidates if not candidate.get("valid"))
     preview_conflicts = sum(
         1
         for item in preview
@@ -551,10 +627,21 @@ def build_planner_action_bridge(
             "blijven onder normale self_consumption vallen"
         )
         valid = True
-    elif invalid_candidates:
-        status = "blocked_invalid_candidates"
-        reason = f"{invalid_candidates} automatische actiekandidaat/kandidaten zijn niet uitvoerbaar"
+    elif invalid_candidates and not preview:
+        status = "blocked_first_candidate_invalid"
+        reason = (
+            f"{invalid_candidates} onuitvoerbare actiekandidaat/kandidaten; "
+            "geen veilig eerder voorstel beschikbaar"
+        )
         valid = False
+    elif invalid_candidates:
+        status = "ready_preview_before_invalid_candidate"
+        reason = (
+            f"{invalid_candidates} onuitvoerbare actiekandidaat/kandidaten; "
+            f"{len(preview)} eerdere geldige actie(s) kunnen worden ingepland. "
+            "Latere afhankelijke acties wachten op herplanning"
+        )
+        valid = True
     elif not forecast_ready:
         status = "preview_forecast_incomplete"
         reason = "Actiepreview gemaakt, maar forecastbronnen zijn nog niet volledig startklaar"
@@ -591,6 +678,15 @@ def build_planner_action_bridge(
             )
         valid = True
 
+    if valid and capacity_limited_details:
+        if status == "ready_preview":
+            status = "ready_preview_limited_energy"
+        reason += (
+            f"; {len(capacity_limited_details)} laadvenster(s) begrensd op "
+            f"EMS-maxvermogen, {total_shortfall_kwh:.3f} kWh onvervulde "
+            "planenergie (apart zichtbaar; volgende replan gebruikt actuele SOC)"
+        )
+
     return {
         **base,
         "auto_bridge_status": status,
@@ -604,6 +700,18 @@ def build_planner_action_bridge(
         "auto_bridge_suppressed_safety_charge_hours": suppressed_safety_hours,
         "auto_bridge_overflow_count": overflow,
         "auto_bridge_invalid_candidate_count": invalid_candidates,
+        "auto_bridge_invalid_candidates": invalid_details,
+        "auto_bridge_held_after_invalid_count": (
+            max(0, len(candidates) - first_invalid_index - 1)
+            if invalid_candidates else 0
+        ),
+        "auto_bridge_held_after_limited_count": (
+            max(0, len(candidates) - first_limited_index - 1)
+            if first_limited_index < len(candidates) else 0
+        ),
+        "auto_bridge_capacity_limited_count": len(capacity_limited_details),
+        "auto_bridge_capacity_limited_candidates": capacity_limited_details,
+        "auto_bridge_unmet_requested_energy_kwh": total_shortfall_kwh,
         "auto_bridge_candidates": candidates,
         "auto_bridge_slot_preview": preview,
         "auto_bridge_manual_slots": slot_statuses,
