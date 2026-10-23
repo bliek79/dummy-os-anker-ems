@@ -1,4 +1,4 @@
-name: Dummy OS EMS Alpha81 Multi-rate Planner Runtime CI
+name: Dummy OS EMS Alpha82 Runtime Safety and Frozen Planner CI
 
 on:
   pull_request:
@@ -21,10 +21,10 @@ jobs:
         run: python -m compileall -q custom_components/anker_ems tests
       - name: Run full test suite
         run: python -m pytest -q tests
-      - name: Validate Alpha81 contracts
+      - name: Validate Alpha82 contracts
         run: |
-          grep -F 'VERSION = "0.0.1-alpha.81"' custom_components/anker_ems/const.py
-          grep -F '"version": "0.0.1-alpha.81"' custom_components/anker_ems/manifest.json
+          grep -F 'VERSION = "0.0.1-alpha.82"' custom_components/anker_ems/const.py
+          grep -F '"version": "0.0.1-alpha.82"' custom_components/anker_ems/manifest.json
           grep -F 'MULTIRATE_RUNTIME_VERSION = "alpha81_multirate_runtime_v1"' custom_components/anker_ems/planner_multirate.py
           grep -F 'PLANNER_POLICY_VERSION = "alpha80_cheapest_energy_safety_v1"' custom_components/anker_ems/planner_multirate.py
           grep -F 'async_add_executor_job' custom_components/anker_ems/coordinator.py

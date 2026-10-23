@@ -167,3 +167,22 @@ Use:
 - `CHANGELOG.md` for version-by-version changes;
 - GitHub Releases for release notes and downloadable builds;
 - the project handover documentation for detailed technical history and design decisions.
+
+
+## Alpha82 — Dynamic charge cap and emergency acknowledgement
+
+The Anker SOLIX can lower the maximum of its configured Number setpoint when
+the SOC is low. Alpha82 reads min/max/step at execution time, applies the
+largest safe allowable charge wattage, and monitors changes during charging.
+Planned and applied watts remain available separately in the EMS execution
+sensor and its audit history.
+
+The new integration button **Dummy OS EMS Noodstop bevestigen** (suggested
+entity ID: button.dummy_os_ems_noodstop_bevestigen) and service
+anker_ems.reset_execution_status acknowledge an already finished emergency.
+Automatic Execution must be off, there must be no active test/execution,
+and the battery must be in self_consumption (with a zero or unavailable
+external setpoint). Reset never drives the battery or deletes the audit.
+
+An existing Lovelace dashboard is not automatically modified. Add the new
+button entity to the preferred dashboard manually. See RELEASE_NOTES_ALPHA82.md.
