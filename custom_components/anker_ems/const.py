@@ -2,7 +2,11 @@ from __future__ import annotations
 
 DOMAIN = "anker_ems"
 NAME = "Dummy OS EMS"
-VERSION = "0.0.1-alpha.82"
+VERSION = "0.0.1-alpha.83"
+
+# Bridge feasibility correction changes which physical commands can become ready.
+# Force one explicit user re-arm on the alpha82 -> alpha83 upgrade.
+AUTOMATIC_ARM_CONTRACT_VERSION = "alpha83_bridge_feasible_v1"
 
 CONF_SIMULATION_MODE = "simulation_mode"
 

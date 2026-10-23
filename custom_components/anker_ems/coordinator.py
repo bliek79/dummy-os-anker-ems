@@ -1470,7 +1470,9 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         write_gate_open = (
             bool(data.get("auto_bridge_valid"))
             and bool(data.get("forecast_ready"))
-            and not int(data.get("auto_bridge_invalid_candidate_count") or 0)
+            # The Alpha83 bridge exposes only the safe chronological prefix;
+            # a future invalid candidate must not globally block an earlier
+            # valid charge, provided no stale dependent tail is handed over.
         )
         if write_gate_open:
             for proposal in data.get("auto_bridge_slot_preview") or []:

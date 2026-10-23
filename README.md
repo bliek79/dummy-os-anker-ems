@@ -186,3 +186,16 @@ external setpoint). Reset never drives the battery or deletes the audit.
 
 An existing Lovelace dashboard is not automatically modified. Add the new
 button entity to the preferred dashboard manually. See RELEASE_NOTES_ALPHA82.md.
+
+## Alpha83 — Action Bridge feasible energy and guarded handoff
+
+A safety charge that requires more watts than the configured EMS limit is now
+converted to a bounded partial charge **only where feasible inside the original
+price window**. Requested energy, planned feasible energy and shortfall are
+audited separately, never counted as physically delivered. A future invalid
+candidate no longer blocks earlier valid safety actions; later candidates that
+depend on missing energy are withheld for revalidation against measured SOC.
+
+The Automatic Execution arm requires one deliberate OFF-to-ON re-arm after the
+alpha82-to-alpha83 upgrade. No automatic physical reactivation during update.
+Details and HA validation checklist: [alpha83 release notes](RELEASE_NOTES_ALPHA83.md).

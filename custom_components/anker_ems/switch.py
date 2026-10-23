@@ -8,7 +8,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, NAME
+from .const import DOMAIN, NAME, AUTOMATIC_ARM_CONTRACT_VERSION
 from .coordinator import AnkerEmsCoordinator
 
 
@@ -55,11 +55,14 @@ class AnkerEmsAutomaticExecutionArm(
         # alpha51-alpha53 must never silently become a physical-live arm after
         # upgrading. Only a state previously saved by the live_guarded switch
         # itself is restored as ON. The first alpha54 start therefore requires
-        # one explicit user re-arm.
+        # one explicit user re-arm. Alpha83 additionally changes the safe
+        # Action Bridge write gate: legacy ON from alpha82 must therefore
+        # become OFF once before the user explicitly re-arms.
         armed = bool(
             previous is not None
             and previous.state == "on"
             and previous.attributes.get("mode") == "live_guarded"
+            and previous.attributes.get("arm_contract_version") == AUTOMATIC_ARM_CONTRACT_VERSION
         )
         await self.coordinator.async_set_auto_execution_armed(armed)
 
@@ -86,6 +89,7 @@ class AnkerEmsAutomaticExecutionArm(
         data = self.coordinator.data or {}
         return {
             "mode": "live_guarded",
+            "arm_contract_version": AUTOMATIC_ARM_CONTRACT_VERSION,
             "technical_ready": data.get("auto_shadow_technical_ready", False),
             "execution_status": data.get("auto_shadow_status"),
             "blockers": data.get("auto_shadow_blockers", []),
