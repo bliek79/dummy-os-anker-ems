@@ -36,42 +36,7 @@ jobs:
           const = (root/'const.py').read_text()
           manifest = json.loads((root/'manifest.json').read_text())
           assert manifest['version'] == '0.0.1-alpha.83'
-          assert re.search(r'^VERSION = "0\.0\.1-alpha\.83"
-          assert '"button"' in const
-          assert 'SERVICE_RESET_EXECUTION_STATUS' in const
-          assert 'AUTOMATIC_ARM_CONTRACT_VERSION = "alpha83_bridge_feasible_v1"' in const
-          bridge = (root/'planner_action_bridge.py').read_text()
-          assert '"capacity_limited": capacity_limited' in bridge
-          assert '"auto_bridge_unmet_requested_energy_kwh": total_shortfall_kwh' in bridge
-          assert (Path('tests/test_alpha83_bridge_partial_safety.py')).exists()
-          assert (root/'charge_power_limit.py').exists()
-          assert (root/'execution_status_reset.py').exists()
-          assert Path('RELEASE_NOTES_ALPHA83.md').exists()
-          PY
-      - name: Build and byte-verify Home Assistant install archive
-        run: |
-          mkdir -p dist
-          python - <<'PY'
-          from pathlib import Path
-          import zipfile
-          root = Path('custom_components/anker_ems')
-          sources = sorted(p for p in root.rglob('*') if p.is_file() and '__pycache__' not in p.parts and p.suffix != '.pyc')
-          output = Path('dist/Dummy_OS_EMS_0.0.1-alpha.83_HA_install.zip')
-          with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED) as z:
-              for file in sources: z.write(file, file.relative_to(root.parent))
-          with zipfile.ZipFile(output) as z:
-              for file in sources: assert z.read(str(file.relative_to(root.parent))) == file.read_bytes()
-              assert all('__pycache__' not in n and not n.endswith('.pyc') for n in z.namelist())
-          PY
-          sha256sum dist/*.zip | sed 's#dist/##' > dist/SHA256SUMS-alpha83.txt
-      - name: Publish verified alpha83 prerelease
-        env:
-          GH_TOKEN: '${{ github.token }}'
-        run: |
-          gh release create 0.0.1-alpha.83 dist/*.zip dist/SHA256SUMS-alpha83.txt \
-            --title 'Dummy OS EMS 0.0.1-alpha.83 - Feasible safety-charge Action Bridge' \
-            --notes-file RELEASE_NOTES_ALPHA83.md --prerelease --target "$GITHUB_SHA"
-, const, re.M)
+          assert re.search(r'^VERSION = "0\.0\.1-alpha\.83"$', const, re.M)
           assert '"button"' in const
           assert 'SERVICE_RESET_EXECUTION_STATUS' in const
           assert 'AUTOMATIC_ARM_CONTRACT_VERSION = "alpha83_bridge_feasible_v1"' in const
