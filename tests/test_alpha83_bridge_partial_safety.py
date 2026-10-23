@@ -178,11 +178,11 @@ class BridgeSafetyTests(unittest.TestCase):
         self.assertEqual(result["auto_bridge_invalid_candidate_count"], 0)
         self.assertEqual(result["auto_bridge_capacity_limited_count"], 1)
         self.assertEqual(result["auto_bridge_unmet_requested_energy_kwh"], 0.08)
-        self.assertEqual(result["auto_bridge_slot_preview_count"], 2)
-        self.assertEqual(result["auto_bridge_held_after_limited_count"], 7)
-        self.assertEqual(result["auto_bridge_overflow_count"], 7)
+        self.assertEqual(result["auto_bridge_slot_preview_count"], 3)
+        self.assertEqual(result["auto_bridge_held_after_limited_count"], 0)
+        self.assertEqual(result["auto_bridge_overflow_count"], 6)
         self.assertTrue(all(x["plan_store_write_permitted"] for x in result["auto_bridge_slot_preview"]))
-        self.assertEqual([x["suggested_slot"] for x in result["auto_bridge_slot_preview"]], [1,2])
+        self.assertEqual([x["suggested_slot"] for x in result["auto_bridge_slot_preview"]], [1, 2, 3])
         self.assertEqual(result["auto_bridge_slot_preview"][1]["planned_energy_kwh"], 2.32)
         self.assertEqual(result["auto_bridge_slot_preview"][1]["target_soc"], 56.6)
         self.assertEqual(result["auto_bridge_status"], "ready_preview_limited_energy")
@@ -210,17 +210,70 @@ class BridgeSafetyTests(unittest.TestCase):
         self.assertEqual(result["auto_bridge_status"], "blocked_first_candidate_invalid")
         self.assertEqual(result["auto_bridge_slot_preview_count"], 0)
 
-    def test_limited_action_holds_dependent_future_actions(self):
+    def test_limited_action_does_not_hold_later_valid_candidates(self):
         result = self.run_bridge(
             segment(offset=0, hours=1, energy=0.3, soc=18),
             segment(offset=2, hours=1, energy=2.4, soc=27),
             segment(offset=4, hours=1, energy=0.3, soc=30),
         )
         self.assertTrue(result["auto_bridge_valid"])
-        self.assertEqual(result["auto_bridge_slot_preview_count"], 2)
-        self.assertEqual(result["auto_bridge_held_after_limited_count"], 1)
+        self.assertEqual(result["auto_bridge_slot_preview_count"], 3)
+        self.assertEqual(result["auto_bridge_held_after_limited_count"], 0)
+        self.assertEqual(result["auto_bridge_capacity_limited_count"], 1)
+        self.assertEqual(result["auto_bridge_unmet_requested_energy_kwh"], 0.08)
         self.assertTrue(all(x["plan_store_write_permitted"] for x in result["auto_bridge_slot_preview"]))
-        self.assertFalse(any(x["start_time"] == (START + timedelta(hours=4)).isoformat() for x in result["auto_bridge_slot_preview"]))
+        self.assertEqual([p["suggested_slot"] for p in result["auto_bridge_slot_preview"]], [1, 2, 3])
+        self.assertEqual(result["auto_bridge_slot_preview"][2]["start_time"], (START + timedelta(hours=4)).isoformat())
+
+    def test_live_active_pending_free_three_slots_fill_after_limited_charge(self):
+        # Live 23 Oct: slot 1 active, slot 2 planner-owned pending, slot 3
+        # available. Alpha83 incorrectly left slot 3 empty after a capped
+        # second safety-charge window (3.200 -> 3.093 kWh at 3200W).
+        first = segment(offset=0, hours=7, energy=3.839, soc=6)
+        limited = segment(offset=8, hours=1, energy=3.2, soc=16.7)
+        third = segment(offset=15, hours=6, energy=8.435, soc=12)
+        args = (START, 3200, 3200, 7.1, 92.0, 92.0)
+        first_candidate = bridge._build_candidate(first, *args)
+        limited_candidate = bridge._build_candidate(limited, *args)
+        slots = {
+            1: {
+                "action": "laden", "status": "actief",
+                "lifecycle_status": "actief",
+                "origin": "automatic_72h_planner",
+                "planned_end_time": first_candidate["planned_end_time"],
+                "planner_identity": bridge._candidate_identity(first_candidate),
+            },
+            2: {
+                "action": "laden", "status": "wachtend",
+                "lifecycle_status": "pending",
+                "origin": "automatic_72h_planner",
+                "planned_end_time": limited_candidate["planned_end_time"],
+                "planner_identity": bridge._candidate_identity(limited_candidate),
+            },
+            3: {
+                "action": "geen", "status": "leeg",
+                "lifecycle_status": "concept", "origin": "manual",
+            },
+        }
+        result = self.run_bridge(
+            first, limited, third, slots=slots,
+            max_charge_power_w=3200, max_discharge_power_w=3200,
+            battery_capacity_kwh=7.1,
+        )
+        self.assertTrue(result["auto_bridge_valid"])
+        self.assertEqual(result["auto_bridge_candidate_count"], 3)
+        self.assertEqual(result["auto_bridge_capacity_limited_count"], 1)
+        self.assertEqual(result["auto_bridge_unmet_requested_energy_kwh"], 0.107)
+        self.assertEqual(result["auto_bridge_slot_preview_count"], 3)
+        self.assertEqual(result["auto_bridge_held_after_limited_count"], 0)
+        self.assertTrue(result["auto_bridge_slot_preview"][0]["active_execution_match"])
+        self.assertFalse(result["auto_bridge_slot_preview"][0]["plan_store_write_permitted"])
+        self.assertTrue(result["auto_bridge_slot_preview"][1]["automatic_pending_match"])
+        self.assertEqual(result["auto_bridge_slot_preview"][1]["suggested_slot"], 2)
+        self.assertEqual(result["auto_bridge_slot_preview"][1]["planned_energy_kwh"], 3.093)
+        self.assertEqual(result["auto_bridge_slot_preview"][2]["suggested_slot"], 3)
+        self.assertTrue(result["auto_bridge_slot_preview"][2]["plan_store_write_permitted"])
+        self.assertTrue(result["auto_bridge_slot_preview"][2]["scheduler_handoff_permitted"])
 
     def test_manual_pending_slot_is_never_overwritten(self):
         manual = {
@@ -260,10 +313,10 @@ class BridgeSafetyTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(hashlib.sha256((COMPONENT / name).read_bytes()).hexdigest(), digest)
 
-    def test_alpha83_upgrade_requires_one_explicit_automatic_rearm(self):
+    def test_alpha84_upgrade_requires_one_explicit_automatic_rearm(self):
         arm = (COMPONENT / "switch.py").read_text(encoding="utf-8")
         const = (COMPONENT / "const.py").read_text(encoding="utf-8")
-        self.assertIn('AUTOMATIC_ARM_CONTRACT_VERSION = "alpha83_bridge_feasible_v1"', const)
+        self.assertIn('AUTOMATIC_ARM_CONTRACT_VERSION = "alpha84_three_slot_after_limit_v1"', const)
         self.assertIn(
             'previous.attributes.get("arm_contract_version") == AUTOMATIC_ARM_CONTRACT_VERSION',
             arm,
