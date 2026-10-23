@@ -172,3 +172,12 @@ stop_all:
   description: >-
     Stop een actieve fysieke test of EMS-uitvoering, zet waar mogelijk het
     vermogenssetpoint op 0 W en keer terug naar self_consumption.
+
+
+reset_execution_status:
+  name: Noodstopmelding bevestigen en wissen
+  description: >-
+    Wis uitsluitend de actuele inactieve emergency_stopped-status wanneer de
+    automatische uitvoering uit staat, geen test of uitvoering actief is en de
+    batterij in self_consumption staat. De knop schrijft GEEN vermogen en
+    start of hervat geen batterijactie. Fouthistorie blijft bewaard.

@@ -19,6 +19,9 @@ from .const import (
     DOMAIN,
 )
 
+from .charge_power_limit import choose_charge_power
+from .execution_status_reset import check_execution_status_reset
+
 _LOGGER = logging.getLogger(__name__)
 _STORAGE_VERSION = 1
 _EXTERNAL_MODE = "third_party_control"
@@ -58,6 +61,13 @@ class AnkerEmsExecutionController:
             "origin": None,
             "action": None,
             "power_w": None,
+            "planned_power_w": None,
+            "battery_power_max_w": None,
+            "battery_power_step_w": None,
+            "charge_limit_status": None,
+            "emergency_acknowledged_at": None,
+            "emergency_acknowledged_reason": None,
+            "emergency_acknowledged_stop_at": None,
             "target_soc": None,
             "max_runtime_h": None,
             "planned_energy_kwh": None,
@@ -87,6 +97,8 @@ class AnkerEmsExecutionController:
             "automatic_last_slot": None,
             "automatic_last_action": None,
             "automatic_last_requested_power_w": None,
+            "automatic_last_applied_power_w": None,
+            "automatic_last_limit_adjustment_count": 0,
             "automatic_last_target_soc": None,
             "automatic_last_planned_start_time": None,
             "automatic_last_planned_end_time": None,
@@ -185,6 +197,8 @@ class AnkerEmsExecutionController:
             "automatic_last_slot": slot,
             "automatic_last_action": action,
             "automatic_last_requested_power_w": power_w,
+            "automatic_last_applied_power_w": None,
+            "automatic_last_limit_adjustment_count": 0,
             "automatic_last_target_soc": target_soc,
             "automatic_last_planned_start_time": planned_start,
             "automatic_last_planned_end_time": str(planned_end_time) if planned_end_time else planned_end,
@@ -315,6 +329,8 @@ class AnkerEmsExecutionController:
             "slot": self._state.get("automatic_last_slot"),
             "action": self._state.get("automatic_last_action"),
             "requested_power_w": self._state.get("automatic_last_requested_power_w"),
+            "applied_power_w": self._state.get("automatic_last_applied_power_w"),
+            "limit_adjustment_count": self._state.get("automatic_last_limit_adjustment_count", 0),
             "average_actual_power_w": avg_power,
             "planned_start_time": self._state.get("automatic_last_planned_start_time"),
             "planned_end_time": self._state.get("automatic_last_planned_end_time"),
@@ -376,6 +392,110 @@ class AnkerEmsExecutionController:
         if not power.startswith("number."):
             raise HomeAssistantError("Vermogenssetpoint moet een number-entiteit zijn")
         return mode, direction, power
+
+
+    def _live_charge_power_decision(self, planned_w: int, power_entity: str):
+        """Read the dynamic Anker Number limit, never guess a missing maximum."""
+        state = self.hass.states.get(power_entity)
+        if state is None or state.state in {"unknown", "unavailable", "none"}:
+            raise HomeAssistantError("Actuele Anker-vermogensentiteit ontbreekt")
+        try:
+            return choose_charge_power(
+                planned_w, state.attributes,
+                configured_max_w=self._coordinator.max_charge_power_w,
+            )
+        except (ValueError, TypeError, OverflowError) as err:
+            raise HomeAssistantError(f"Geen geldig Anker-laadvermogen: {err}") from err
+
+    async def _async_write_charge_power(
+        self, planned_w: int, power_entity: str, *, phase: str,
+    ) -> int:
+        """Apply bounded power, with at most one strictly lower retry."""
+        decision = self._live_charge_power_decision(planned_w, power_entity)
+        attempted = decision.applied_w
+        try:
+            await self._coordinator.authority_fence.async_call(
+                "number", "set_value", {"value": attempted},
+                target={"entity_id": power_entity}, blocking=True,
+            )
+        except Exception:
+            # The hardware can lower Number.max while a service call is in
+            # flight. Only retry if a new valid limit is STRICTLY LOWER.
+            refreshed = self._live_charge_power_decision(planned_w, power_entity)
+            if refreshed.applied_w >= attempted:
+                raise
+            decision = refreshed
+            await self._coordinator.authority_fence.async_call(
+                "number", "set_value", {"value": decision.applied_w},
+                target={"entity_id": power_entity}, blocking=True,
+            )
+
+        old_applied = self._state.get("power_w")
+        self._state.update({
+            "planned_power_w": int(planned_w),
+            "power_w": decision.applied_w,
+            "battery_power_max_w": decision.battery_max_w,
+            "battery_power_step_w": decision.step_w,
+            "charge_limit_status": "limited" if decision.limited else "within_limit",
+        })
+        if self._state.get("origin") == "automatic_72h_planner":
+            self._state["automatic_last_applied_power_w"] = decision.applied_w
+            if old_applied != decision.applied_w:
+                self._state["automatic_last_limit_adjustment_count"] = int(
+                    self._state.get("automatic_last_limit_adjustment_count") or 0
+                ) + 1
+            self._trace_automatic(
+                "charge_limit_applied",
+                f"{phase}; planned={planned_w}W; applied={decision.applied_w}W; battery_max={decision.battery_max_w}W",
+            )
+        await self._async_save()
+        return decision.applied_w
+
+    async def async_reset_emergency_status(self) -> None:
+        """Clear only the current inactive emergency; preserve run audit."""
+        if self._coordinator is None:
+            raise HomeAssistantError("Dummy OS EMS coordinator is niet beschikbaar")
+        async with self._stop_lock:
+            await self._coordinator.async_refresh()
+            ids = self._coordinator.control_entity_ids
+            mode_id = ids.get("operating_mode")
+            power_id = ids.get("power_setpoint")
+            mode = self.hass.states.get(mode_id) if mode_id else None
+            power = self.hass.states.get(power_id) if power_id else None
+            blocker = check_execution_status_reset(
+                self.data, self._coordinator.physical_test.data,
+                automatic_armed=self._coordinator.auto_execution_armed,
+                operating_mode=mode.state if mode is not None else None,
+                power_state=power.state if power is not None else None,
+            )
+            if blocker is not None:
+                raise HomeAssistantError(f"Noodstopreset geblokkeerd: {blocker}")
+            self._state.update({
+                "emergency_acknowledged_at": dt_util.now().isoformat(),
+                "emergency_acknowledged_reason": self._state.get("reason"),
+                "emergency_acknowledged_stop_at": self._state.get("stop_at"),
+                "active": False,
+                "status": "idle",
+                "reason": "Noodstop bevestigd; geen EMS-uitvoering actief",
+                "slot": None,
+                "origin": None,
+                "action": None,
+                "power_w": None,
+                "planned_power_w": None,
+                "battery_power_max_w": None,
+                "battery_power_step_w": None,
+                "charge_limit_status": None,
+                "target_soc": None,
+                "max_runtime_h": None,
+                "planned_energy_kwh": None,
+                "planned_end_time": None,
+                "started_at": None,
+                "stop_at": None,
+            })
+            # last_result, automatic_last_reason, traces and 10-run history
+            # survive the reset unchanged, preserving forensic evidence.
+            await self._async_save()
+        await self._coordinator.async_refresh()
 
     def control_path_readiness(self) -> dict[str, Any]:
         """Return two-stage readiness for the configured Anker control path.
@@ -1140,6 +1260,7 @@ class AnkerEmsExecutionController:
                 "origin": detail.get("origin", "manual"),
                 "action": action,
                 "power_w": power_w,
+                "planned_power_w": power_w,
                 "target_soc": target_soc,
                 "max_runtime_h": max_runtime_h,
                 "started_at": now.isoformat(),
@@ -1191,13 +1312,15 @@ class AnkerEmsExecutionController:
                 target={"entity_id": direction_entity},
                 blocking=True,
             )
-            await self._coordinator.authority_fence.async_call(
-                "number",
-                "set_value",
-                {"value": power_w},
-                target={"entity_id": power_entity},
-                blocking=True,
-            )
+            if action == "laden":
+                power_w = await self._async_write_charge_power(
+                    power_w, power_entity, phase="manual_start",
+                )
+            else:
+                await self._coordinator.authority_fence.async_call(
+                    "number", "set_value", {"value": power_w},
+                    target={"entity_id": power_entity}, blocking=True,
+                )
         except Exception as err:
             _LOGGER.exception("Failed to start Dummy OS EMS execution")
             await self.async_stop(f"start_failed: {err}", emergency=True)
@@ -1391,6 +1514,7 @@ class AnkerEmsExecutionController:
                 "origin": "automatic_72h_planner",
                 "action": action,
                 "power_w": power_w,
+                "planned_power_w": power_w,
                 "target_soc": target_soc,
                 "max_runtime_h": max_runtime_h,
                 "planned_energy_kwh": detail.get("planned_energy_kwh"),
@@ -1409,15 +1533,25 @@ class AnkerEmsExecutionController:
                 {"option": "charge" if action == "laden" else "discharge"},
                 target={"entity_id": direction_entity}, blocking=True,
             )
-            await self._coordinator.authority_fence.async_call(
-                "number", "set_value", {"value": power_w},
-                target={"entity_id": power_entity}, blocking=True,
+            if action == "laden":
+                applied_power_w = await self._async_write_charge_power(
+                    power_w, power_entity, phase="automatic_start",
+                )
+            else:
+                await self._coordinator.authority_fence.async_call(
+                    "number", "set_value", {"value": power_w},
+                    target={"entity_id": power_entity}, blocking=True,
+                )
+                applied_power_w = power_w
+                self._state["automatic_last_applied_power_w"] = applied_power_w
+            self._trace_automatic(
+                "power_handoff",
+                f"direction={action}; planned={power_w}W; applied={applied_power_w}W",
             )
-            self._trace_automatic("power_handoff", f"direction={action}; requested={power_w}W")
 
             self._state.update({
                 "status": "running",
-                "reason": f"Automatisch plan {slot} actief: {action} {power_w} W tot {target_soc:.0f}% of max {max_runtime_h:g} uur",
+                "reason": f"Automatisch plan {slot} actief: {action} {applied_power_w} W tot {target_soc:.0f}% of max {max_runtime_h:g} uur",
                 "auto_mode_switch_completed_at": dt_util.now().isoformat(),
                 "auto_mode_switch_last_identity": identity,
                 "auto_mode_switch_last_result": "automatic_execution_started",
@@ -1538,6 +1672,24 @@ class AnkerEmsExecutionController:
         if data.get("action_direction") != expected_direction:
             await self.async_stop("direction_changed", emergency=True)
             return
+        if action == "laden":
+            # A deep-discharge battery can change the allowed Number.max even
+            # during a run. Track it using the UNCHANGED original plan cap.
+            try:
+                planned = int(self._state.get("planned_power_w") or self._state["power_w"])
+                _, _, power_entity = self._entity_ids()
+                allowed = self._live_charge_power_decision(planned, power_entity)
+                if allowed.applied_w != int(self._state["power_w"]):
+                    await self._async_write_charge_power(
+                        planned, power_entity, phase="runtime_limit_changed",
+                    )
+                    await self._coordinator.async_refresh()
+                    data = self._coordinator.data
+            except Exception as err:
+                _LOGGER.warning("Anker-laadgrens tijdens uitvoering ongeldig: %s", err)
+                await self.async_stop(f"battery_charge_limit_invalid: {err}", emergency=True)
+                return
+
         if data.get("power_setpoint_w") is None:
             await self.async_stop("power_setpoint_unavailable", emergency=True)
             return

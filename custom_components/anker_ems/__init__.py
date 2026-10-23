@@ -20,6 +20,7 @@ from .const import (
     SERVICE_STOP_PHYSICAL_TEST,
     SERVICE_EXECUTE_SELECTED_PLAN,
     SERVICE_STOP_EXECUTION,
+    SERVICE_RESET_EXECUTION_STATUS,
     SERVICE_SCHEDULE_PLAN,
     SERVICE_START_PLAN_NOW,
     SERVICE_CANCEL_PLAN,
@@ -128,6 +129,11 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     async def _stop_execution(call: ServiceCall) -> None:
         coordinator = _single_coordinator(hass)
         await coordinator.execution.async_stop("manual_stop", emergency=False)
+
+    async def _reset_execution_status(call: ServiceCall) -> None:
+        """Only acknowledge an already finished EMS emergency."""
+        coordinator = _single_coordinator(hass)
+        await coordinator.execution.async_reset_emergency_status()
 
 
     def _slot_from_call(call: ServiceCall) -> int:
@@ -275,6 +281,12 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         DOMAIN,
         SERVICE_STOP_EXECUTION,
         _stop_execution,
+        schema=vol.Schema({}),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_RESET_EXECUTION_STATUS,
+        _reset_execution_status,
         schema=vol.Schema({}),
     )
 
