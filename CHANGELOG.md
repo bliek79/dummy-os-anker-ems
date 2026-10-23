@@ -1,3 +1,12 @@
+## 0.0.1-alpha.84 - 2026-10-23
+
+- Removes the alpha83 Action Bridge regression that withheld every later candidate after a partially feasible charge.
+- Restores slot 3 availability when slot 1 is active, slot 2 is pending, and the third proposed Plan72 action is valid.
+- Keeps the fixed energy/power cap, explicit 0.107 kWh shortfall, first-invalid fail-closed guard, manual priority, overlap protection and runtime safety gates unchanged.
+- Adds regression coverage for nine candidates and for the actual three-slot live arrangement.
+- Forces one explicit Automatic Execution re-arm for the changed automatic command set.
+- Leaves the frozen planner files and native 15-minute / 72-hour / 288-slot baseline untouched.
+
 ## 0.0.1-alpha.81 - 2026-09-27
 
 - Separates the 10-second live/safety coordinator path from the heavy planner path.

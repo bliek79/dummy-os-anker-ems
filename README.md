@@ -199,3 +199,14 @@ depend on missing energy are withheld for revalidation against measured SOC.
 The Automatic Execution arm requires one deliberate OFF-to-ON re-arm after the
 alpha82-to-alpha83 upgrade. No automatic physical reactivation during update.
 Details and HA validation checklist: [alpha83 release notes](RELEASE_NOTES_ALPHA83.md).
+
+## Alpha84 — Automatic three-slot handoff after limited charging
+
+The alpha83 rule that held **every** candidate after the first power-limited
+charge has been removed. Later individually valid Plan72 actions can once again
+fill a free third Scheduler slot. All feasible-energy caps, visible unmet kWh,
+invalid-candidate cutoff, manual priority and physical power safeguards remain.
+
+Alpha84 requires a deliberate Automatic Execution re-arm after installation.
+Update only when no physical EMS action is active. See
+[the alpha84 release notes](RELEASE_NOTES_ALPHA84.md) for live validation steps.

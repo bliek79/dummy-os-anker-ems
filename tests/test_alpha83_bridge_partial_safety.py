@@ -313,10 +313,10 @@ class BridgeSafetyTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(hashlib.sha256((COMPONENT / name).read_bytes()).hexdigest(), digest)
 
-    def test_alpha83_upgrade_requires_one_explicit_automatic_rearm(self):
+    def test_alpha84_upgrade_requires_one_explicit_automatic_rearm(self):
         arm = (COMPONENT / "switch.py").read_text(encoding="utf-8")
         const = (COMPONENT / "const.py").read_text(encoding="utf-8")
-        self.assertIn('AUTOMATIC_ARM_CONTRACT_VERSION = "alpha83_bridge_feasible_v1"', const)
+        self.assertIn('AUTOMATIC_ARM_CONTRACT_VERSION = "alpha84_three_slot_after_limit_v1"', const)
         self.assertIn(
             'previous.attributes.get("arm_contract_version") == AUTOMATIC_ARM_CONTRACT_VERSION',
             arm,
