@@ -8,6 +8,7 @@ import pytest
 def candidate(identity="charge-1", generation=17):
     return {
         "origin": "automatic_72h_planner", "action": "laden",
+        "execution_mode": "gepland", "max_start_delay_min": 10,
         "planner_identity": identity, "planner_signature": "sig-" + identity,
         "power_w": 1940, "target_soc": 21.6, "max_runtime_h": .5,
         "start_time": "2026-10-27T22:30:00+00:00",
