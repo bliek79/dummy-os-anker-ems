@@ -55,6 +55,12 @@ def validate_doems_candidate(
         raise DOEMSIngressRejected("Candidate runtime invalid")
     if not candidate.get("start_time") or not candidate.get("planned_end_time"):
         raise DOEMSIngressRejected("Candidate time window missing")
+    if candidate.get("execution_mode") != "gepland":
+        raise DOEMSIngressRejected("Candidate must have scheduled execution mode")
+    if type(candidate.get("max_start_delay_min")) not in (int, float):
+        raise DOEMSIngressRejected("Candidate start delay missing")
+    if not 0 <= candidate["max_start_delay_min"] <= 60:
+        raise DOEMSIngressRejected("Candidate start delay invalid")
     accepted = deepcopy(dict(candidate))
     accepted.pop("_doems_r6_proof", None)
     return accepted
