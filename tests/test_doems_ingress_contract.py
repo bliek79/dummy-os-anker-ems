@@ -1,9 +1,19 @@
-"""Regression tests for DOEMS plan intake; never issue a battery command."""
-from custom_components.anker_ems.doems_ingress import (
-    validate_doems_proposals, DOEMSIngressRejected,
-)
-import pytest
+"""Unittest-compatible contract tests without importing Home Assistant package."""
+import importlib.util
+from pathlib import Path
+import unittest
 
+_ROOT = Path(__file__).resolve().parents[1] / "custom_components" / "anker_ems"
+
+def _load(name):
+    spec = importlib.util.spec_from_file_location(name, _ROOT / (name + ".py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+_ingress = _load("doems_ingress")
+validate_doems_proposals = _ingress.validate_doems_proposals
+DOEMSIngressRejected = _ingress.DOEMSIngressRejected
 
 def candidate(identity="charge-1", generation=17):
     return {
@@ -26,42 +36,39 @@ def check(plans, generation=17):
                                     max_charge_w=3200, max_discharge_w=3200)
 
 
-def test_valid_plan_preserves_identity_without_proof_in_plan_store():
-    plans = check({1: candidate()})
-    assert plans[1]["planner_identity"] == "charge-1"
-    assert "_doems_r6_proof" not in plans[1]
+class DOEMSIngressContractTests(unittest.TestCase):
+    def test_valid_plan_preserves_identity_without_proof(self):
+        plans = check({1: candidate()})
+        self.assertEqual(plans[1]["planner_identity"], "charge-1")
+        self.assertNotIn("_doems_r6_proof", plans[1])
+
+    def test_invalid_proposals_rejected(self):
+        for field, value in (("power_w", 3300), ("action", "other"),
+                             ("planner_signature", ""), ("origin", "manual")):
+            with self.subTest(field=field):
+                item = candidate()
+                item[field] = value
+                with self.assertRaises(DOEMSIngressRejected):
+                    check({1: item})
+
+    def test_stale_generation_rejected(self):
+        with self.assertRaises(DOEMSIngressRejected):
+            check({1: candidate(generation=16)})
+
+    def test_duplicate_identity_rejected(self):
+        with self.assertRaises(DOEMSIngressRejected):
+            check({1: candidate(), 2: candidate()})
+
+    def test_invalid_proof_rejected(self):
+        item = candidate()
+        item["_doems_r6_proof"]["bridge_ready"] = False
+        with self.assertRaises(DOEMSIngressRejected):
+            check({1: item})
+
+    def test_invalid_slot_rejected(self):
+        with self.assertRaises(DOEMSIngressRejected):
+            check({4: candidate()})
 
 
-@pytest.mark.parametrize("field,value", [
-    ("power_w", 3300),
-    ("action", "other"),
-    ("planner_signature", ""),
-    ("origin", "manual"),
-])
-def test_invalid_proposals_are_rejected(field, value):
-    item = candidate()
-    item[field] = value
-    with pytest.raises(DOEMSIngressRejected):
-        check({1: item})
-
-
-def test_stale_generation_rejected():
-    with pytest.raises(DOEMSIngressRejected):
-        check({1: candidate(generation=16)})
-
-
-def test_duplicate_identity_rejected():
-    with pytest.raises(DOEMSIngressRejected):
-        check({1: candidate(), 2: candidate()})
-
-
-def test_invalid_proof_rejected():
-    item = candidate()
-    item["_doems_r6_proof"]["bridge_ready"] = False
-    with pytest.raises(DOEMSIngressRejected):
-        check({1: item})
-
-
-def test_invalid_slot_rejected():
-    with pytest.raises(DOEMSIngressRejected):
-        check({4: candidate()})
+if __name__ == "__main__":
+    unittest.main()
