@@ -215,6 +215,30 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._doems_planner_mode = bool(enabled)
         self._auto_execution_armed = False
 
+    def configure_doems_r6_source(self, hass, *, enabled=False) -> None:
+        """Wire the read-only R6 provider; never implicitly enable execution.
+
+        This is an explicit operator/developer opt-in, not a startup hook.
+        Disabling restores the existing Alpha84 planning source.
+        """
+        if not enabled:
+            self.configure_doems_plan_ingress(enabled=False)
+            return
+        from .doems_r6_provider import read_doems_r6_publication
+
+        # Check source before changing planner selection; fail closed.
+        publication = read_doems_r6_publication(hass)
+        from .doems_ingress import validate_doems_proposals
+        validate_doems_proposals(
+            publication.get("proposals"),
+            generation=publication.get("generation"),
+            max_charge_w=self.max_charge_power_w,
+            max_discharge_w=self.max_discharge_power_w,
+        )
+        self.configure_doems_plan_ingress(
+            lambda: read_doems_r6_publication(hass), enabled=True
+        )
+
     @property
     def auto_execution_armed(self) -> bool:
         return self._auto_execution_armed
