@@ -201,6 +201,43 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Alpha51: explicit user arm. Default is fail-safe OFF on every fresh install.
         # The switch platform restores the user's last state after startup.
         self._auto_execution_armed = False
+        self._doems_plan_provider = None
+        self._doems_planner_mode = False
+
+    def configure_doems_plan_ingress(self, provider=None, *, enabled=False) -> None:
+        """Explicitly select DOEMS proposals; never grant physical authority."""
+        if enabled and not callable(provider):
+            raise ValueError("DOEMS proposal provider required")
+        if enabled and (self.execution.data.get("active") or
+                        self.execution.data.get("auto_mode_switch_active")):
+            raise ValueError("Cannot select DOEMS while original execution is active")
+        self._doems_plan_provider = provider if enabled else None
+        self._doems_planner_mode = bool(enabled)
+        self._auto_execution_armed = False
+
+    def configure_doems_r6_source(self, hass, *, enabled=False) -> None:
+        """Wire the read-only R6 provider; never implicitly enable execution.
+
+        This is an explicit operator/developer opt-in, not a startup hook.
+        Disabling restores the existing Alpha84 planning source.
+        """
+        if not enabled:
+            self.configure_doems_plan_ingress(enabled=False)
+            return
+        from .doems_r6_provider import read_doems_r6_publication
+
+        # Check source before changing planner selection; fail closed.
+        publication = read_doems_r6_publication(hass)
+        from .doems_ingress import validate_doems_proposals
+        validate_doems_proposals(
+            publication.get("proposals"),
+            generation=publication.get("generation"),
+            max_charge_w=self.max_charge_power_w,
+            max_discharge_w=self.max_discharge_power_w,
+        )
+        self.configure_doems_plan_ingress(
+            lambda: read_doems_r6_publication(hass), enabled=True
+        )
 
     @property
     def auto_execution_armed(self) -> bool:
@@ -1463,12 +1500,44 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         data.update(scheduler_snapshot)
         bridge = build_planner_action_bridge(data)
         data.update(bridge)
+        doems_proposals = None
+        doems_ingress_status = "legacy_source"
+        if self._doems_planner_mode:
+            from .doems_ingress import validate_doems_proposals, DOEMSIngressRejected
+            try:
+                publication = self._doems_plan_provider()
+                if not isinstance(publication, dict):
+                    raise DOEMSIngressRejected("DOEMS publication unavailable")
+                doems_proposals = validate_doems_proposals(
+                    publication.get("proposals"),
+                    generation=publication.get("generation"),
+                    max_charge_w=self.max_charge_power_w,
+                    max_discharge_w=self.max_discharge_power_w,
+                )
+                doems_ingress_status = "verified"
+            except (DOEMSIngressRejected, TypeError, ValueError) as err:
+                doems_ingress_status = "blocked"
+                data["doems_ingress_reason"] = str(err)
+            # Preserve original validators and physical control, but keep arm OFF.
+            self._auto_execution_armed = False
+            data["auto_bridge_candidates"] = list((doems_proposals or {}).values())
+            data["auto_bridge_slot_preview"] = [
+                {**item, "suggested_slot": slot,
+                 "plan_store_write_permitted": True,
+                 "scheduler_handoff_permitted": True}
+                for slot, item in (doems_proposals or {}).items()
+            ]
+            data["auto_bridge_valid"] = doems_proposals is not None
+            data["auto_plan_72h_valid"] = doems_proposals is not None
+            data["auto_bridge_invalid_candidate_count"] = 0 if doems_proposals is not None else 1
+        data["doems_ingress_status"] = doems_ingress_status
 
         # Alpha30: controlled automatic Plan Store write followed by a separate
         # guarded Scheduler handoff. Physical execution remains disabled.
         desired_auto_plans: dict[int, dict[str, Any]] = {}
         write_gate_open = (
-            bool(data.get("auto_bridge_valid"))
+            (not self._doems_planner_mode or doems_proposals is not None)
+            and bool(data.get("auto_bridge_valid"))
             and bool(data.get("forecast_ready"))
             # The Alpha83 bridge exposes only the safe chronological prefix;
             # a future invalid candidate must not globally block an earlier
@@ -1539,7 +1608,8 @@ class AnkerEmsCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Refresh scheduler details from the just-synchronized and handed-off store.
         data.update(self.scheduler.evaluate(self.max_charge_power_w, self.max_discharge_power_w))
-        refreshed_bridge = build_planner_action_bridge(data)
+        refreshed_bridge = (build_planner_action_bridge(data)
+                            if not self._doems_planner_mode else {})
         # Keep writer result flags from above while refreshing candidate/slot data.
         for key, value in refreshed_bridge.items():
             if key not in {
