@@ -1,10 +1,21 @@
-"""Regression tests: DOEMS R6 adapter is read-only and fail-closed."""
+"""Unittest-compatible read-only R6 provider tests."""
+import importlib.util
+from pathlib import Path
 from types import SimpleNamespace
+import unittest
 
-import pytest
+_ROOT = Path(__file__).resolve().parents[1] / "custom_components" / "anker_ems"
 
-from custom_components.anker_ems.doems_r6_provider import read_doems_r6_publication
-from custom_components.anker_ems.doems_ingress import validate_doems_proposals
+
+def _load(name):
+    spec = importlib.util.spec_from_file_location(name, _ROOT / (name + ".py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+read_doems_r6_publication = _load("doems_r6_provider").read_doems_r6_publication
+validate_doems_proposals = _load("doems_ingress").validate_doems_proposals
 
 
 def _plan():
@@ -37,32 +48,35 @@ def _runtime(witness=True, ready=True):
     }
 
 
-def test_published_plan_crosses_existing_ingress_contract():
-    hass = SimpleNamespace(data={"doems": {"entry": _runtime()}})
-    publication = read_doems_r6_publication(hass)
-    accepted = validate_doems_proposals(
-        publication["proposals"], generation=publication["generation"],
-        max_charge_w=3200, max_discharge_w=3200,
-    )
-    assert accepted[1]["planner_identity"] == "charge-1"
-    assert "_doems_r6_proof" not in accepted[1]
-
-
-@pytest.mark.parametrize("runtimes", [{}, {"one": _runtime(), "two": _runtime()}])
-def test_missing_or_ambiguous_doems_runtime_rejected(runtimes):
-    with pytest.raises(ValueError, match="Exactly one"):
-        read_doems_r6_publication(SimpleNamespace(data={"doems": runtimes}))
-
-
-def test_stale_r6_witness_rejected():
-    with pytest.raises(ValueError, match="witness"):
-        read_doems_r6_publication(
-            SimpleNamespace(data={"doems": {"entry": _runtime(witness=False)}})
+class DOEMSR6ProviderTests(unittest.TestCase):
+    def test_witnessed_plan_passes_existing_ingress_contract(self):
+        hass = SimpleNamespace(data={"doems": {"entry": _runtime()}})
+        publication = read_doems_r6_publication(hass)
+        accepted = validate_doems_proposals(
+            publication["proposals"], generation=publication["generation"],
+            max_charge_w=3200, max_discharge_w=3200,
         )
+        self.assertEqual(accepted[1]["planner_identity"], "charge-1")
+        self.assertNotIn("_doems_r6_proof", accepted[1])
+
+    def test_missing_or_ambiguous_runtime_rejected(self):
+        for runtimes in ({}, {"one": _runtime(), "two": _runtime()}):
+            with self.subTest(runtime_count=len(runtimes)):
+                with self.assertRaisesRegex(ValueError, "Exactly one"):
+                    read_doems_r6_publication(SimpleNamespace(data={"doems": runtimes}))
+
+    def test_stale_witness_rejected(self):
+        with self.assertRaisesRegex(ValueError, "witness"):
+            read_doems_r6_publication(
+                SimpleNamespace(data={"doems": {"entry": _runtime(witness=False)}})
+            )
+
+    def test_unready_publication_rejected(self):
+        with self.assertRaisesRegex(ValueError, "not ready"):
+            read_doems_r6_publication(
+                SimpleNamespace(data={"doems": {"entry": _runtime(ready=False)}})
+            )
 
 
-def test_unready_publication_rejected():
-    with pytest.raises(ValueError, match="not ready"):
-        read_doems_r6_publication(
-            SimpleNamespace(data={"doems": {"entry": _runtime(ready=False)}})
-        )
+if __name__ == "__main__":
+    unittest.main()
